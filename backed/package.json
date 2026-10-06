@@ -5,8 +5,9 @@
   "description": "Backend API for AI Automated Sales Consulting System (Node.js/Express/JavaScript)",
   "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js"
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "seed": "node src/seed.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
@@ -17,6 +18,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.9.5",
+    "multer": "^2.4.0",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {

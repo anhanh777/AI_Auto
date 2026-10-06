@@ -40,6 +40,10 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    custom_permissions: {
+      type: [String],
+      default: []
+    },
     is_active: {
       type: Boolean,
       default: true
