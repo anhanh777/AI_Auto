@@ -483,26 +483,17 @@ const ProductListPage = () => {
     });
   };
 
-  // Cập nhật trạng thái sản phẩm nhanh từ bảng
-  const handleQuickStatusChange = async (prod, newStatus) => {
+  // Cập nhật trạng thái sản phẩm nhanh từ bảng (Toggle Bật: Hoạt động / Tắt: Đã ngừng)
+  const handleToggleProductStatus = async (prod) => {
     try {
-      await productService.updateProduct(prod._id, { status: newStatus });
-      const statusLabel =
-        newStatus === 'ACTIVE'
-          ? 'Hoạt động'
-          : newStatus === 'OUT_OF_STOCK'
-          ? 'Hết hàng'
-          : 'Tạm ẩn';
+      const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
+      await productService.updateProduct(prod._id, { status: nextStatus });
+      const statusLabel = nextStatus === 'ACTIVE' ? 'Hoạt động' : 'Đã ngừng';
       showToast('success', `Đã chuyển "${prod.product_name}" sang trạng thái: ${statusLabel}`);
       fetchProducts();
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi cập nhật trạng thái');
     }
-  };
-
-  const handleToggleProductStatus = async (prod) => {
-    const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
-    await handleQuickStatusChange(prod, nextStatus);
   };
 
   // ================= DANH MỤC: MỞ MODAL & XỬ LÝ FORM =================
@@ -818,26 +809,34 @@ const ProductListPage = () => {
                               />
                             </td>
 
-                            {/* Trạng thái sản phẩm (Interactive Switcher) */}
+                            {/* Trạng thái sản phẩm (Nút Toggle Bật/Tắt cam đỏ y hệt ảnh) */}
                             <td className="py-3 px-3 text-center whitespace-nowrap">
-                              <div className="relative inline-flex items-center">
-                                <select
-                                  value={prod.status || 'ACTIVE'}
-                                  onChange={(e) => handleQuickStatusChange(prod, e.target.value)}
-                                  className={`text-[11px] font-bold pl-2.5 pr-6 py-1 rounded-full border cursor-pointer appearance-none transition focus:outline-none focus:ring-1 focus:ring-[#f05a28] ${
+                              <div className="flex items-center justify-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleProductStatus(prod)}
+                                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
                                     prod.status === 'ACTIVE'
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800'
-                                      : prod.status === 'OUT_OF_STOCK'
-                                      ? 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800'
-                                      : 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                      ? 'bg-[#eb4d4b]'
+                                      : 'bg-slate-300 dark:bg-slate-700'
                                   }`}
-                                  title="Nhấp để thay đổi trạng thái sản phẩm"
+                                  title={prod.status === 'ACTIVE' ? 'Đang hoạt động (Nhấp để chuyển sang Đã ngừng)' : 'Đã ngừng (Nhấp để chuyển sang Hoạt động)'}
                                 >
-                                  <option value="ACTIVE">● Hoạt động</option>
-                                  <option value="OUT_OF_STOCK">● Hết hàng</option>
-                                  <option value="HIDDEN">● Tạm ẩn</option>
-                                </select>
-                                <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                                  <span
+                                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
+                                      prod.status === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0.5'
+                                    }`}
+                                  />
+                                </button>
+                                <span
+                                  className={`text-[11px] font-bold min-w-[58px] text-left select-none ${
+                                    prod.status === 'ACTIVE'
+                                      ? 'text-[#eb4d4b]'
+                                      : 'text-slate-400 dark:text-slate-500'
+                                  }`}
+                                >
+                                  {prod.status === 'ACTIVE' ? 'Hoạt động' : 'Đã ngừng'}
+                                </span>
                               </div>
                             </td>
 
@@ -1466,49 +1465,48 @@ const ProductListPage = () => {
                       </div>
                     </div>
 
-                    {/* Trạng thái sản phẩm */}
-                    <div>
-                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                        TRẠNG THÁI SẢN PHẨM
-                      </label>
-                      <div className="grid grid-cols-3 gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => setProductForm({ ...productForm, status: 'ACTIVE' })}
-                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                    {/* Trạng thái sản phẩm (2 trạng thái: Hoạt động & Đã ngừng) */}
+                    <div className="flex items-center justify-between p-3.5 bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700 rounded-xl">
+                      <div>
+                        <label className="block font-bold text-slate-700 dark:text-slate-300 text-xs mb-0.5">
+                          TRẠNG THÁI SẢN PHẨM
+                        </label>
+                        <p className="text-[11px] text-slate-400">
+                          {(productForm.status || 'ACTIVE') === 'ACTIVE'
+                            ? 'Sản phẩm đang hoạt động và hiển thị cho khách hàng'
+                            : 'Sản phẩm đã ngừng kinh doanh (tạm ẩn trên hệ thống)'}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center space-x-2.5">
+                        <span
+                          className={`text-xs font-bold select-none ${
                             (productForm.status || 'ACTIVE') === 'ACTIVE'
-                              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500 shadow-2xs'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                              ? 'text-[#eb4d4b]'
+                              : 'text-slate-400'
                           }`}
                         >
-                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                          <span>Hoạt động</span>
-                        </button>
-
+                          {(productForm.status || 'ACTIVE') === 'ACTIVE' ? 'Hoạt động' : 'Đã ngừng'}
+                        </span>
                         <button
                           type="button"
-                          onClick={() => setProductForm({ ...productForm, status: 'OUT_OF_STOCK' })}
-                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                            productForm.status === 'OUT_OF_STOCK'
-                              ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-500 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500 shadow-2xs'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          onClick={() =>
+                            setProductForm((prev) => ({
+                              ...prev,
+                              status: prev.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE'
+                            }))
+                          }
+                          className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
+                            (productForm.status || 'ACTIVE') === 'ACTIVE'
+                              ? 'bg-[#eb4d4b]'
+                              : 'bg-slate-300 dark:bg-slate-700'
                           }`}
                         >
-                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          <span>Hết hàng</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setProductForm({ ...productForm, status: 'HIDDEN' })}
-                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                            productForm.status === 'HIDDEN'
-                              ? 'bg-slate-100 dark:bg-slate-800 border-slate-500 text-slate-700 dark:text-slate-300 ring-1 ring-slate-500 shadow-2xs'
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
-                          }`}
-                        >
-                          <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                          <span>Tạm ẩn</span>
+                          <span
+                            className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out mt-0.5 ${
+                              (productForm.status || 'ACTIVE') === 'ACTIVE' ? 'translate-x-5' : 'translate-x-0.5'
+                            }`}
+                          />
                         </button>
                       </div>
                     </div>
