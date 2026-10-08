@@ -809,7 +809,7 @@ const ProductListPage = () => {
                               />
                             </td>
 
-                            {/* Trạng thái sản phẩm (Nút Toggle Bật/Tắt cam đỏ y hệt ảnh) */}
+                            {/* Trạng thái sản phẩm (Nút Toggle Bật: Xanh lá cây / Tắt: Xám) */}
                             <td className="py-3 px-3 text-center whitespace-nowrap">
                               <div className="flex items-center justify-center space-x-2">
                                 <button
@@ -817,7 +817,7 @@ const ProductListPage = () => {
                                   onClick={() => handleToggleProductStatus(prod)}
                                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
                                     prod.status === 'ACTIVE'
-                                      ? 'bg-[#eb4d4b]'
+                                      ? 'bg-emerald-500'
                                       : 'bg-slate-300 dark:bg-slate-700'
                                   }`}
                                   title={prod.status === 'ACTIVE' ? 'Đang hoạt động (Nhấp để chuyển sang Đã ngừng)' : 'Đã ngừng (Nhấp để chuyển sang Hoạt động)'}
@@ -831,7 +831,7 @@ const ProductListPage = () => {
                                 <span
                                   className={`text-[11px] font-bold min-w-[58px] text-left select-none ${
                                     prod.status === 'ACTIVE'
-                                      ? 'text-[#eb4d4b]'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
                                       : 'text-slate-400 dark:text-slate-500'
                                   }`}
                                 >
@@ -845,7 +845,7 @@ const ProductListPage = () => {
                               {prod.sku}
                             </td>
 
-                            {/* SẢN PHẨM: Thumbnail + Tên + Dòng ID xanh dương + Danh mục */}
+                            {/* SẢN PHẨM: Thumbnail + Tên + Danh mục */}
                             <td className="py-3 px-4 max-w-xs">
                               <div className="flex items-center space-x-3">
                                 <img
@@ -857,9 +857,6 @@ const ProductListPage = () => {
                                   <h4 className="font-bold text-slate-900 dark:text-slate-100 truncate text-xs" title={prod.product_name}>
                                     {prod.product_name}
                                   </h4>
-                                  <p className="text-[11px] text-blue-600 dark:text-blue-400 truncate mt-0.5">
-                                    ID: <span className="hover:underline">{prod._id?.substring(0, 16) || '25172272849091028'}</span> and {prod.variants_json?.length || 1} more
-                                  </p>
                                   {/* Badges danh mục */}
                                   {Array.isArray(prod.category_ids) && prod.category_ids.length > 0 && (
                                     <div className="flex flex-wrap gap-1 mt-1">
@@ -1482,7 +1479,7 @@ const ProductListPage = () => {
                         <span
                           className={`text-xs font-bold select-none ${
                             (productForm.status || 'ACTIVE') === 'ACTIVE'
-                              ? 'text-[#eb4d4b]'
+                              ? 'text-emerald-600 dark:text-emerald-400'
                               : 'text-slate-400'
                           }`}
                         >
@@ -1498,7 +1495,7 @@ const ProductListPage = () => {
                           }
                           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
                             (productForm.status || 'ACTIVE') === 'ACTIVE'
-                              ? 'bg-[#eb4d4b]'
+                              ? 'bg-emerald-500'
                               : 'bg-slate-300 dark:bg-slate-700'
                           }`}
                         >
