@@ -483,16 +483,26 @@ const ProductListPage = () => {
     });
   };
 
-  // Toggle trạng thái On/Off nhanh từ bảng
-  const handleToggleProductStatus = async (prod) => {
+  // Cập nhật trạng thái sản phẩm nhanh từ bảng
+  const handleQuickStatusChange = async (prod, newStatus) => {
     try {
-      const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
-      await productService.updateProduct(prod._id, { status: nextStatus });
-      showToast('success', `Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'tạm ẩn'} sản phẩm "${prod.product_name}"`);
+      await productService.updateProduct(prod._id, { status: newStatus });
+      const statusLabel =
+        newStatus === 'ACTIVE'
+          ? 'Hoạt động'
+          : newStatus === 'OUT_OF_STOCK'
+          ? 'Hết hàng'
+          : 'Tạm ẩn';
+      showToast('success', `Đã chuyển "${prod.product_name}" sang trạng thái: ${statusLabel}`);
       fetchProducts();
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi cập nhật trạng thái');
     }
+  };
+
+  const handleToggleProductStatus = async (prod) => {
+    const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
+    await handleQuickStatusChange(prod, nextStatus);
   };
 
   // ================= DANH MỤC: MỞ MODAL & XỬ LÝ FORM =================
@@ -754,7 +764,7 @@ const ProductListPage = () => {
               <div className="overflow-x-auto flex-1">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="bg-slate-50/70 dark:bg-slate-900/60 text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[11px]">
+                    <tr className="bg-slate-50/80 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[11px]">
                       <th className="py-3 px-3 w-10 text-center">
                         <input
                           type="checkbox"
@@ -763,15 +773,15 @@ const ProductListPage = () => {
                           className="rounded border-slate-300 text-[#f05a28] focus:ring-[#f05a28]"
                         />
                       </th>
-                      <th className="py-3 px-3 w-12 text-center"></th>
-                      <th className="py-3 px-3 w-20">SKU</th>
-                      <th className="py-3 px-3">SẢN PHẨM</th>
-                      <th className="py-3 px-3 text-center">BIẾN THỂ</th>
-                      <th className="py-3 px-3 text-right">GIÁ</th>
-                      <th className="py-3 px-3 text-center">TỒN KHO KHẢ DỤNG</th>
-                      <th className="py-3 px-3 text-center">TỒN KHO THỰC TẾ</th>
-                      <th className="py-3 px-3">NGƯỜI TẠO</th>
-                      <th className="py-3 px-3 text-right w-20"></th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[130px]">TRẠNG THÁI</th>
+                      <th className="py-3 px-3 whitespace-nowrap min-w-[70px]">SKU</th>
+                      <th className="py-3 px-4 min-w-[280px]">SẢN PHẨM</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[90px]">BIẾN THỂ</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">GIÁ</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[125px]">TỒN KHO KHẢ DỤNG</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[125px]">TỒN KHO THỰC TẾ</th>
+                      <th className="py-3 px-4 whitespace-nowrap min-w-[140px]">NGƯỜI TẠO</th>
+                      <th className="py-3 px-3 text-right w-20 whitespace-nowrap"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -808,55 +818,83 @@ const ProductListPage = () => {
                               />
                             </td>
 
-                            {/* Status Icon Tick Xanh Tròn */}
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleToggleProductStatus(prod)}
-                                title={prod.status === 'ACTIVE' ? 'Đang hoạt động (Click để ẩn)' : 'Đang tạm ẩn (Click để bật)'}
-                                className="cursor-pointer"
-                              >
-                                {prod.status === 'ACTIVE' ? (
-                                  <CheckCircle2 size={16} className="text-emerald-500 fill-emerald-50" />
-                                ) : (
-                                  <div className="w-4 h-4 rounded-full border border-slate-300 bg-slate-100" />
-                                )}
-                              </button>
+                            {/* Trạng thái sản phẩm (Interactive Switcher) */}
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              <div className="relative inline-flex items-center">
+                                <select
+                                  value={prod.status || 'ACTIVE'}
+                                  onChange={(e) => handleQuickStatusChange(prod, e.target.value)}
+                                  className={`text-[11px] font-bold pl-2.5 pr-6 py-1 rounded-full border cursor-pointer appearance-none transition focus:outline-none focus:ring-1 focus:ring-[#f05a28] ${
+                                    prod.status === 'ACTIVE'
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800'
+                                      : prod.status === 'OUT_OF_STOCK'
+                                      ? 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800'
+                                      : 'bg-slate-100 text-slate-600 border-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                  }`}
+                                  title="Nhấp để thay đổi trạng thái sản phẩm"
+                                >
+                                  <option value="ACTIVE">● Hoạt động</option>
+                                  <option value="OUT_OF_STOCK">● Hết hàng</option>
+                                  <option value="HIDDEN">● Tạm ẩn</option>
+                                </select>
+                                <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                              </div>
                             </td>
 
                             {/* SKU */}
-                            <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200">
+                            <td className="py-3 px-3 font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                               {prod.sku}
                             </td>
 
-                            {/* SẢN PHẨM: Thumbnail + Tên + Dòng ID xanh dương */}
-                            <td className="py-3 px-3 max-w-xs">
+                            {/* SẢN PHẨM: Thumbnail + Tên + Dòng ID xanh dương + Danh mục */}
+                            <td className="py-3 px-4 max-w-xs">
                               <div className="flex items-center space-x-3">
                                 <img
                                   src={mainImage}
                                   alt={prod.product_name}
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
                                 />
-                                <div className="truncate">
+                                <div className="truncate min-w-0">
                                   <h4 className="font-bold text-slate-900 dark:text-slate-100 truncate text-xs" title={prod.product_name}>
                                     {prod.product_name}
                                   </h4>
                                   <p className="text-[11px] text-blue-600 dark:text-blue-400 truncate mt-0.5">
                                     ID: <span className="hover:underline">{prod._id?.substring(0, 16) || '25172272849091028'}</span> and {prod.variants_json?.length || 1} more
                                   </p>
+                                  {/* Badges danh mục */}
+                                  {Array.isArray(prod.category_ids) && prod.category_ids.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mt-1">
+                                      {prod.category_ids.slice(0, 2).map((cat) => {
+                                        const catObj = typeof cat === 'object' ? cat : categories.find((c) => c._id === cat);
+                                        return catObj ? (
+                                          <span
+                                            key={catObj._id || cat}
+                                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                          >
+                                            {catObj.category_name}
+                                          </span>
+                                        ) : null;
+                                      })}
+                                      {prod.category_ids.length > 2 && (
+                                        <span className="text-[10px] text-slate-400 font-medium">
+                                          +{prod.category_ids.length - 2}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </td>
 
                             {/* BIẾN THỂ */}
-                            <td className="py-3 px-3 text-center text-slate-600 dark:text-slate-400">
+                            <td className="py-3 px-3 text-center text-slate-600 dark:text-slate-400 whitespace-nowrap">
                               {prod.variants_json && prod.variants_json.length > 0
                                 ? `${prod.variants_json.length} biến thể`
                                 : '-'}
                             </td>
 
                             {/* GIÁ: Giá bán đậm + Giá gốc gạch đỏ */}
-                            <td className="py-3 px-3 text-right">
+                            <td className="py-3 px-4 text-right whitespace-nowrap">
                               {hasSale ? (
                                 <div>
                                   <div className="font-bold text-slate-900 dark:text-white">
@@ -874,17 +912,17 @@ const ProductListPage = () => {
                             </td>
 
                             {/* TỒN KHO KHẢ DỤNG */}
-                            <td className="py-3 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                            <td className="py-3 px-3 text-center font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                               {Number(prod.stock_available || 0).toLocaleString()}
                             </td>
 
                             {/* TỒN KHO THỰC TẾ */}
-                            <td className="py-3 px-3 text-center font-bold text-slate-800 dark:text-slate-200">
+                            <td className="py-3 px-3 text-center font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                               {Number(prod.stock_physical || 0).toLocaleString()}
                             </td>
 
                             {/* NGƯỜI TẠO: Avatar tròn + Tên + Ngày giờ */}
-                            <td className="py-3 px-3">
+                            <td className="py-3 px-4 whitespace-nowrap">
                               <div className="flex items-center space-x-2">
                                 <img
                                   src={creatorAvatar}
@@ -903,7 +941,7 @@ const ProductListPage = () => {
                             </td>
 
                             {/* THAO TÁC: Sửa / Xóa */}
-                            <td className="py-3 px-3 text-right">
+                            <td className="py-3 px-3 text-right whitespace-nowrap">
                               <div className="flex items-center justify-end space-x-1.5">
                                 <button
                                   type="button"
@@ -1425,6 +1463,53 @@ const ProductListPage = () => {
                             className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
                           />
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Trạng thái sản phẩm */}
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                        TRẠNG THÁI SẢN PHẨM
+                      </label>
+                      <div className="grid grid-cols-3 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setProductForm({ ...productForm, status: 'ACTIVE' })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                            (productForm.status || 'ACTIVE') === 'ACTIVE'
+                              ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-500 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          <span>Hoạt động</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setProductForm({ ...productForm, status: 'OUT_OF_STOCK' })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                            productForm.status === 'OUT_OF_STOCK'
+                              ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-500 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          <span>Hết hàng</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setProductForm({ ...productForm, status: 'HIDDEN' })}
+                          className={`py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
+                            productForm.status === 'HIDDEN'
+                              ? 'bg-slate-100 dark:bg-slate-800 border-slate-500 text-slate-700 dark:text-slate-300 ring-1 ring-slate-500 shadow-2xs'
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-slate-400"></span>
+                          <span>Tạm ẩn</span>
+                        </button>
                       </div>
                     </div>
                   </div>
