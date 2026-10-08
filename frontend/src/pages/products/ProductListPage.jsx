@@ -452,7 +452,11 @@ const ProductListPage = () => {
       setShowProductModal(false);
       fetchProducts();
     } catch (err) {
-      showToast('error', err.message || 'Lỗi khi lưu sản phẩm');
+      const detailedErr =
+        Array.isArray(err.response?.data?.errors) && err.response.data.errors.length > 0
+          ? err.response.data.errors.join(', ')
+          : err.response?.data?.message || err.message || 'Lỗi khi lưu sản phẩm';
+      showToast('error', detailedErr);
     } finally {
       setSubmittingProduct(false);
     }
