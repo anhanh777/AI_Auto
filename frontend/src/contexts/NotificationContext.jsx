@@ -4,34 +4,43 @@ const NotificationContext = createContext();
 
 const STORAGE_KEY = 'ai_sales_notifications';
 
-// Danh sách thông báo mẫu khởi tạo ban đầu
+// Danh sách sự kiện hệ thống & nghiệp vụ mẫu
 const initialNotifications = [
   {
     id: 'notif-1',
-    title: 'Đăng nhập hệ thống',
-    message: 'Tài khoản Quản trị viên đã đăng nhập thành công vào hệ thống AISales.',
+    title: 'Đơn hàng mới #DH2026',
+    message: 'Khách hàng Nguyễn Văn An vừa đặt đơn hàng mới trị giá 299.000 đ.',
     type: 'success',
-    link: '/dashboard',
+    link: '/orders',
     is_read: false,
-    created_at: new Date(Date.now() - 5 * 60 * 1000).toISOString()
+    created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString()
   },
   {
     id: 'notif-2',
-    title: 'Cập nhật kho hàng',
-    message: 'Sản phẩm "Kem Massage Gừng Quế" đã được đồng bộ tồn kho 100.000 sản phẩm.',
+    title: 'Hộp thư Live Chat & AI',
+    message: 'Trợ lý AI vừa tư vấn và giải đáp chính sách giao hàng cho khách hàng.',
     type: 'info',
-    link: '/products',
+    link: '/livechat',
     is_read: false,
-    created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString()
+    created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString()
   },
   {
     id: 'notif-3',
-    title: 'Hệ thống AI',
-    message: 'Mô hình AI Gemini đã sẵn sàng hỗ trợ tư vấn bán hàng tự động 24/7.',
+    title: 'Cảnh báo tồn kho',
+    message: 'Sản phẩm "Đai Nịt Bụng Cao Cấp" có 1 biến thể sắp chạm ngưỡng tồn kho an toàn.',
+    type: 'warning',
+    link: '/products',
+    is_read: false,
+    created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString()
+  },
+  {
+    id: 'notif-4',
+    title: 'Hệ thống AI Gemini',
+    message: 'Mô hình AI RAG đã nạp và học 100% dữ liệu sản phẩm của cửa hàng.',
     type: 'info',
     link: '/knowledge',
     is_read: true,
-    created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
   }
 ];
 
