@@ -2,6 +2,9 @@ import { Router } from 'express';
 import authRouter from './auth.route.js';
 import userRouter from './user.route.js';
 import uploadRouter from './upload.route.js';
+import businessRouter from './business.route.js';
+import categoryRouter from './category.route.js';
+import productRouter from './product.route.js';
 
 const rootRouter = Router();
 
@@ -19,5 +22,8 @@ rootRouter.get('/health', (req, res) => {
 rootRouter.use('/auth', authRouter);
 rootRouter.use('/users', userRouter);
 rootRouter.use('/upload', uploadRouter);
+rootRouter.use('/businesses', businessRouter);
+rootRouter.use('/categories', categoryRouter);
+rootRouter.use('/products', productRouter);
 
 export default rootRouter;

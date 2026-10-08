@@ -1,3 +1,4 @@
+export { Business } from './Business.model.js';
 export { Role } from './Role.model.js';
 export { User } from './User.model.js';
 export { Customer } from './Customer.model.js';

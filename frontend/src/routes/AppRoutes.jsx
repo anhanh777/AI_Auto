@@ -2,6 +2,7 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from '../pages/auth/LoginPage.jsx';
 import DashboardPage from '../pages/dashboard/DashboardPage.jsx';
+import ProductListPage from '../pages/products/ProductListPage.jsx';
 import UserManagementPage from '../pages/settings/UserManagementPage.jsx';
 import MainLayout from '../components/layout/MainLayout.jsx';
 import ProtectedRoute from '../components/guards/ProtectedRoute.jsx';
@@ -16,6 +17,11 @@ const AppRoutes = () => {
       <Route element={<ProtectedRoute />}>
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
+
+          {/* Quản lý Sản phẩm & Kho (Yêu cầu quyền PRODUCT_VIEW) */}
+          <Route element={<ProtectedRoute requiredPermission="PRODUCT_VIEW" />}>
+            <Route path="/products" element={<ProductListPage />} />
+          </Route>
 
           {/* Quản lý thành viên (Yêu cầu quyền USER_MANAGE) */}
           <Route element={<ProtectedRoute requiredPermission="USER_MANAGE" />}>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useTheme } from '../../contexts/ThemeContext.jsx';
+import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { authService } from '../../services/auth.service.js';
 import {
   LayoutDashboard,
@@ -30,12 +31,16 @@ import {
   AlertCircle,
   X,
   Bot,
-  BarChart3
+  BarChart3,
+  Plus,
+  Check,
+  Store
 } from 'lucide-react';
 
 const MainLayout = () => {
   const { user, logout, hasPermission } = useAuth();
   const { theme, toggleTheme, isDark } = useTheme();
+  const { businesses, activeBusiness, switchBusiness, createBusiness } = useBusiness();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -57,20 +62,34 @@ const MainLayout = () => {
     return saved ? JSON.parse(saved) : ['dashboard', 'livechat', 'products', 'orders', 'customers', 'knowledge'];
   });
 
-  // State Dropdown App Launcher & User Profile Dropdown
+  // State Dropdowns & Modals
   const [showAppLauncher, setShowAppLauncher] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showBusinessDropdown, setShowBusinessDropdown] = useState(false);
   const [appSearch, setAppSearch] = useState('');
 
-  // Modals state (Hồ sơ cá nhân & Đổi mật khẩu)
+  // Modals state
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showCreateBizModal, setShowCreateBizModal] = useState(false);
+
+  const [bizForm, setBizForm] = useState({
+    business_name: '',
+    code: '',
+    industry: 'Thời trang nam nữ',
+    phone: '',
+    email: '',
+    logo_url: ''
+  });
+  const [bizLoading, setBizLoading] = useState(false);
+
   const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
   const [passwordLoading, setPasswordLoading] = useState(false);
 
   const launcherRef = useRef(null);
   const userDropdownRef = useRef(null);
+  const businessDropdownRef = useRef(null);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -81,6 +100,9 @@ const MainLayout = () => {
       if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
         setShowUserDropdown(false);
       }
+      if (businessDropdownRef.current && !businessDropdownRef.current.contains(event.target)) {
+        setShowBusinessDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -88,21 +110,44 @@ const MainLayout = () => {
 
   const togglePinApp = (e, appId) => {
     e.stopPropagation();
-    setPinnedAppIds(prev => {
-      let updated = prev.includes(appId) ? (prev.length <= 1 ? prev : prev.filter(id => id !== appId)) : [...prev, appId];
+    setPinnedAppIds((prev) => {
+      let updated = prev.includes(appId) ? (prev.length <= 1 ? prev : prev.filter((id) => id !== appId)) : [...prev, appId];
       localStorage.setItem('ai_sales_pinned_apps', JSON.stringify(updated));
       return updated;
     });
   };
 
   const headerPinnedApps = allApplications.filter(
-    app => pinnedAppIds.includes(app.id) && (!app.permission || hasPermission(app.permission))
+    (app) => pinnedAppIds.includes(app.id) && (!app.permission || hasPermission(app.permission))
   );
 
-  const filteredLauncherApps = allApplications.filter(app => {
+  const filteredLauncherApps = allApplications.filter((app) => {
     const matches = app.name.toLowerCase().includes(appSearch.toLowerCase()) || app.category.toLowerCase().includes(appSearch.toLowerCase());
     return matches && (!app.permission || hasPermission(app.permission));
   });
+
+  // Xử lý tạo mới cửa hàng / business
+  const handleCreateBusinessSubmit = async (e) => {
+    e.preventDefault();
+    if (!bizForm.business_name || !bizForm.code) return;
+    setBizLoading(true);
+    try {
+      await createBusiness(bizForm);
+      setShowCreateBizModal(false);
+      setBizForm({
+        business_name: '',
+        code: '',
+        industry: 'Thời trang nam nữ',
+        phone: '',
+        email: '',
+        logo_url: ''
+      });
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setBizLoading(false);
+    }
+  };
 
   // Xử lý đổi mật khẩu cá nhân
   const handleChangePassword = async (e) => {
@@ -145,11 +190,86 @@ const MainLayout = () => {
             </span>
           </NavLink>
 
-          {/* Business Selector */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-white/10 hover:bg-white/15 rounded-lg text-xs font-semibold cursor-pointer shrink-0 border border-white/10">
-            <Building2 size={14} className="text-blue-300" />
-            <span className="line-clamp-1 max-w-[120px]">Soulmade Store</span>
-            <ChevronDown size={13} className="text-slate-300" />
+          {/* ================= DYNAMIC BUSINESS SELECTOR ================= */}
+          <div className="relative" ref={businessDropdownRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowBusinessDropdown(!showBusinessDropdown);
+                setShowAppLauncher(false);
+                setShowUserDropdown(false);
+              }}
+              className="flex items-center space-x-2 px-3 py-1.5 bg-white/10 hover:bg-white/20 active:bg-white/25 rounded-lg text-xs font-semibold cursor-pointer shrink-0 border border-white/10 transition"
+              title="Nhấn để chuyển đổi hoặc thêm mới cửa hàng / doanh nghiệp"
+            >
+              <Store size={14} className="text-blue-300" />
+              <span className="line-clamp-1 max-w-[130px] font-bold text-white">
+                {activeBusiness ? activeBusiness.business_name : 'Chọn cửa hàng'}
+              </span>
+              <ChevronDown size={13} className="text-slate-300" />
+            </button>
+
+            {/* POPOVER DANH SÁCH DOANH NGHIỆP */}
+            {showBusinessDropdown && (
+              <div className="absolute top-12 left-0 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-3 text-slate-800 dark:text-slate-100 z-50 animate-fadeIn">
+                <div className="px-4 pb-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      Cửa hàng / Doanh nghiệp
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Dữ liệu phân lập theo từng Brand</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBusinessDropdown(false);
+                      setShowCreateBizModal(true);
+                    }}
+                    className="p-1.5 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-blue-600 rounded-lg text-xs font-bold flex items-center space-x-1 cursor-pointer transition"
+                    title="Tạo thêm cửa hàng mới"
+                  >
+                    <Plus size={14} />
+                    <span>Thêm</span>
+                  </button>
+                </div>
+
+                <div className="py-2 px-2 max-h-60 overflow-y-auto space-y-1">
+                  {businesses.map((biz) => {
+                    const isSelected = activeBusiness?._id === biz._id;
+                    return (
+                      <div
+                        key={biz._id}
+                        onClick={() => {
+                          switchBusiness(biz);
+                          setShowBusinessDropdown(false);
+                        }}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                          isSelected
+                            ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-300 dark:border-blue-700 text-blue-900 dark:text-blue-100 font-bold'
+                            : 'bg-white dark:bg-slate-800 border-transparent hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2.5 min-w-0">
+                          {biz.logo_url ? (
+                            <img src={biz.logo_url} alt={biz.business_name} className="w-8 h-8 rounded-lg object-cover border" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 flex items-center justify-center font-bold text-xs shrink-0">
+                              {biz.code?.substring(0, 2) || 'BM'}
+                            </div>
+                          )}
+                          <div className="truncate">
+                            <p className="text-xs truncate">{biz.business_name}</p>
+                            <span className="text-[10px] text-slate-400 font-normal">Mã: {biz.code} • {biz.industry || 'Bán lẻ'}</span>
+                          </div>
+                        </div>
+
+                        {isSelected && <Check size={16} className="text-blue-600 shrink-0 ml-2" />}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="h-4 w-px bg-white/20 hidden md:block shrink-0"></div>
@@ -183,15 +303,16 @@ const MainLayout = () => {
           </nav>
         </div>
 
-        {/* NÚT TIỆN ÍCH BÊN PHẢI (APP LAUNCHER + THEME + BELL + USER DROPDOWN) */}
+        {/* NÚT TIỆN ÍCH BÊN PHẢI */}
         <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-          {/* NÚT APP LAUNCHER (ICON GRID ::) */}
+          {/* NÚT APP LAUNCHER */}
           <div className="relative" ref={launcherRef}>
             <button
               type="button"
               onClick={() => {
                 setShowAppLauncher(!showAppLauncher);
                 setShowUserDropdown(false);
+                setShowBusinessDropdown(false);
               }}
               className={`p-2 rounded-xl transition flex items-center justify-center cursor-pointer ${
                 showAppLauncher
@@ -292,13 +413,14 @@ const MainLayout = () => {
 
           <div className="h-4 w-px bg-white/20"></div>
 
-          {/* ================= USER PROFILE DROPDOWN (CHUẨN 100% THEO ẢNH SMAX BẠN GỬI) ================= */}
+          {/* ================= USER PROFILE DROPDOWN ================= */}
           <div className="relative" ref={userDropdownRef}>
             <button
               type="button"
               onClick={() => {
                 setShowUserDropdown(!showUserDropdown);
                 setShowAppLauncher(false);
+                setShowBusinessDropdown(false);
               }}
               className="flex items-center space-x-1.5 p-1 rounded-full hover:bg-white/15 transition cursor-pointer"
             >
@@ -316,7 +438,6 @@ const MainLayout = () => {
             {/* POPOVER MENU HỒ SƠ CÁ NHÂN */}
             {showUserDropdown && (
               <div className="absolute top-12 right-0 w-72 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-3 text-slate-800 dark:text-slate-100 z-50 animate-fadeIn">
-                {/* Header User Info */}
                 <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700/80 flex items-center space-x-3">
                   <div className="relative shrink-0">
                     <img
@@ -394,6 +515,94 @@ const MainLayout = () => {
           </div>
         </div>
       </header>
+
+      {/* ================= MODAL: TẠO MỚI DOANH NGHIỆP / CỬA HÀNG ================= */}
+      {showCreateBizModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 relative">
+            <button onClick={() => setShowCreateBizModal(false)} className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white">
+              <X size={20} />
+            </button>
+            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-2 flex items-center space-x-2">
+              <Store className="text-blue-600" />
+              <span>Thêm Mới Cửa Hàng / Doanh Nghiệp</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
+              Khởi tạo không gian kinh doanh độc lập (Bảng 3.23 Doanh nghiệp)
+            </p>
+
+            <form onSubmit={handleCreateBusinessSubmit} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Tên cửa hàng / Doanh nghiệp *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Soulmade Premium, Tokyo Sneaker..."
+                  value={bizForm.business_name}
+                  onChange={(e) => setBizForm({ ...bizForm, business_name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mã định danh (Code) *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: SOULMADE_02"
+                    value={bizForm.code}
+                    onChange={(e) => setBizForm({ ...bizForm, code: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono uppercase focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Ngành hàng</label>
+                  <input
+                    type="text"
+                    placeholder="Thời trang, Giày dép..."
+                    value={bizForm.industry}
+                    onChange={(e) => setBizForm({ ...bizForm, industry: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Hotline / SĐT</label>
+                  <input
+                    type="text"
+                    placeholder="0901234567"
+                    value={bizForm.phone}
+                    onChange={(e) => setBizForm({ ...bizForm, phone: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Email liên hệ</label>
+                  <input
+                    type="email"
+                    placeholder="shop@soulmade.vn"
+                    value={bizForm.email}
+                    onChange={(e) => setBizForm({ ...bizForm, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-700">
+                <button type="button" onClick={() => setShowCreateBizModal(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl">
+                  Hủy
+                </button>
+                <button type="submit" disabled={bizLoading} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow disabled:opacity-50">
+                  {bizLoading ? 'Đang tạo...' : 'Tạo cửa hàng'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ================= MODAL: HỒ SƠ CÁ NHÂN ================= */}
       {showProfileModal && (

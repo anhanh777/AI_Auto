@@ -9,13 +9,19 @@ const apiClient = axios.create({
   }
 });
 
-// Request Interceptor: Tự động gắn Bearer JWT Token từ localStorage
+// Request Interceptor: Tự động gắn Bearer JWT Token và x-business-id từ localStorage
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('ai_sales_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    const activeBusinessId = localStorage.getItem('ai_sales_active_business_id');
+    if (activeBusinessId) {
+      config.headers['x-business-id'] = activeBusinessId;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
