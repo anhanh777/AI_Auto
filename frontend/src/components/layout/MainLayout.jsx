@@ -523,13 +523,10 @@ const MainLayout = () => {
             <button onClick={() => setShowCreateBizModal(false)} className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white">
               <X size={20} />
             </button>
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-2 flex items-center space-x-2">
+            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-4 flex items-center space-x-2">
               <Store className="text-blue-600" />
               <span>Thêm Mới Cửa Hàng / Doanh Nghiệp</span>
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Khởi tạo không gian kinh doanh và dữ liệu độc lập
-            </p>
 
             <form onSubmit={handleCreateBusinessSubmit} className="space-y-3">
               <div>
