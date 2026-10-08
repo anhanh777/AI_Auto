@@ -43,20 +43,20 @@ export const BusinessProvider = ({ children }) => {
   const switchBusiness = (business) => {
     setActiveBusiness(business);
     localStorage.setItem('ai_sales_active_business_id', business._id);
-    showToast(`Đã chuyển sang quản lý cửa hàng: ${business.business_name}`, 'info');
+    showToast('info', `Đã chuyển sang quản lý cửa hàng: ${business.business_name}`);
   };
 
   const createBusiness = async (formData) => {
     try {
       const res = await businessService.createBusiness(formData);
       if (res.success) {
-        showToast('Tạo cửa hàng mới thành công', 'success');
+        showToast('success', 'Tạo cửa hàng mới thành công');
         await fetchBusinesses();
         switchBusiness(res.data);
         return res.data;
       }
     } catch (error) {
-      showToast(error.message || 'Lỗi khi tạo cửa hàng mới', 'error');
+      showToast('error', error.message || 'Lỗi khi tạo cửa hàng mới');
       throw error;
     }
   };

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
@@ -28,7 +28,9 @@ import {
   Bookmark,
   ShoppingCart,
   SlidersHorizontal,
-  GripVertical
+  GripVertical,
+  Camera,
+  Loader2
 } from 'lucide-react';
 
 const ProductListPage = () => {
@@ -66,8 +68,8 @@ const ProductListPage = () => {
     category_id: '',
     sku: '',
     barcode: '',
-    stock_physical: 100,
-    stock_available: 100,
+    stock_physical: 100000,
+    stock_available: 100000,
     base_price: 400000,
     sale_price: 299000,
     cost_price: 0,
@@ -89,10 +91,17 @@ const ProductListPage = () => {
     image_url: ''
   });
 
-  // Loading flags
+  // Loading & Upload states
   const [submittingProduct, setSubmittingProduct] = useState(false);
   const [submittingCategory, setSubmittingCategory] = useState(false);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingMainImage, setUploadingMainImage] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [uploadingCatAvatar, setUploadingCatAvatar] = useState(false);
+
+  // Input refs
+  const mainImageInputRef = useRef(null);
+  const galleryImageInputRef = useRef(null);
+  const catAvatarInputRef = useRef(null);
 
   // 1. Tải danh sách danh mục
   const fetchCategories = useCallback(async () => {
@@ -124,7 +133,7 @@ const ProductListPage = () => {
         setProducts(res.data);
       }
     } catch (err) {
-      showToast(err.message || 'Lỗi tải danh sách sản phẩm', 'error');
+      showToast('error', err.message || 'Lỗi tải danh sách sản phẩm');
     } finally {
       setLoading(false);
     }
@@ -155,7 +164,6 @@ const ProductListPage = () => {
     return `${day}/${month}/${year} ${hours}:${minutes}`;
   };
 
-  // Format ngày giờ dạng MM/DD/YYYY cho Danh mục
   const formatCategoryDate = (dateStr) => {
     if (!dateStr) return '';
     const d = new Date(dateStr);
@@ -212,7 +220,7 @@ const ProductListPage = () => {
       stock_physical: prod.stock_physical || 0,
       stock_available: prod.stock_available || 0,
       base_price: prod.base_price || 0,
-      sale_price: prod.sale_price !== null ? prod.sale_price : '',
+      sale_price: prod.sale_price !== null && prod.sale_price !== undefined ? prod.sale_price : '',
       cost_price: prod.cost_price || 0,
       import_price: prod.import_price || 0,
       currency: prod.currency || 'VND',
@@ -230,39 +238,69 @@ const ProductListPage = () => {
   const handleGenerateBarcode = () => {
     const code = `${Math.floor(100000000000 + Math.random() * 900000000000)}`;
     setProductForm((prev) => ({ ...prev, barcode: code }));
-    showToast(`Đã tạo mã vạch tự động: ${code}`, 'info');
+    showToast('info', `Đã tạo mã vạch tự động: ${code}`);
   };
 
-  // Upload hình ảnh qua Multer
-  const handleUploadImage = async (e, isMainImage = false) => {
-    const file = e.target.files[0];
+  // Upload hình ảnh chính của sản phẩm qua Multer
+  const handleUploadMainImage = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    try {
-      setUploadingImage(true);
-      const res = await uploadService.uploadImage(file);
-      if (res.success && res.data?.url) {
-        const fullUrl = res.data.url.startsWith('http')
-          ? res.data.url
-          : `http://localhost:5000${res.data.url}`;
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Vui lòng chọn file hình ảnh (JPG, PNG, WEBP)');
+      return;
+    }
 
-        if (isMainImage) {
-          setProductForm((prev) => {
-            const others = prev.image_urls.filter((_, idx) => idx !== 0);
-            return { ...prev, image_urls: [fullUrl, ...others] };
-          });
-        } else {
-          setProductForm((prev) => ({
-            ...prev,
-            image_urls: [...prev.image_urls, fullUrl]
-          }));
-        }
-        showToast('Tải ảnh thành công', 'success');
+    try {
+      setUploadingMainImage(true);
+      const res = await uploadService.uploadSingle(file, 'products');
+      if (res.success && res.data?.url) {
+        setProductForm((prev) => {
+          const others = prev.image_urls.filter((_, idx) => idx !== 0);
+          return { ...prev, image_urls: [res.data.url, ...others] };
+        });
+        showToast('success', 'Đã tải lên hình ảnh chính thành công!');
       }
     } catch (err) {
-      showToast(err.message || 'Lỗi tải ảnh', 'error');
+      showToast('error', err.message || 'Lỗi khi tải ảnh');
     } finally {
-      setUploadingImage(false);
+      setUploadingMainImage(false);
+      if (mainImageInputRef.current) mainImageInputRef.current.value = '';
+    }
+  };
+
+  // Upload nhiều ảnh vào album sản phẩm qua Multer
+  const handleUploadGalleryImages = async (e) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploadingGallery(true);
+      if (files.length === 1) {
+        const res = await uploadService.uploadSingle(files[0], 'products');
+        if (res.success && res.data?.url) {
+          setProductForm((prev) => ({
+            ...prev,
+            image_urls: [...prev.image_urls, res.data.url]
+          }));
+          showToast('success', 'Đã thêm ảnh vào album thành công!');
+        }
+      } else {
+        const res = await uploadService.uploadMultiple(files, 'products');
+        if (res.success && Array.isArray(res.data)) {
+          const newUrls = res.data.map((item) => item.url);
+          setProductForm((prev) => ({
+            ...prev,
+            image_urls: [...prev.image_urls, ...newUrls]
+          }));
+          showToast('success', `Đã thêm ${newUrls.length} ảnh vào album thành công!`);
+        }
+      }
+    } catch (err) {
+      showToast('error', err.message || 'Lỗi khi tải album ảnh');
+    } finally {
+      setUploadingGallery(false);
+      if (galleryImageInputRef.current) galleryImageInputRef.current.value = '';
     }
   };
 
@@ -309,7 +347,7 @@ const ProductListPage = () => {
   const handleSubmitProduct = async (e) => {
     e.preventDefault();
     if (!productForm.product_name || !productForm.sku || !productForm.category_id) {
-      showToast('Vui lòng nhập Tên sản phẩm, Mã SKU và Danh mục', 'warning');
+      showToast('warning', 'Vui lòng nhập đầy đủ Tên sản phẩm, Mã SKU và Danh mục');
       return;
     }
 
@@ -333,16 +371,16 @@ const ProductListPage = () => {
 
       if (editingProduct) {
         await productService.updateProduct(editingProduct._id, payload);
-        showToast('Cập nhật sản phẩm thành công', 'success');
+        showToast('success', `Cập nhật sản phẩm [${payload.product_name}] thành công!`);
       } else {
         await productService.createProduct(payload);
-        showToast('Thêm mới sản phẩm thành công', 'success');
+        showToast('success', `Thêm mới sản phẩm [${payload.product_name}] thành công!`);
       }
 
       setShowProductModal(false);
       fetchProducts();
     } catch (err) {
-      showToast(err.message || 'Lỗi khi lưu sản phẩm', 'error');
+      showToast('error', err.message || 'Lỗi khi lưu sản phẩm');
     } finally {
       setSubmittingProduct(false);
     }
@@ -353,10 +391,10 @@ const ProductListPage = () => {
     if (!window.confirm(`Bạn có chắc muốn xóa sản phẩm [${prod.product_name}]?`)) return;
     try {
       await productService.deleteProduct(prod._id);
-      showToast('Đã xóa sản phẩm thành công', 'success');
+      showToast('success', `Đã xóa sản phẩm [${prod.product_name}] thành công!`);
       fetchProducts();
     } catch (err) {
-      showToast(err.message || 'Lỗi khi xóa sản phẩm', 'error');
+      showToast('error', err.message || 'Lỗi khi xóa sản phẩm');
     }
   };
 
@@ -365,10 +403,10 @@ const ProductListPage = () => {
     try {
       const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
       await productService.updateProduct(prod._id, { status: nextStatus });
-      showToast(`Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'tạm ẩn'} sản phẩm`, 'info');
+      showToast('success', `Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'tạm ẩn'} sản phẩm [${prod.product_name}]`);
       fetchProducts();
     } catch (err) {
-      showToast(err.message || 'Lỗi cập nhật trạng thái', 'error');
+      showToast('error', err.message || 'Lỗi khi cập nhật trạng thái');
     }
   };
 
@@ -396,22 +434,26 @@ const ProductListPage = () => {
   };
 
   const handleUploadCategoryAvatar = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Vui lòng chọn file hình ảnh (JPG, PNG, WEBP)');
+      return;
+    }
+
     try {
-      setUploadingImage(true);
-      const res = await uploadService.uploadImage(file);
+      setUploadingCatAvatar(true);
+      const res = await uploadService.uploadSingle(file, 'categories');
       if (res.success && res.data?.url) {
-        const fullUrl = res.data.url.startsWith('http')
-          ? res.data.url
-          : `http://localhost:5000${res.data.url}`;
-        setCategoryForm((prev) => ({ ...prev, image_url: fullUrl }));
-        showToast('Tải ảnh danh mục thành công', 'success');
+        setCategoryForm((prev) => ({ ...prev, image_url: res.data.url }));
+        showToast('success', 'Đã tải lên ảnh danh mục thành công!');
       }
     } catch (err) {
-      showToast(err.message || 'Lỗi tải ảnh', 'error');
+      showToast('error', err.message || 'Lỗi khi tải ảnh danh mục');
     } finally {
-      setUploadingImage(false);
+      setUploadingCatAvatar(false);
+      if (catAvatarInputRef.current) catAvatarInputRef.current.value = '';
     }
   };
 
@@ -423,15 +465,15 @@ const ProductListPage = () => {
       setSubmittingCategory(true);
       if (editingCategory) {
         await categoryService.updateCategory(editingCategory._id, categoryForm);
-        showToast('Cập nhật danh mục thành công', 'success');
+        showToast('success', `Cập nhật danh mục [${categoryForm.category_name}] thành công!`);
       } else {
         await categoryService.createCategory(categoryForm);
-        showToast('Thêm danh mục mới thành công', 'success');
+        showToast('success', `Thêm mới danh mục [${categoryForm.category_name}] thành công!`);
       }
       setShowCategoryModal(false);
       fetchCategories();
     } catch (err) {
-      showToast(err.message || 'Lỗi khi lưu danh mục', 'error');
+      showToast('error', err.message || 'Lỗi khi lưu danh mục');
     } finally {
       setSubmittingCategory(false);
     }
@@ -441,10 +483,10 @@ const ProductListPage = () => {
     if (!window.confirm(`Bạn có chắc muốn xóa danh mục [${cat.category_name}]?`)) return;
     try {
       await categoryService.deleteCategory(cat._id);
-      showToast('Đã xóa danh mục thành công', 'success');
+      showToast('success', `Đã xóa danh mục [${cat.category_name}] thành công!`);
       fetchCategories();
     } catch (err) {
-      showToast(err.message || 'Lỗi khi xóa danh mục', 'error');
+      showToast('error', err.message || 'Lỗi khi xóa danh mục');
     }
   };
 
@@ -464,7 +506,7 @@ const ProductListPage = () => {
   };
 
   return (
-    <div className="flex bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 min-h-[calc(100vh-100px)] overflow-hidden">
+    <div className="flex bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 min-h-[calc(100vh-100px)] overflow-hidden animate-fadeIn">
       {/* ================= CỘT TRÁI: SIDEBAR SUB-MENU (SẢN PHẨM & CATEGORIES) ================= */}
       <aside className="w-56 shrink-0 border-r border-slate-100 dark:border-slate-800 p-4 flex flex-col justify-between bg-slate-50/40 dark:bg-slate-900/40">
         <div className="space-y-4">
@@ -503,7 +545,7 @@ const ProductListPage = () => {
           </nav>
         </div>
 
-        {/* Nút thu gọn / trang thái */}
+        {/* Thông tin Store hiện tại */}
         <div className="pt-4 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
           <span className="truncate">{activeBusiness?.business_name || 'Store'}</span>
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -531,15 +573,15 @@ const ProductListPage = () => {
                     onChange={(e) => setProductSearch(e.target.value)}
                     className="w-48 sm:w-60 pl-3 pr-8 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#f05a28]"
                   />
-                  <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
 
                 {/* Filter icon */}
                 <button
                   type="button"
                   onClick={fetchProducts}
-                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition"
-                  title="Lọc & Làm mới"
+                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
+                  title="Làm mới & Lọc danh sách"
                 >
                   <Filter size={14} />
                 </button>
@@ -547,7 +589,7 @@ const ProductListPage = () => {
                 {/* Quét sản phẩm button */}
                 <button
                   type="button"
-                  onClick={() => showToast('Tính năng Quét sản phẩm sẵn sàng đồng bộ Fanpage & Web', 'info')}
+                  onClick={() => showToast('info', 'Tính năng Quét sản phẩm sẵn sàng kết nối Fanpage & Web')}
                   className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center space-x-1.5 transition cursor-pointer"
                 >
                   <span>Quét sản phẩm</span>
@@ -557,14 +599,14 @@ const ProductListPage = () => {
                 {/* Action buttons */}
                 <button
                   type="button"
-                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition"
+                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
                   title="Chia sẻ / Xuất dữ liệu"
                 >
                   <Share2 size={14} />
                 </button>
                 <button
                   type="button"
-                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition"
+                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
                   title="Ghi nhớ"
                 >
                   <Bookmark size={14} />
@@ -782,7 +824,7 @@ const ProductListPage = () => {
                     if (window.confirm(`Xóa ${selectedProductIds.length} sản phẩm đã chọn?`)) {
                       Promise.all(selectedProductIds.map((id) => productService.deleteProduct(id)))
                         .then(() => {
-                          showToast(`Đã xóa ${selectedProductIds.length} sản phẩm`, 'success');
+                          showToast('success', `Đã xóa ${selectedProductIds.length} sản phẩm thành công!`);
                           setSelectedProductIds([]);
                           fetchProducts();
                         });
@@ -821,7 +863,7 @@ const ProductListPage = () => {
                     onChange={(e) => setCategorySearch(e.target.value)}
                     className="w-48 sm:w-60 pl-3 pr-8 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-[#f05a28]"
                   />
-                  <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Search size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
 
                 {/* NÚT THÊM MỚI DANH MỤC (#f05a28) */}
@@ -1113,7 +1155,7 @@ const ProductListPage = () => {
                             <button
                               type="button"
                               onClick={handleGenerateBarcode}
-                              className="text-[10px] text-[#f05a28] hover:underline font-bold flex items-center space-x-0.5"
+                              className="text-[10px] text-[#f05a28] hover:underline font-bold flex items-center space-x-0.5 cursor-pointer"
                             >
                               <Barcode size={11} />
                               <span>Tạo mã tự động</span>
@@ -1176,35 +1218,49 @@ const ProductListPage = () => {
 
                     <div className="flex-1 flex items-center justify-center p-3">
                       {productForm.image_urls.length > 0 ? (
-                        <div className="relative group rounded-xl overflow-hidden border border-slate-200 max-w-[280px] max-h-[280px] aspect-square shadow-sm">
+                        <div
+                          className="relative group rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 w-full max-w-[280px] aspect-square shadow-sm cursor-pointer"
+                          onClick={() => mainImageInputRef.current?.click()}
+                          title="Nhấp để thay đổi ảnh chính"
+                        >
                           <img
                             src={productForm.image_urls[0]}
                             alt="Main product"
                             className="w-full h-full object-cover"
                           />
-                          <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold cursor-pointer">
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white font-bold">
+                            <Camera size={24} className="mb-1" />
                             <span>Đổi ảnh chính</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => handleUploadImage(e, true)}
-                              className="hidden"
-                            />
-                          </label>
+                          </div>
+                          {uploadingMainImage && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white">
+                              <Loader2 className="animate-spin" size={24} />
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <label className="w-full max-w-[280px] aspect-square border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl flex flex-col items-center justify-center p-4 cursor-pointer hover:border-[#f05a28] transition bg-white dark:bg-slate-900">
-                          <Upload size={24} className="text-slate-400 mb-2" />
-                          <span className="font-bold text-slate-700 dark:text-slate-300">Tải ảnh đại diện</span>
-                          <span className="text-[10px] text-slate-400 mt-1">PNG, JPG tối đa 5MB</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleUploadImage(e, true)}
-                            className="hidden"
-                          />
-                        </label>
+                        <div
+                          onClick={() => mainImageInputRef.current?.click()}
+                          className="w-full max-w-[280px] aspect-square border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center p-4 cursor-pointer hover:border-[#f05a28] transition bg-white dark:bg-slate-900"
+                        >
+                          {uploadingMainImage ? (
+                            <Loader2 className="animate-spin text-[#f05a28]" size={28} />
+                          ) : (
+                            <>
+                              <Upload size={24} className="text-slate-400 mb-2" />
+                              <span className="font-bold text-slate-700 dark:text-slate-300">Tải ảnh đại diện</span>
+                              <span className="text-[10px] text-slate-400 mt-1">JPG, PNG tối đa 5MB</span>
+                            </>
+                          )}
+                        </div>
                       )}
+                      <input
+                        type="file"
+                        ref={mainImageInputRef}
+                        accept="image/*"
+                        onChange={handleUploadMainImage}
+                        className="hidden"
+                      />
                     </div>
                   </div>
 
@@ -1230,7 +1286,7 @@ const ProductListPage = () => {
                             <button
                               type="button"
                               onClick={() => handleRemoveImage(idx)}
-                              className="absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition"
+                              className="absolute top-1 right-1 w-5 h-5 bg-black/70 hover:bg-rose-600 text-white rounded-full flex items-center justify-center transition cursor-pointer"
                             >
                               <X size={11} />
                             </button>
@@ -1238,16 +1294,24 @@ const ProductListPage = () => {
                         ))}
 
                         {/* Ô thêm ảnh mới (+) */}
-                        <label className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#f05a28] rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-900 transition text-[#f05a28]">
-                          <Plus size={18} />
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleUploadImage(e, false)}
-                            disabled={uploadingImage}
-                            className="hidden"
-                          />
-                        </label>
+                        <div
+                          onClick={() => galleryImageInputRef.current?.click()}
+                          className="border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-[#f05a28] rounded-xl aspect-square flex flex-col items-center justify-center cursor-pointer bg-white dark:bg-slate-900 transition text-[#f05a28]"
+                        >
+                          {uploadingGallery ? (
+                            <Loader2 className="animate-spin" size={18} />
+                          ) : (
+                            <Plus size={18} />
+                          )}
+                        </div>
+                        <input
+                          type="file"
+                          ref={galleryImageInputRef}
+                          multiple
+                          accept="image/*"
+                          onChange={handleUploadGalleryImages}
+                          className="hidden"
+                        />
                       </div>
                     </div>
 
@@ -1485,7 +1549,7 @@ const ProductListPage = () => {
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveVariantRow(idx)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded"
+                                  className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -1552,7 +1616,7 @@ const ProductListPage = () => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative">
             <button
               onClick={() => setShowCategoryModal(false)}
-              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white"
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg absolute top-4 right-4 cursor-pointer"
             >
               <X size={18} />
             </button>
@@ -1604,17 +1668,24 @@ const ProductListPage = () => {
                       className="w-12 h-12 rounded-xl object-cover border border-slate-200"
                     />
                   ) : null}
-                  <label className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 cursor-pointer flex items-center space-x-1.5">
-                    <Upload size={14} />
-                    <span>{uploadingImage ? 'Đang tải...' : 'Tải ảnh lên'}</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleUploadCategoryAvatar}
-                      disabled={uploadingImage}
-                      className="hidden"
-                    />
-                  </label>
+                  <div
+                    onClick={() => catAvatarInputRef.current?.click()}
+                    className="px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 cursor-pointer flex items-center space-x-1.5"
+                  >
+                    {uploadingCatAvatar ? (
+                      <Loader2 className="animate-spin text-[#f05a28]" size={14} />
+                    ) : (
+                      <Upload size={14} />
+                    )}
+                    <span>{uploadingCatAvatar ? 'Đang tải...' : 'Tải ảnh lên'}</span>
+                  </div>
+                  <input
+                    type="file"
+                    ref={catAvatarInputRef}
+                    accept="image/*"
+                    onChange={handleUploadCategoryAvatar}
+                    className="hidden"
+                  />
                 </div>
               </div>
 
@@ -1622,14 +1693,14 @@ const ProductListPage = () => {
                 <button
                   type="button"
                   onClick={() => setShowCategoryModal(false)}
-                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
                 >
                   Thoát
                 </button>
                 <button
                   type="submit"
                   disabled={submittingCategory}
-                  className="px-5 py-2 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-xl font-bold shadow disabled:opacity-50"
+                  className="px-5 py-2 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-xl font-bold shadow disabled:opacity-50 cursor-pointer"
                 >
                   {submittingCategory ? 'Đang lưu...' : 'Lưu'}
                 </button>
