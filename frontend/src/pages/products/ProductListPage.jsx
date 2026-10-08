@@ -1446,21 +1446,32 @@ const ProductListPage = () => {
                             type="number"
                             min="0"
                             value={productForm.stock_physical}
-                            onChange={(e) => setProductForm({ ...productForm, stock_physical: e.target.value })}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setProductForm((prev) => ({
+                                ...prev,
+                                stock_physical: val,
+                                // Khi tạo mới, tồn kho khả dụng tự động bằng tồn kho thực tế
+                                stock_available: editingProduct ? prev.stock_available : val
+                              }));
+                            }}
                             className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
                           />
                         </div>
 
                         <div>
-                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            TỒN KHO KHẢ DỤNG
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 dark:text-slate-300">
+                              TỒN KHO KHẢ DỤNG
+                            </label>
+                          </div>
                           <input
                             type="number"
-                            min="0"
+                            readOnly
+                            disabled
                             value={productForm.stock_available}
-                            onChange={(e) => setProductForm({ ...productForm, stock_available: e.target.value })}
-                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                            title="Tồn kho khả dụng được hệ thống tự động tính toán (Tồn kho thực tế trừ đi các đơn hàng đang xử lý)"
+                            className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-500 dark:text-slate-400 cursor-not-allowed focus:outline-none"
                           />
                         </div>
                       </div>
