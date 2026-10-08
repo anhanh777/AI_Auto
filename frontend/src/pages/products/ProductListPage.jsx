@@ -713,21 +713,20 @@ const ProductListPage = () => {
                       <th className="py-3 px-3 text-center">TỒN KHO KHẢ DỤNG</th>
                       <th className="py-3 px-3 text-center">TỒN KHO THỰC TẾ</th>
                       <th className="py-3 px-3">NGƯỜI TẠO</th>
-                      <th className="py-3 px-3 text-center">NGUỒN</th>
                       <th className="py-3 px-3 text-right w-20"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {loading ? (
                       <tr>
-                        <td colSpan={11} className="py-12 text-center text-slate-400">
+                        <td colSpan={10} className="py-12 text-center text-slate-400">
                           <RefreshCw className="animate-spin inline mr-2" size={16} />
                           Đang tải danh sách sản phẩm...
                         </td>
                       </tr>
                     ) : products.length === 0 ? (
                       <tr>
-                        <td colSpan={11} className="py-12 text-center text-slate-400">
+                        <td colSpan={10} className="py-12 text-center text-slate-400">
                           Chưa có sản phẩm nào. Nhấn "+ Thêm mới" để bắt đầu.
                         </td>
                       </tr>
@@ -843,14 +842,6 @@ const ProductListPage = () => {
                                   </p>
                                 </div>
                               </div>
-                            </td>
-
-                            {/* NGUỒN: Smax Ai Badge */}
-                            <td className="py-3 px-3 text-center">
-                              <span className="inline-flex items-center space-x-1 px-2 py-0.5 bg-[#17234e] text-white rounded text-[10px] font-bold">
-                                <span className="text-blue-400 font-extrabold">S</span>
-                                <span>Smax Ai</span>
-                              </span>
                             </td>
 
                             {/* THAO TÁC: Sửa / Xóa */}
@@ -1037,15 +1028,9 @@ const ProductListPage = () => {
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  {editingProduct ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}
-                </h3>
-                <span className="inline-flex items-center space-x-1 px-2 py-0.5 bg-[#17234e] text-white rounded text-[10px] font-bold">
-                  <span className="text-blue-400 font-extrabold">S</span>
-                  <span>Smax Ai</span>
-                </span>
-              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                {editingProduct ? 'Cập nhật sản phẩm' : 'Thêm sản phẩm'}
+              </h3>
               <button
                 onClick={() => setShowProductModal(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg cursor-pointer"
@@ -1519,7 +1504,7 @@ const ProductListPage = () => {
                     <div>
                       <h4 className="font-bold text-slate-900 dark:text-white flex items-center space-x-1">
                         <span className="text-[#f05a28] font-black">|</span>
-                        <span>Biến thể Size / Màu sắc / Tồn kho (Bảng 3.32 variants_json)</span>
+                        <span>Biến thể Size / Màu sắc / Tồn kho</span>
                       </h4>
                       <p className="text-[11px] text-slate-400">
                         AI Gemini sẽ đọc các biến thể này để giải đáp khi khách hỏi Size/Màu cụ thể.
@@ -1683,7 +1668,7 @@ const ProductListPage = () => {
               {editingCategory ? 'Cập nhật danh mục' : 'Thêm mới danh mục'}
             </h3>
             <p className="text-xs text-slate-400 mb-4">
-              Phân cấp nhóm sản phẩm (Bảng 3.31 Categories)
+              Phân cấp và quản lý nhóm sản phẩm
             </p>
 
             <form onSubmit={handleSubmitCategory} className="space-y-3 text-xs">

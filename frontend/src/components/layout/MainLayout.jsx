@@ -528,7 +528,7 @@ const MainLayout = () => {
               <span>Thêm Mới Cửa Hàng / Doanh Nghiệp</span>
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              Khởi tạo không gian kinh doanh độc lập (Bảng 3.23 Doanh nghiệp)
+              Khởi tạo không gian kinh doanh và dữ liệu độc lập
             </p>
 
             <form onSubmit={handleCreateBusinessSubmit} className="space-y-3">

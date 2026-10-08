@@ -44,7 +44,7 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white dark:bg-slate-900 transition-colors font-sans">
-      {/* ================= CỘT TRÁI: SHOWCASE MẠNG LƯỚI ĐA KÊNH & AI (THEO PHONG CÁCH SMAX.AI) ================= */}
+      {/* ================= CỘT TRÁI: SHOWCASE MẠNG LƯỚI ĐA KÊNH & AI ================= */}
       <div className="hidden lg:flex lg:w-3/5 relative bg-gradient-to-br from-slate-50 via-blue-50/20 to-indigo-50/40 dark:from-slate-950 dark:via-slate-900 dark:to-indigo-950/30 items-center justify-center p-12 overflow-hidden border-r border-slate-200 dark:border-slate-800">
         {/* Logo góc trên trái */}
         <div className="absolute top-8 left-8 flex items-center space-x-2">
