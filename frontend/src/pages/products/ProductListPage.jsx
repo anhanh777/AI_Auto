@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { productService } from '../../services/product.service.js';
 import { categoryService } from '../../services/category.service.js';
 import { uploadService } from '../../services/upload.service.js';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Package,
   Plus,
@@ -56,6 +57,18 @@ const ProductListPage = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [editingCategory, setEditingCategory] = useState(null);
+
+  // Custom Confirm Dialog State (Thay thế hoàn toàn window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Active Tab trong Modal Product (1: Thông tin cơ bản, 2: Truyền thông, 3: Giá, 4: Biến thể & Toppings)
   const [activeProductTab, setActiveProductTab] = useState(1);
@@ -241,7 +254,7 @@ const ProductListPage = () => {
     showToast('info', `Đã tạo mã vạch tự động: ${code}`);
   };
 
-  // Upload hình ảnh chính của sản phẩm qua Multer
+  // Upload hình ảnh chính qua Multer
   const handleUploadMainImage = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -386,16 +399,29 @@ const ProductListPage = () => {
     }
   };
 
-  // Xóa sản phẩm
-  const handleDeleteProduct = async (prod) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa sản phẩm [${prod.product_name}]?`)) return;
-    try {
-      await productService.deleteProduct(prod._id);
-      showToast('success', `Đã xóa sản phẩm [${prod.product_name}] thành công!`);
-      fetchProducts();
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa sản phẩm');
-    }
+  // Xóa sản phẩm qua Custom Popup Modal
+  const handleDeleteProduct = (prod) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xác nhận xóa sản phẩm',
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn sản phẩm [${prod.product_name}]? Hành động này không thể hoàn tác.`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          await productService.deleteProduct(prod._id);
+          showToast('success', `Đã xóa sản phẩm [${prod.product_name}] thành công!`);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+          fetchProducts();
+        } catch (err) {
+          setConfirmDialog((prev) => ({ ...prev, loading: false }));
+          showToast('error', err.message || 'Lỗi khi xóa sản phẩm');
+        }
+      }
+    });
   };
 
   // Toggle trạng thái On/Off nhanh từ bảng
@@ -479,15 +505,56 @@ const ProductListPage = () => {
     }
   };
 
-  const handleDeleteCategory = async (cat) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa danh mục [${cat.category_name}]?`)) return;
-    try {
-      await categoryService.deleteCategory(cat._id);
-      showToast('success', `Đã xóa danh mục [${cat.category_name}] thành công!`);
-      fetchCategories();
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa danh mục');
-    }
+  // Xóa danh mục qua Custom Popup Modal
+  const handleDeleteCategory = (cat) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xác nhận xóa danh mục',
+      message: `Bạn có chắc chắn muốn xóa danh mục [${cat.category_name}]? Hành động này sẽ kiểm tra an toàn và không thể hoàn tác.`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          await categoryService.deleteCategory(cat._id);
+          showToast('success', `Đã xóa danh mục [${cat.category_name}] thành công!`);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+          fetchCategories();
+        } catch (err) {
+          setConfirmDialog((prev) => ({ ...prev, loading: false }));
+          showToast('error', err.message || 'Lỗi khi xóa danh mục');
+        }
+      }
+    });
+  };
+
+  // Xóa hàng loạt qua Custom Popup Modal
+  const handleBulkDeleteProducts = () => {
+    if (selectedProductIds.length === 0) return;
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xác nhận xóa hàng loạt',
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn ${selectedProductIds.length} sản phẩm đã chọn?`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          await Promise.all(selectedProductIds.map((id) => productService.deleteProduct(id)));
+          showToast('success', `Đã xóa ${selectedProductIds.length} sản phẩm thành công!`);
+          setSelectedProductIds([]);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+          fetchProducts();
+        } catch (err) {
+          setConfirmDialog((prev) => ({ ...prev, loading: false }));
+          showToast('error', err.message || 'Lỗi khi xóa sản phẩm');
+        }
+      }
+    });
   };
 
   // Checkbox chọn nhiều
@@ -820,16 +887,7 @@ const ProductListPage = () => {
                 <button
                   type="button"
                   disabled={selectedProductIds.length === 0}
-                  onClick={() => {
-                    if (window.confirm(`Xóa ${selectedProductIds.length} sản phẩm đã chọn?`)) {
-                      Promise.all(selectedProductIds.map((id) => productService.deleteProduct(id)))
-                        .then(() => {
-                          showToast('success', `Đã xóa ${selectedProductIds.length} sản phẩm thành công!`);
-                          setSelectedProductIds([]);
-                          fetchProducts();
-                        });
-                    }
-                  }}
+                  onClick={handleBulkDeleteProducts}
                   className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:bg-slate-100 disabled:opacity-30 transition cursor-pointer"
                   title="Xóa các mục đã chọn"
                 >
@@ -1709,6 +1767,19 @@ const ProductListPage = () => {
           </div>
         </div>
       )}
+
+      {/* ================= CUSTOM CONFIRMATION POPUP MODAL ================= */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

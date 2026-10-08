@@ -3,6 +3,7 @@ import { userService } from '../../services/user.service.js';
 import { authService } from '../../services/auth.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Users,
   ShieldCheck,
@@ -97,6 +98,18 @@ const UserManagementPage = () => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarInputRef = useRef(null);
   const { showToast } = useToast();
+
+  // Custom Confirm Dialog State
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Load danh sách người dùng
   const fetchUsers = async () => {
@@ -280,37 +293,61 @@ const UserManagementPage = () => {
   };
 
   // Reset mật khẩu nhanh
-  const handleResetPasswordQuick = async () => {
+  const handleResetPasswordQuick = () => {
     if (!selectedUser) return;
-    if (!window.confirm(`Bạn có chắc muốn đặt lại mật khẩu của [${selectedUser.full_name}] về mặc định là 123456?`)) return;
-
-    try {
-      const res = await userService.resetPassword(selectedUser._id, '123456');
-      if (res.success) {
-        showToast('success', `Đã đặt lại mật khẩu về mặc định: 123456`);
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Đặt lại mật khẩu',
+      message: `Bạn có chắc muốn đặt lại mật khẩu của [${selectedUser.full_name}] về mặc định là 123456?`,
+      confirmText: 'Đặt lại mật khẩu',
+      cancelText: 'Hủy bỏ',
+      type: 'info',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await userService.resetPassword(selectedUser._id, '123456');
+          if (res.success) {
+            showToast('success', `Đã đặt lại mật khẩu về mặc định: 123456`);
+          }
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        } catch (err) {
+          setConfirmDialog((prev) => ({ ...prev, loading: false }));
+          showToast('error', err.message || 'Lỗi khi đặt lại mật khẩu');
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi đặt lại mật khẩu');
-    }
+    });
   };
 
   // Xóa tài khoản
-  const handleDeleteUser = async (user) => {
+  const handleDeleteUser = (user) => {
     if (user.username === 'admin') {
       showToast('warning', 'Không thể xóa tài khoản Quản trị viên hệ thống');
       return;
     }
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa tài khoản [${user.full_name}]?`)) return;
-
-    try {
-      const res = await userService.deleteUser(user._id);
-      if (res.success) {
-        showToast('success', res.message || 'Đã xóa tài khoản thành công');
-        setUsers((prev) => prev.filter((u) => u._id !== user._id));
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xác nhận xóa tài khoản',
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản [${user.full_name}]? Hành động này không thể hoàn tác.`,
+      confirmText: 'Xác nhận xóa',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await userService.deleteUser(user._id);
+          if (res.success) {
+            showToast('success', res.message || 'Đã xóa tài khoản thành công');
+            setUsers((prev) => prev.filter((u) => u._id !== user._id));
+          }
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        } catch (err) {
+          setConfirmDialog((prev) => ({ ...prev, loading: false }));
+          showToast('error', err.message || 'Lỗi khi xóa tài khoản');
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa tài khoản');
-    }
+    });
   };
 
   // Tích / Bỏ tích 1 quyền
@@ -1085,6 +1122,19 @@ const UserManagementPage = () => {
           </div>
         </div>
       )}
+
+      {/* ================= CUSTOM CONFIRMATION POPUP MODAL ================= */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };
