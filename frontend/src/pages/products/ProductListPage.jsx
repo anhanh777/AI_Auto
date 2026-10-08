@@ -19,6 +19,8 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Tag,
   X,
   Upload,
   Check,
@@ -73,12 +75,12 @@ const ProductListPage = () => {
   // Active Tab trong Modal Product (1: Thông tin cơ bản, 2: Truyền thông, 3: Giá, 4: Biến thể & Toppings)
   const [activeProductTab, setActiveProductTab] = useState(1);
 
-  // Form Sản phẩm
+  // Form Sản phẩm (Hỗ trợ Multi-Category)
   const [productForm, setProductForm] = useState({
     product_name: '',
     description: '',
     product_url: '',
-    category_id: '',
+    category_ids: [],
     sku: '',
     barcode: '',
     stock_physical: 100000,
@@ -95,6 +97,11 @@ const ProductListPage = () => {
     ai_selling_points: '',
     status: 'ACTIVE'
   });
+
+  // State Multi-Select Dropdown cho Danh mục
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [categoryDropdownSearch, setCategoryDropdownSearch] = useState('');
+  const categoryDropdownRef = useRef(null);
 
   // Form Danh mục
   const [categoryForm, setCategoryForm] = useState({
@@ -115,6 +122,50 @@ const ProductListPage = () => {
   const mainImageInputRef = useRef(null);
   const galleryImageInputRef = useRef(null);
   const catAvatarInputRef = useRef(null);
+
+  // Click outside cho Dropdown Danh mục Multi-select
+  useEffect(() => {
+    const handleClickOutsideCategoryDropdown = (e) => {
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(e.target)) {
+        setShowCategoryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutsideCategoryDropdown);
+    return () => document.removeEventListener('mousedown', handleClickOutsideCategoryDropdown);
+  }, []);
+
+  // Helpers xử lý Multi-Category
+  const handleToggleCategory = (catId) => {
+    setProductForm((prev) => {
+      const current = prev.category_ids || [];
+      const updated = current.includes(catId)
+        ? current.filter((id) => id !== catId)
+        : [...current, catId];
+      return { ...prev, category_ids: updated };
+    });
+  };
+
+  const handleRemoveCategoryTag = (catId, e) => {
+    if (e) e.stopPropagation();
+    setProductForm((prev) => ({
+      ...prev,
+      category_ids: (prev.category_ids || []).filter((id) => id !== catId)
+    }));
+  };
+
+  const handleSelectAllCategories = () => {
+    setProductForm((prev) => ({
+      ...prev,
+      category_ids: categories.map((c) => c._id)
+    }));
+  };
+
+  const handleClearAllCategories = () => {
+    setProductForm((prev) => ({
+      ...prev,
+      category_ids: []
+    }));
+  };
 
   // 1. Tải danh sách danh mục
   const fetchCategories = useCallback(async () => {
@@ -197,7 +248,7 @@ const ProductListPage = () => {
       product_name: '',
       description: '',
       product_url: '',
-      category_id: categories.length > 0 ? categories[0]._id : '',
+      category_ids: categories.length > 0 ? [categories[0]._id] : [],
       sku: randomSku,
       barcode: '',
       stock_physical: 100000,
@@ -223,11 +274,22 @@ const ProductListPage = () => {
   const handleOpenEditProduct = (prod) => {
     setEditingProduct(prod);
     setActiveProductTab(1);
+
+    // Chuẩn hóa mảng category_ids
+    let initialCatIds = [];
+    if (Array.isArray(prod.category_ids) && prod.category_ids.length > 0) {
+      initialCatIds = prod.category_ids.map((c) => (typeof c === 'object' && c._id ? c._id : c));
+    } else if (prod.category_id) {
+      initialCatIds = [typeof prod.category_id === 'object' && prod.category_id._id ? prod.category_id._id : prod.category_id];
+    } else if (categories.length > 0) {
+      initialCatIds = [categories[0]._id];
+    }
+
     setProductForm({
       product_name: prod.product_name || '',
       description: prod.description || '',
       product_url: prod.product_url || '',
-      category_id: prod.category_id?._id || prod.category_id || '',
+      category_ids: initialCatIds,
       sku: prod.sku || '',
       barcode: prod.barcode || '',
       stock_physical: prod.stock_physical || 0,
@@ -356,8 +418,8 @@ const ProductListPage = () => {
   // Submit Lưu Sản phẩm
   const handleSubmitProduct = async (e) => {
     e.preventDefault();
-    if (!productForm.product_name || !productForm.sku || !productForm.category_id) {
-      showToast('warning', 'Vui lòng nhập đầy đủ Tên sản phẩm, Mã SKU và Danh mục');
+    if (!productForm.product_name || !productForm.sku || !productForm.category_ids || productForm.category_ids.length === 0) {
+      showToast('warning', 'Vui lòng nhập Tên sản phẩm, Mã SKU và chọn ít nhất 1 Danh mục');
       return;
     }
 
@@ -1150,23 +1212,150 @@ const ProductListPage = () => {
                       />
                     </div>
 
-                    <div>
-                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                        DANH MỤC <span className="text-rose-500">*</span>
-                      </label>
-                      <select
-                        required
-                        value={productForm.category_id}
-                        onChange={(e) => setProductForm({ ...productForm, category_id: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                    {/* Multi-Category Selector */}
+                    <div className="relative" ref={categoryDropdownRef}>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-slate-700 dark:text-slate-300">
+                          DANH MỤC SẢN PHẨM <span className="text-rose-500">*</span>
+                        </label>
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                          ({productForm.category_ids?.length || 0} danh mục đã chọn)
+                        </span>
+                      </div>
+
+                      {/* Dropdown Trigger Button / Tag Display */}
+                      <div
+                        onClick={() => setShowCategoryDropdown((prev) => !prev)}
+                        className={`w-full min-h-[42px] p-2 bg-slate-50/70 dark:bg-slate-800 border rounded-xl cursor-pointer flex items-center justify-between gap-2 transition ${
+                          showCategoryDropdown
+                            ? 'border-[#f05a28] ring-1 ring-[#f05a28] bg-white dark:bg-slate-900'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                        }`}
                       >
-                        <option value="">-- Chọn danh mục --</option>
-                        {categories.map((c) => (
-                          <option key={c._id} value={c._id}>
-                            {c.category_name}
-                          </option>
-                        ))}
-                      </select>
+                        <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                          {productForm.category_ids && productForm.category_ids.length > 0 ? (
+                            productForm.category_ids.map((catId) => {
+                              const cat = categories.find((c) => c._id === catId);
+                              if (!cat) return null;
+                              return (
+                                <span
+                                  key={catId}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 dark:bg-orange-950/50 border border-orange-200 dark:border-orange-800/60 text-[#f05a28] text-xs font-semibold rounded-lg shadow-2xs animate-in fade-in"
+                                >
+                                  <Tag size={11} className="shrink-0" />
+                                  <span className="truncate max-w-[150px]">{cat.category_name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleRemoveCategoryTag(catId, e)}
+                                    className="p-0.5 hover:bg-orange-200/60 dark:hover:bg-orange-900/60 rounded-full text-orange-600 dark:text-orange-400 transition"
+                                    title="Xóa danh mục này"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </span>
+                              );
+                            })
+                          ) : (
+                            <span className="text-slate-400 text-sm pl-1 flex items-center gap-1.5">
+                              <Tag size={14} className="text-slate-400" />
+                              -- Chọn một hoặc nhiều danh mục --
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center space-x-1 shrink-0 text-slate-400">
+                          <ChevronDown
+                            size={16}
+                            className={`transition-transform duration-200 ${showCategoryDropdown ? 'rotate-180 text-[#f05a28]' : ''}`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Dropdown Menu Panel */}
+                      {showCategoryDropdown && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
+                          {/* Header / Search in Dropdown */}
+                          <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-2">
+                            <div className="relative">
+                              <input
+                                type="text"
+                                placeholder="Tìm danh mục..."
+                                value={categoryDropdownSearch}
+                                onChange={(e) => setCategoryDropdownSearch(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                              />
+                              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+
+                            <div className="flex items-center justify-between text-[11px] px-1 font-medium">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectAllCategories();
+                                }}
+                                className="text-[#f05a28] hover:underline cursor-pointer font-bold"
+                              >
+                                Chọn tất cả ({categories.length})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleClearAllCategories();
+                                }}
+                                className="text-slate-500 hover:text-rose-600 hover:underline cursor-pointer"
+                              >
+                                Bỏ chọn tất cả
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* List Danh mục có thể cuộn */}
+                          <div className="max-h-56 overflow-y-auto p-1.5 divide-y divide-slate-100 dark:divide-slate-800/40">
+                            {categories
+                              .filter((c) =>
+                                c.category_name.toLowerCase().includes(categoryDropdownSearch.toLowerCase())
+                              )
+                              .map((cat) => {
+                                const isSelected = (productForm.category_ids || []).includes(cat._id);
+                                return (
+                                  <div
+                                    key={cat._id}
+                                    onClick={() => handleToggleCategory(cat._id)}
+                                    className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition text-xs ${
+                                      isSelected
+                                        ? 'bg-orange-50/80 dark:bg-orange-950/30 text-[#f05a28] font-bold'
+                                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                    }`}
+                                  >
+                                    <div className="flex items-center space-x-2.5 min-w-0">
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={() => {}} // Handled by div onClick
+                                        className="rounded border-slate-300 text-[#f05a28] focus:ring-[#f05a28] cursor-pointer"
+                                      />
+                                      <span className="truncate">{cat.category_name}</span>
+                                    </div>
+                                    {isSelected && (
+                                      <Check size={14} className="text-[#f05a28] shrink-0 font-bold" />
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                            {categories.filter((c) =>
+                              c.category_name.toLowerCase().includes(categoryDropdownSearch.toLowerCase())
+                            ).length === 0 && (
+                              <div className="py-6 text-center text-xs text-slate-400">
+                                Không tìm thấy danh mục phù hợp
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Khung SKU & Mã Vạch & Tồn kho */}

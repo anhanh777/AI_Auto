@@ -11,10 +11,18 @@ const productSchema = new mongoose.Schema(
       ref: 'Business',
       required: [true, 'Doanh nghiệp là bắt buộc']
     },
-    category_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Category',
-      required: [true, 'Danh mục sản phẩm là bắt buộc']
+    category_ids: {
+      type: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Category'
+      }],
+      default: [],
+      validate: {
+        validator: function (v) {
+          return Array.isArray(v) && v.length > 0;
+        },
+        message: 'Sản phẩm phải thuộc ít nhất một danh mục'
+      }
     },
     sku: {
       type: String,
@@ -132,6 +140,6 @@ const productSchema = new mongoose.Schema(
 
 // Index tìm kiếm theo business_id và sku
 productSchema.index({ business_id: 1, sku: 1 }, { unique: true });
-productSchema.index({ business_id: 1, category_id: 1, status: 1 });
+productSchema.index({ business_id: 1, category_ids: 1, status: 1 });
 
 export const Product = mongoose.model('Product', productSchema);

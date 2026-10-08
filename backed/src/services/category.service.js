@@ -136,7 +136,7 @@ export const deleteCategoryService = async (categoryId, business_id) => {
   // Kiểm tra xem danh mục này có đang chứa sản phẩm nào không
   const productsCount = await Product.countDocuments({
     business_id: category.business_id,
-    category_id: categoryId
+    category_ids: { $in: [categoryId] }
   });
 
   if (productsCount > 0) {

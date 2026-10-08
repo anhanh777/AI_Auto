@@ -249,7 +249,7 @@ const seedDatabase = async () => {
     for (const p of sampleProductsData) {
       await Product.create({
         business_id: mainBusiness._id,
-        category_id: p.category_id,
+        category_ids: [p.category_id],
         sku: p.sku,
         product_name: p.product_name,
         slug: `${p.sku.toLowerCase()}-massage`,

@@ -33,7 +33,7 @@ export const getProductsService = async ({
   }
 
   if (category_id && category_id.trim() !== '') {
-    filter.category_id = category_id;
+    filter.category_ids = { $in: [category_id.trim()] };
   }
 
   if (status && status.trim() !== '') {
@@ -52,7 +52,7 @@ export const getProductsService = async ({
   const pagination = getPagination(page, limit, totalItems);
 
   const products = await Product.find(filter)
-    .populate('category_id', 'category_name slug image_url')
+    .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username')
     .sort({ created_at: -1 })
     .skip(pagination.skip)
@@ -93,7 +93,7 @@ export const getProductByIdService = async (productId, business_id) => {
   if (business_id) query.business_id = business_id;
 
   const product = await Product.findOne(query)
-    .populate('category_id', 'category_name slug image_url')
+    .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username');
 
   if (!product) {
@@ -108,6 +108,7 @@ export const getProductByIdService = async (productId, business_id) => {
 export const createProductService = async (data, userId) => {
   const {
     business_id,
+    category_ids = [],
     category_id,
     sku,
     barcode = '',
@@ -128,13 +129,19 @@ export const createProductService = async (data, userId) => {
   } = data;
 
   if (!business_id) throw new Error('business_id là bắt buộc');
-  if (!category_id) throw new Error('category_id là bắt buộc');
 
-  // 1. Kiểm tra danh mục
-  const category = await Category.findOne({ _id: category_id, business_id });
-  if (!category) {
+  // Chuẩn hóa mảng danh mục
+  let rawCatIds = Array.isArray(category_ids) && category_ids.length > 0 ? category_ids : (category_id ? [category_id] : []);
+  if (rawCatIds.length === 0) {
+    throw new Error('Sản phẩm phải thuộc ít nhất 1 danh mục');
+  }
+
+  // 1. Kiểm tra danh mục hợp lệ
+  const validCategories = await Category.find({ _id: { $in: rawCatIds }, business_id });
+  if (validCategories.length === 0) {
     throw new Error('Danh mục được chỉ định không tồn tại hoặc không thuộc doanh nghiệp này');
   }
+  const finalCatIds = validCategories.map((c) => c._id);
 
   // 2. Kiểm tra trùng SKU
   const existingSku = await Product.findOne({
@@ -165,7 +172,7 @@ export const createProductService = async (data, userId) => {
 
   const newProduct = await Product.create({
     business_id,
-    category_id,
+    category_ids: finalCatIds,
     sku: sku.trim().toUpperCase(),
     barcode: barcode.trim(),
     product_name: product_name.trim(),
@@ -189,7 +196,7 @@ export const createProductService = async (data, userId) => {
   });
 
   const populatedProduct = await Product.findById(newProduct._id)
-    .populate('category_id', 'category_name slug image_url')
+    .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username');
 
   return populatedProduct;
@@ -204,13 +211,17 @@ export const updateProductService = async (productId, data, userId) => {
     throw new Error('Không tìm thấy sản phẩm để cập nhật');
   }
 
-  if (data.category_id && data.category_id !== product.category_id.toString()) {
-    const category = await Category.findOne({
-      _id: data.category_id,
-      business_id: product.business_id
-    });
-    if (!category) throw new Error('Danh mục không hợp lệ');
-    product.category_id = data.category_id;
+  // Cập nhật danh sách danh mục
+  if (data.category_ids !== undefined || data.category_id !== undefined) {
+    let rawCatIds = Array.isArray(data.category_ids) ? data.category_ids : (data.category_id ? [data.category_id] : []);
+    if (rawCatIds.length > 0) {
+      const validCategories = await Category.find({
+        _id: { $in: rawCatIds },
+        business_id: product.business_id
+      });
+      if (validCategories.length === 0) throw new Error('Danh mục không hợp lệ');
+      product.category_ids = validCategories.map((c) => c._id);
+    }
   }
 
   if (data.sku && data.sku.trim().toUpperCase() !== product.sku) {
@@ -270,7 +281,7 @@ export const updateProductService = async (productId, data, userId) => {
   await product.save();
 
   const updatedProduct = await Product.findById(productId)
-    .populate('category_id', 'category_name slug image_url')
+    .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username');
 
   return updatedProduct;
