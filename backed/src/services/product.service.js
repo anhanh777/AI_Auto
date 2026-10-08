@@ -8,7 +8,7 @@ import { getPagination } from '../helpers/pagination.helper.js';
 export const getProductsService = async ({
   business_id,
   page = 1,
-  limit = 10,
+  limit = 20,
   search = '',
   category_id = '',
   status = '',
@@ -25,6 +25,7 @@ export const getProductsService = async ({
     filter.$or = [
       { product_name: searchRegex },
       { sku: searchRegex },
+      { barcode: searchRegex },
       { ai_selling_points: searchRegex },
       { description: searchRegex },
       { 'variants_json.sku_con': searchRegex }
@@ -51,7 +52,8 @@ export const getProductsService = async ({
   const pagination = getPagination(page, limit, totalItems);
 
   const products = await Product.find(filter)
-    .populate('category_id', 'category_name slug')
+    .populate('category_id', 'category_name slug image_url')
+    .populate('created_by', 'full_name avatar username')
     .sort({ created_at: -1 })
     .skip(pagination.skip)
     .limit(pagination.limit);
@@ -90,7 +92,10 @@ export const getProductByIdService = async (productId, business_id) => {
   const query = { _id: productId };
   if (business_id) query.business_id = business_id;
 
-  const product = await Product.findOne(query).populate('category_id', 'category_name slug');
+  const product = await Product.findOne(query)
+    .populate('category_id', 'category_name slug image_url')
+    .populate('created_by', 'full_name avatar username');
+
   if (!product) {
     throw new Error('Không tìm thấy sản phẩm');
   }
@@ -105,26 +110,33 @@ export const createProductService = async (data, userId) => {
     business_id,
     category_id,
     sku,
+    barcode = '',
     product_name,
+    product_url = '',
     base_price,
     sale_price,
+    cost_price = 0,
+    import_price = 0,
+    currency = 'VND',
+    weight = 0,
     variants_json = [],
     ai_selling_points = '',
     description = '',
     image_urls = [],
+    video_url = '',
     status = 'ACTIVE'
   } = data;
 
   if (!business_id) throw new Error('business_id là bắt buộc');
   if (!category_id) throw new Error('category_id là bắt buộc');
 
-  // 1. Kiểm tra danh mục có tồn tại trong doanh nghiệp không
+  // 1. Kiểm tra danh mục
   const category = await Category.findOne({ _id: category_id, business_id });
   if (!category) {
     throw new Error('Danh mục được chỉ định không tồn tại hoặc không thuộc doanh nghiệp này');
   }
 
-  // 2. Kiểm tra trùng SKU trong cùng doanh nghiệp
+  // 2. Kiểm tra trùng SKU
   const existingSku = await Product.findOne({
     business_id,
     sku: sku.trim().toUpperCase()
@@ -133,7 +145,7 @@ export const createProductService = async (data, userId) => {
     throw new Error(`Mã SKU [${sku}] đã tồn tại trong doanh nghiệp này`);
   }
 
-  // 3. Tự động tính tổng tồn kho vật lý và khả dụng từ mảng biến thể (nếu có)
+  // 3. Tự động tính tổng tồn kho vật lý và khả dụng từ mảng biến thể
   let calculatedPhysicalStock = Number(data.stock_physical) || 0;
   let calculatedAvailableStock = Number(data.stock_available) || calculatedPhysicalStock;
 
@@ -142,7 +154,7 @@ export const createProductService = async (data, userId) => {
     calculatedAvailableStock = calculatedPhysicalStock;
   }
 
-  // Tự động chuyển status sang OUT_OF_STOCK nếu hết hàng
+  // Trạng thái
   let finalStatus = status;
   if (calculatedAvailableStock <= 0 && status === 'ACTIVE') {
     finalStatus = 'OUT_OF_STOCK';
@@ -155,24 +167,31 @@ export const createProductService = async (data, userId) => {
     business_id,
     category_id,
     sku: sku.trim().toUpperCase(),
+    barcode: barcode.trim(),
     product_name: product_name.trim(),
     slug: uniqueSlug,
+    product_url: product_url.trim(),
     base_price: Number(base_price),
-    sale_price: sale_price !== undefined && sale_price !== null ? Number(sale_price) : null,
+    sale_price: sale_price !== undefined && sale_price !== '' && sale_price !== null ? Number(sale_price) : null,
+    cost_price: Number(cost_price) || 0,
+    import_price: Number(import_price) || 0,
+    currency,
+    weight: Number(weight) || 0,
     stock_physical: calculatedPhysicalStock,
     stock_available: calculatedAvailableStock,
     variants_json: Array.isArray(variants_json) ? variants_json : [],
     ai_selling_points: ai_selling_points ? ai_selling_points.trim() : '',
     description: description ? description.trim() : '',
     image_urls: Array.isArray(image_urls) ? image_urls : [],
+    video_url: video_url ? video_url.trim() : '',
     status: finalStatus,
     created_by: userId || null
   });
 
-  const populatedProduct = await Product.findById(newProduct._id).populate(
-    'category_id',
-    'category_name slug'
-  );
+  const populatedProduct = await Product.findById(newProduct._id)
+    .populate('category_id', 'category_name slug image_url')
+    .populate('created_by', 'full_name avatar username');
+
   return populatedProduct;
 };
 
@@ -206,6 +225,14 @@ export const updateProductService = async (productId, data, userId) => {
     product.sku = data.sku.trim().toUpperCase();
   }
 
+  if (data.barcode !== undefined) product.barcode = data.barcode.trim();
+  if (data.product_url !== undefined) product.product_url = data.product_url.trim();
+  if (data.video_url !== undefined) product.video_url = data.video_url.trim();
+  if (data.cost_price !== undefined) product.cost_price = Number(data.cost_price) || 0;
+  if (data.import_price !== undefined) product.import_price = Number(data.import_price) || 0;
+  if (data.currency !== undefined) product.currency = data.currency;
+  if (data.weight !== undefined) product.weight = Number(data.weight) || 0;
+
   if (data.product_name) {
     product.product_name = data.product_name.trim();
     product.slug = `${createSlug(data.product_name)}-${product.sku.toLowerCase()}`;
@@ -213,7 +240,7 @@ export const updateProductService = async (productId, data, userId) => {
 
   if (data.base_price !== undefined) product.base_price = Number(data.base_price);
   if (data.sale_price !== undefined) {
-    product.sale_price = data.sale_price !== null ? Number(data.sale_price) : null;
+    product.sale_price = data.sale_price !== '' && data.sale_price !== null ? Number(data.sale_price) : null;
   }
 
   if (data.variants_json !== undefined && Array.isArray(data.variants_json)) {
@@ -236,20 +263,16 @@ export const updateProductService = async (productId, data, userId) => {
 
   if (data.status) {
     product.status = data.status;
-  } else if (product.stock_available <= 0 && product.status === 'ACTIVE') {
-    product.status = 'OUT_OF_STOCK';
-  } else if (product.stock_available > 0 && product.status === 'OUT_OF_STOCK') {
-    product.status = 'ACTIVE';
   }
 
   if (userId) product.updated_by = userId;
 
   await product.save();
 
-  const updatedProduct = await Product.findById(productId).populate(
-    'category_id',
-    'category_name slug'
-  );
+  const updatedProduct = await Product.findById(productId)
+    .populate('category_id', 'category_name slug image_url')
+    .populate('created_by', 'full_name avatar username');
+
   return updatedProduct;
 };
 
@@ -283,7 +306,6 @@ export const importStockService = async (productId, { variant_sku, quantity = 0,
     throw new Error('Số lượng nhập kho phải lớn hơn 0');
   }
 
-  // Nếu nhập cho biến thể cụ thể
   if (variant_sku && product.variants_json && product.variants_json.length > 0) {
     let found = false;
     product.variants_json = product.variants_json.map((v) => {
@@ -302,7 +324,6 @@ export const importStockService = async (productId, { variant_sku, quantity = 0,
     product.stock_physical = newTotal;
     product.stock_available = newTotal;
   } else {
-    // Nhập cho sản phẩm đơn
     product.stock_physical += importQty;
     product.stock_available += importQty;
   }

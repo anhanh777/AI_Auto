@@ -22,6 +22,11 @@ const productSchema = new mongoose.Schema(
       trim: true,
       uppercase: true
     },
+    barcode: {
+      type: String,
+      default: '',
+      trim: true
+    },
     product_name: {
       type: String,
       required: [true, 'Tên sản phẩm là bắt buộc'],
@@ -33,6 +38,11 @@ const productSchema = new mongoose.Schema(
       trim: true,
       lowercase: true
     },
+    product_url: {
+      type: String,
+      default: '',
+      trim: true
+    },
     base_price: {
       type: Number,
       required: [true, 'Giá bán niêm yết gốc là bắt buộc'],
@@ -42,6 +52,24 @@ const productSchema = new mongoose.Schema(
       type: Number,
       default: null,
       min: [0, 'Giá khuyến mãi không được âm']
+    },
+    cost_price: {
+      type: Number,
+      default: 0,
+      min: [0, 'Giá vốn không được âm']
+    },
+    import_price: {
+      type: Number,
+      default: 0,
+      min: [0, 'Giá nhập kho không được âm']
+    },
+    currency: {
+      type: String,
+      default: 'VND'
+    },
+    weight: {
+      type: Number,
+      default: 0 // đơn vị gram
     },
     stock_physical: {
       type: Number,
@@ -76,6 +104,10 @@ const productSchema = new mongoose.Schema(
     image_urls: {
       type: [String],
       default: []
+    },
+    video_url: {
+      type: String,
+      default: ''
     },
     status: {
       type: String,
