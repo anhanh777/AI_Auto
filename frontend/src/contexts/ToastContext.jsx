@@ -1,20 +1,28 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { CheckCircle2, AlertCircle, AlertTriangle, Info, X } from 'lucide-react';
+import { useNotification } from './NotificationContext.jsx';
 
 const ToastContext = createContext();
 
 export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
+  const { addNotification } = useNotification();
 
-  // Hàm hiển thị Toast (Tự động tắt sau duration ms, mặc định 3500ms)
-  const showToast = useCallback((type, message, duration = 3500) => {
+  // Hàm hiển thị Toast (Tự động tắt sau duration ms, mặc định 3500ms) và đồng bộ vào Chuông thông báo
+  const showToast = useCallback((type, message, duration = 3500, title = null, link = null) => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, type, message }]);
+
+    try {
+      addNotification({ title, message, type, link });
+    } catch (e) {
+      console.error('Lỗi khi ghi thông báo vào NotificationContext', e);
+    }
 
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, duration);
-  }, []);
+  }, [addNotification]);
 
   const removeToast = (id) => {
     setToasts(prev => prev.filter(t => t.id !== id));

@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useTheme } from '../../contexts/ThemeContext.jsx';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
+import { useNotification } from '../../contexts/NotificationContext.jsx';
 import { authService } from '../../services/auth.service.js';
 import {
   LayoutDashboard,
@@ -29,6 +30,10 @@ import {
   Languages,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  Info,
+  CheckCheck,
+  Trash2,
   X,
   Bot,
   BarChart3,
@@ -41,6 +46,14 @@ const MainLayout = () => {
   const { user, logout, hasPermission } = useAuth();
   const { theme, toggleTheme, isDark } = useTheme();
   const { businesses, activeBusiness, switchBusiness, createBusiness } = useBusiness();
+  const {
+    notifications,
+    unreadCount,
+    markAsRead,
+    markAllAsRead,
+    removeNotification,
+    clearAllNotifications
+  } = useNotification();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -66,6 +79,8 @@ const MainLayout = () => {
   const [showAppLauncher, setShowAppLauncher] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showBusinessDropdown, setShowBusinessDropdown] = useState(false);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState(false);
+  const [notificationTab, setNotificationTab] = useState('all'); // 'all' | 'unread'
   const [appSearch, setAppSearch] = useState('');
 
   // Modals state
@@ -90,6 +105,7 @@ const MainLayout = () => {
   const launcherRef = useRef(null);
   const userDropdownRef = useRef(null);
   const businessDropdownRef = useRef(null);
+  const notificationDropdownRef = useRef(null);
 
   // Đóng dropdown khi click ra ngoài
   useEffect(() => {
@@ -103,10 +119,37 @@ const MainLayout = () => {
       if (businessDropdownRef.current && !businessDropdownRef.current.contains(event.target)) {
         setShowBusinessDropdown(false);
       }
+      if (notificationDropdownRef.current && !notificationDropdownRef.current.contains(event.target)) {
+        setShowNotificationDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Format thời gian thông báo tương đối
+  const formatNotificationTime = (dateStr) => {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHours = Math.floor(diffMin / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffSec < 60) return 'Vừa xong';
+    if (diffMin < 60) return `${diffMin} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+
+    const d = String(date.getDate()).padStart(2, '0');
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const y = date.getFullYear();
+    const h = String(date.getHours()).padStart(2, '0');
+    const min = String(date.getMinutes()).padStart(2, '0');
+    return `${d}/${m}/${y} ${h}:${min}`;
+  };
 
   const togglePinApp = (e, appId) => {
     e.stopPropagation();
@@ -401,15 +444,195 @@ const MainLayout = () => {
             {isDark ? <Sun size={17} className="text-amber-400" /> : <Moon size={17} className="text-blue-300" />}
           </button>
 
-          {/* Chuông thông báo */}
-          <button
-            type="button"
-            className="p-1.5 sm:p-2 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition relative cursor-pointer"
-            title="Thông báo"
-          >
-            <Bell size={17} />
-            <span className="w-2 h-2 rounded-full bg-rose-500 absolute top-1.5 right-1.5"></span>
-          </button>
+          {/* ================= CHUÔNG THÔNG BÁO ================= */}
+          <div className="relative" ref={notificationDropdownRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNotificationDropdown(!showNotificationDropdown);
+                setShowUserDropdown(false);
+                setShowAppLauncher(false);
+                setShowBusinessDropdown(false);
+              }}
+              className={`p-1.5 sm:p-2 rounded-xl transition relative flex items-center justify-center cursor-pointer ${
+                showNotificationDropdown
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'hover:bg-white/10 text-slate-300 hover:text-white'
+              }`}
+              title="Trung tâm thông báo hệ thống"
+            >
+              <Bell size={17} />
+              {unreadCount > 0 && (
+                <span className="min-w-[18px] h-[18px] px-1 bg-rose-500 text-white rounded-full text-[10px] font-extrabold flex items-center justify-center absolute -top-1 -right-1 shadow-sm ring-2 ring-[#17234e] animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* DROPDOWN TRUNG TÂM THÔNG BÁO */}
+            {showNotificationDropdown && (
+              <div className="absolute top-12 right-0 w-[350px] sm:w-[420px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 py-3 text-slate-800 dark:text-slate-100 z-50 animate-fadeIn overflow-hidden">
+                {/* Header Dropdown */}
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                      Thông báo
+                    </h3>
+                    {unreadCount > 0 && (
+                      <span className="px-2 py-0.2 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 rounded-full text-[10px] font-bold border border-rose-200 dark:border-rose-900/40">
+                        {unreadCount} mới
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-1.5">
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={markAllAsRead}
+                        className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1 px-2 py-1 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-950/40 transition cursor-pointer"
+                        title="Đánh dấu tất cả là đã đọc"
+                      >
+                        <CheckCheck size={14} />
+                        <span>Đã đọc tất cả</span>
+                      </button>
+                    )}
+                    {notifications.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={clearAllNotifications}
+                        className="text-[11px] font-semibold text-slate-400 hover:text-rose-500 flex items-center space-x-1 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer"
+                        title="Xóa toàn bộ lịch sử thông báo"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex items-center px-4 pt-2 border-b border-slate-100 dark:border-slate-700/80 bg-slate-50/50 dark:bg-slate-900/40 text-xs font-bold gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNotificationTab('all')}
+                    className={`pb-2 px-2.5 border-b-2 transition cursor-pointer ${
+                      notificationTab === 'all'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Tất cả ({notifications.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNotificationTab('unread')}
+                    className={`pb-2 px-2.5 border-b-2 transition cursor-pointer ${
+                      notificationTab === 'unread'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    Chưa đọc ({unreadCount})
+                  </button>
+                </div>
+
+                {/* Danh sách Thông báo */}
+                <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-700/50">
+                  {(() => {
+                    const filtered = notifications.filter(
+                      (n) => notificationTab === 'all' || !n.is_read
+                    );
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-10 px-4 text-center">
+                          <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center mx-auto mb-2 text-slate-400">
+                            <Bell size={22} />
+                          </div>
+                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                            Không có thông báo nào
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {notificationTab === 'unread'
+                              ? 'Bạn đã đọc hết tất cả các thông báo.'
+                              : 'Các thông báo và cập nhật mới sẽ hiển thị tại đây.'}
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return filtered.map((item) => {
+                      const isUnread = !item.is_read;
+
+                      const getIcon = () => {
+                        switch (item.type) {
+                          case 'success':
+                            return <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />;
+                          case 'error':
+                            return <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />;
+                          case 'warning':
+                            return <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />;
+                          default:
+                            return <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />;
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={item.id}
+                          onClick={() => {
+                            markAsRead(item.id);
+                            if (item.link) {
+                              navigate(item.link);
+                              setShowNotificationDropdown(false);
+                            }
+                          }}
+                          className={`p-3.5 transition flex items-start justify-between gap-2.5 cursor-pointer group ${
+                            isUnread
+                              ? 'bg-blue-50/50 dark:bg-blue-950/20 hover:bg-blue-50/80 dark:hover:bg-blue-950/40'
+                              : 'hover:bg-slate-50 dark:hover:bg-slate-700/30'
+                          }`}
+                        >
+                          <div className="flex items-start space-x-3 min-w-0 flex-1">
+                            {getIcon()}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center space-x-1.5">
+                                <h4 className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
+                                  {item.title}
+                                </h4>
+                                {isUnread && (
+                                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 leading-relaxed break-words">
+                                {item.message}
+                              </p>
+                              <span className="text-[10px] text-slate-400 mt-1.5 block">
+                                {formatNotificationTime(item.created_at)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Nút xóa 1 thông báo */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeNotification(item.id);
+                            }}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-white dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
+                            title="Xóa thông báo này"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
 
           <div className="h-4 w-px bg-white/20"></div>
 
