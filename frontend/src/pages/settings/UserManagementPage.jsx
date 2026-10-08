@@ -196,7 +196,6 @@ const UserManagementPage = () => {
       const res = await uploadService.uploadSingle(file, 'avatars');
       if (res.success) {
         setFormData((prev) => ({ ...prev, avatar: res.data.url }));
-        showToast('success', 'Đã tải lên ảnh đại diện thành công!');
       }
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi upload ảnh');

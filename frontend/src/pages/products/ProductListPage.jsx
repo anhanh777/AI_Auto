@@ -272,7 +272,6 @@ const ProductListPage = () => {
           const others = prev.image_urls.filter((_, idx) => idx !== 0);
           return { ...prev, image_urls: [res.data.url, ...others] };
         });
-        showToast('success', 'Đã tải lên hình ảnh chính thành công!');
       }
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi tải ảnh');
@@ -296,7 +295,6 @@ const ProductListPage = () => {
             ...prev,
             image_urls: [...prev.image_urls, res.data.url]
           }));
-          showToast('success', 'Đã thêm ảnh vào album thành công!');
         }
       } else {
         const res = await uploadService.uploadMultiple(files, 'products');
@@ -306,7 +304,6 @@ const ProductListPage = () => {
             ...prev,
             image_urls: [...prev.image_urls, ...newUrls]
           }));
-          showToast('success', `Đã thêm ${newUrls.length} ảnh vào album thành công!`);
         }
       }
     } catch (err) {
@@ -473,7 +470,6 @@ const ProductListPage = () => {
       const res = await uploadService.uploadSingle(file, 'categories');
       if (res.success && res.data?.url) {
         setCategoryForm((prev) => ({ ...prev, image_url: res.data.url }));
-        showToast('success', 'Đã tải lên ảnh danh mục thành công!');
       }
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi tải ảnh danh mục');
