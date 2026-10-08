@@ -218,7 +218,7 @@ const UserManagementPage = () => {
       if (res.success) {
         showToast(
           'success',
-          `Đã ${updatedStatus ? 'kích hoạt' : 'tạm khóa'} tài khoản [${user.full_name}]`
+          `Đã ${updatedStatus ? 'kích hoạt' : 'tạm khóa'} tài khoản ${user.full_name}`
         );
         setUsers((prev) =>
           prev.map((u) => (u._id === user._id ? { ...u, is_active: updatedStatus } : u))
@@ -298,7 +298,7 @@ const UserManagementPage = () => {
     setConfirmDialog({
       isOpen: true,
       title: 'Đặt lại mật khẩu',
-      message: `Bạn có chắc muốn đặt lại mật khẩu của [${selectedUser.full_name}] về mặc định là 123456?`,
+      message: `Bạn có chắc muốn đặt lại mật khẩu của ${selectedUser.full_name} về mặc định là 123456?`,
       confirmText: 'Đặt lại mật khẩu',
       cancelText: 'Hủy bỏ',
       type: 'info',
@@ -328,7 +328,7 @@ const UserManagementPage = () => {
     setConfirmDialog({
       isOpen: true,
       title: 'Xác nhận xóa tài khoản',
-      message: `Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản [${user.full_name}]? Hành động này không thể hoàn tác.`,
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản ${user.full_name}? Hành động này không thể hoàn tác.`,
       confirmText: 'Xác nhận xóa',
       cancelText: 'Hủy bỏ',
       type: 'danger',
@@ -404,14 +404,14 @@ const UserManagementPage = () => {
 
         const res = await userService.createUser(payload);
         if (res.success) {
-          showToast('success', `Tạo tài khoản thành viên [${formData.full_name}] thành công!`);
+          showToast('success', `Tạo tài khoản thành viên ${formData.full_name} thành công!`);
           setShowModal(false);
           fetchUsers();
         }
       } else {
         const res = await userService.updateUser(selectedUser._id, payload);
         if (res.success) {
-          showToast('success', `Cập nhật thông tin thành viên [${formData.full_name}] thành công!`);
+          showToast('success', `Cập nhật thông tin thành viên ${formData.full_name} thành công!`);
           setShowModal(false);
           fetchUsers();
         }

@@ -39,7 +39,7 @@ export const getBusinessByIdService = async (businessId) => {
 export const createBusinessService = async (data, userId) => {
   const existingCode = await Business.findOne({ code: data.code.trim().toUpperCase() });
   if (existingCode) {
-    throw new Error(`Mã doanh nghiệp [${data.code}] đã tồn tại trong hệ thống`);
+    throw new Error(`Mã doanh nghiệp "${data.code}" đã tồn tại trong hệ thống`);
   }
 
   const newBusiness = await Business.create({
@@ -73,7 +73,7 @@ export const updateBusinessService = async (businessId, data, userId) => {
       _id: { $ne: businessId }
     });
     if (existingCode) {
-      throw new Error(`Mã doanh nghiệp [${data.code}] đã được sử dụng`);
+      throw new Error(`Mã doanh nghiệp "${data.code}" đã được sử dụng`);
     }
     business.code = data.code.trim().toUpperCase();
   }

@@ -142,7 +142,7 @@ export const createProductService = async (data, userId) => {
     sku: sku.trim().toUpperCase()
   });
   if (existingSku) {
-    throw new Error(`Mã SKU [${sku}] đã tồn tại trong doanh nghiệp này`);
+    throw new Error(`Mã SKU "${sku}" đã tồn tại trong doanh nghiệp này`);
   }
 
   // 3. Tự động tính tổng tồn kho vật lý và khả dụng từ mảng biến thể
@@ -220,7 +220,7 @@ export const updateProductService = async (productId, data, userId) => {
       _id: { $ne: productId }
     });
     if (existingSku) {
-      throw new Error(`Mã SKU [${data.sku}] đã được sử dụng bởi sản phẩm khác`);
+      throw new Error(`Mã SKU "${data.sku}" đã được sử dụng bởi sản phẩm khác`);
     }
     product.sku = data.sku.trim().toUpperCase();
   }
@@ -289,7 +289,7 @@ export const deleteProductService = async (productId, business_id) => {
   }
 
   await Product.findByIdAndDelete(productId);
-  return { success: true, message: `Đã xóa sản phẩm [${product.product_name}] thành công` };
+  return { success: true, message: `Đã xóa sản phẩm "${product.product_name}" thành công` };
 };
 
 /**
@@ -317,7 +317,7 @@ export const importStockService = async (productId, { variant_sku, quantity = 0,
     });
 
     if (!found) {
-      throw new Error(`Không tìm thấy biến thể có mã [${variant_sku}]`);
+      throw new Error(`Không tìm thấy biến thể có mã "${variant_sku}"`);
     }
 
     const newTotal = product.variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);

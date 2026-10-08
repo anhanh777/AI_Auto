@@ -141,10 +141,10 @@ export const deleteCategoryService = async (categoryId, business_id) => {
 
   if (productsCount > 0) {
     throw new Error(
-      `Không thể xóa danh mục [${category.category_name}] vì đang có ${productsCount} sản phẩm trực thuộc. Vui lòng chuyển hoặc xóa sản phẩm trước.`
+      `Không thể xóa danh mục "${category.category_name}" vì đang có ${productsCount} sản phẩm trực thuộc. Vui lòng chuyển hoặc xóa sản phẩm trước.`
     );
   }
 
   await Category.findByIdAndDelete(categoryId);
-  return { success: true, message: `Đã xóa danh mục [${category.category_name}] thành công` };
+  return { success: true, message: `Đã xóa danh mục "${category.category_name}" thành công` };
 };

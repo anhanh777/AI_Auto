@@ -84,7 +84,7 @@ const RolesPermissionsPage = () => {
     try {
       const res = await authService.updateRolePermissions(selectedRole._id, selectedPermissions);
       if (res.success) {
-        showToast('success', `Đã cập nhật phân quyền thành công cho vai trò: [${selectedRole.name}]`);
+        showToast('success', `Đã cập nhật phân quyền thành công cho vai trò: ${selectedRole.name}`);
         setRoles(roles.map(r => r._id === selectedRole._id ? { ...r, permissions: selectedPermissions } : r));
       }
     } catch (err) {

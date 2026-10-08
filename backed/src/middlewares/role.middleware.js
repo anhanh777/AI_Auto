@@ -30,7 +30,7 @@ export const hasPermission = (requiredPermission) => {
     // 3. Không đủ quyền -> Chặn lại và báo lỗi 403
     return sendError(
       res,
-      `Bạn không có quyền: [${requiredPermission}] để thực hiện thao tác này`,
+      `Bạn không có quyền ${requiredPermission} để thực hiện thao tác này`,
       null,
       403
     );

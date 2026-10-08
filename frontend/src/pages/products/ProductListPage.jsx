@@ -384,10 +384,10 @@ const ProductListPage = () => {
 
       if (editingProduct) {
         await productService.updateProduct(editingProduct._id, payload);
-        showToast('success', `Cập nhật sản phẩm [${payload.product_name}] thành công!`);
+        showToast('success', `Cập nhật sản phẩm ${payload.product_name} thành công!`);
       } else {
         await productService.createProduct(payload);
-        showToast('success', `Thêm mới sản phẩm [${payload.product_name}] thành công!`);
+        showToast('success', `Thêm mới sản phẩm ${payload.product_name} thành công!`);
       }
 
       setShowProductModal(false);
@@ -404,7 +404,7 @@ const ProductListPage = () => {
     setConfirmDialog({
       isOpen: true,
       title: 'Xác nhận xóa sản phẩm',
-      message: `Bạn có chắc chắn muốn xóa vĩnh viễn sản phẩm [${prod.product_name}]? Hành động này không thể hoàn tác.`,
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn sản phẩm "${prod.product_name}"? Hành động này không thể hoàn tác.`,
       confirmText: 'Xác nhận xóa',
       cancelText: 'Hủy bỏ',
       type: 'danger',
@@ -413,7 +413,7 @@ const ProductListPage = () => {
         try {
           setConfirmDialog((prev) => ({ ...prev, loading: true }));
           await productService.deleteProduct(prod._id);
-          showToast('success', `Đã xóa sản phẩm [${prod.product_name}] thành công!`);
+          showToast('success', `Đã xóa sản phẩm "${prod.product_name}" thành công!`);
           setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
           fetchProducts();
         } catch (err) {
@@ -429,7 +429,7 @@ const ProductListPage = () => {
     try {
       const nextStatus = prod.status === 'ACTIVE' ? 'HIDDEN' : 'ACTIVE';
       await productService.updateProduct(prod._id, { status: nextStatus });
-      showToast('success', `Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'tạm ẩn'} sản phẩm [${prod.product_name}]`);
+      showToast('success', `Đã ${nextStatus === 'ACTIVE' ? 'kích hoạt' : 'tạm ẩn'} sản phẩm "${prod.product_name}"`);
       fetchProducts();
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi cập nhật trạng thái');
@@ -491,10 +491,10 @@ const ProductListPage = () => {
       setSubmittingCategory(true);
       if (editingCategory) {
         await categoryService.updateCategory(editingCategory._id, categoryForm);
-        showToast('success', `Cập nhật danh mục [${categoryForm.category_name}] thành công!`);
+        showToast('success', `Cập nhật danh mục ${categoryForm.category_name} thành công!`);
       } else {
         await categoryService.createCategory(categoryForm);
-        showToast('success', `Thêm mới danh mục [${categoryForm.category_name}] thành công!`);
+        showToast('success', `Thêm mới danh mục ${categoryForm.category_name} thành công!`);
       }
       setShowCategoryModal(false);
       fetchCategories();
@@ -510,7 +510,7 @@ const ProductListPage = () => {
     setConfirmDialog({
       isOpen: true,
       title: 'Xác nhận xóa danh mục',
-      message: `Bạn có chắc chắn muốn xóa danh mục [${cat.category_name}]? Hành động này sẽ kiểm tra an toàn và không thể hoàn tác.`,
+      message: `Bạn có chắc chắn muốn xóa danh mục "${cat.category_name}"? Hành động này sẽ kiểm tra an toàn và không thể hoàn tác.`,
       confirmText: 'Xác nhận xóa',
       cancelText: 'Hủy bỏ',
       type: 'danger',
@@ -519,7 +519,7 @@ const ProductListPage = () => {
         try {
           setConfirmDialog((prev) => ({ ...prev, loading: true }));
           await categoryService.deleteCategory(cat._id);
-          showToast('success', `Đã xóa danh mục [${cat.category_name}] thành công!`);
+          showToast('success', `Đã xóa danh mục "${cat.category_name}" thành công!`);
           setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
           fetchCategories();
         } catch (err) {
