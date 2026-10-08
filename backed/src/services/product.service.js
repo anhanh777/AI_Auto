@@ -152,14 +152,18 @@ export const createProductService = async (data, userId) => {
     throw new Error(`Mã SKU "${sku}" đã tồn tại trong doanh nghiệp này`);
   }
 
-  // 3. Tự động tính tổng tồn kho vật lý và khả dụng từ mảng biến thể
-  let calculatedPhysicalStock = Number(data.stock_physical) || 0;
-  let calculatedAvailableStock = Number(data.stock_available) || calculatedPhysicalStock;
+  // 3. Tồn kho vật lý và khả dụng
+  let calculatedPhysicalStock =
+    data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== ''
+      ? Number(data.stock_physical)
+      : Array.isArray(variants_json) && variants_json.length > 0
+      ? variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0)
+      : 0;
 
-  if (Array.isArray(variants_json) && variants_json.length > 0) {
-    calculatedPhysicalStock = variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-    calculatedAvailableStock = calculatedPhysicalStock;
-  }
+  let calculatedAvailableStock =
+    data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== ''
+      ? Number(data.stock_available)
+      : calculatedPhysicalStock;
 
   // Trạng thái
   let finalStatus = status;
@@ -256,14 +260,18 @@ export const updateProductService = async (productId, data, userId) => {
 
   if (data.variants_json !== undefined && Array.isArray(data.variants_json)) {
     product.variants_json = data.variants_json;
-    if (data.variants_json.length > 0) {
-      const sumStock = data.variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
-      product.stock_physical = sumStock;
-      product.stock_available = sumStock;
-    }
-  } else {
-    if (data.stock_physical !== undefined) product.stock_physical = Number(data.stock_physical);
-    if (data.stock_available !== undefined) product.stock_available = Number(data.stock_available);
+  }
+
+  if (data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== '') {
+    product.stock_physical = Number(data.stock_physical);
+  } else if (data.variants_json && data.variants_json.length > 0) {
+    product.stock_physical = data.variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+  }
+
+  if (data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== '') {
+    product.stock_available = Number(data.stock_available);
+  } else if (data.variants_json && data.variants_json.length > 0 && data.stock_physical === undefined) {
+    product.stock_available = product.stock_physical;
   }
 
   if (data.ai_selling_points !== undefined) product.ai_selling_points = data.ai_selling_points;
