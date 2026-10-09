@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { productService } from '../../services/product.service.js';
 import { categoryService } from '../../services/category.service.js';
 import { uploadService } from '../../services/upload.service.js';
+import { generateSku, generateSlug } from '../../utils/slug.utils.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Package,
@@ -1400,9 +1401,24 @@ const ProductListPage = () => {
                     <div className="p-4 bg-slate-50/40 dark:bg-slate-800/50 rounded-2xl border border-slate-200/80 dark:border-slate-700 space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            SKU (MÃ SẢN PHẨM) <span className="text-rose-500">*</span>
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 dark:text-slate-300">
+                              SKU (MÃ SẢN PHẨM) <span className="text-rose-500">*</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const autoSku = generateSku(productForm.product_name) || `SKU${Math.floor(1000 + Math.random() * 9000)}`;
+                                setProductForm((prev) => ({ ...prev, sku: autoSku }));
+                                showToast('info', `Đã tạo SKU tự động: ${autoSku}`);
+                              }}
+                              className="text-[10px] text-[#f05a28] hover:underline font-bold flex items-center space-x-0.5 cursor-pointer"
+                              title="Tự động tạo mã SKU chuẩn từ tên sản phẩm"
+                            >
+                              <Sparkles size={11} />
+                              <span>Tạo SKU từ Tên</span>
+                            </button>
+                          </div>
                           <input
                             type="text"
                             required

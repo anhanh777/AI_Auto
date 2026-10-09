@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import { generateBusinessCode } from '../../utils/slug.utils.js';
 import {
   X,
   LogIn,
@@ -13,7 +14,8 @@ import {
   ShieldCheck,
   UploadCloud,
   Trash2,
-  Image as ImageIcon
+  Image as ImageIcon,
+  RefreshCw
 } from 'lucide-react';
 
 const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) => {
@@ -22,6 +24,7 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
   const [step, setStep] = useState(defaultStep); // 'select' | 'join' | 'create'
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isCodeManual, setIsCodeManual] = useState(false);
   const fileInputRef = useRef(null);
 
   // Form states
@@ -40,6 +43,7 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
   const handleClose = () => {
     setStep('select');
     setJoinCode('');
+    setIsCodeManual(false);
     setBizForm({
       business_name: '',
       code: '',
@@ -279,7 +283,14 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
                   required
                   placeholder="Ví dụ: Soulmade Premium, Tokyo Sneaker..."
                   value={bizForm.business_name}
-                  onChange={(e) => setBizForm({ ...bizForm, business_name: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBizForm((prev) => ({
+                      ...prev,
+                      business_name: val,
+                      code: isCodeManual ? prev.code : generateBusinessCode(val)
+                    }));
+                  }}
                   className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-[#f05a28] focus:outline-none"
                 />
               </div>
@@ -287,15 +298,42 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
               {/* Mã Code + Ngành Hàng */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Mã định danh (Code) *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Mã định danh (Code) *
+                    </label>
+                    {!isCodeManual ? (
+                      <span className="text-[10px] font-semibold text-[#f05a28] bg-orange-50 dark:bg-orange-950/40 px-1.5 py-0.5 rounded-md flex items-center space-x-1">
+                        <Sparkles size={10} />
+                        <span>Tự tạo</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCodeManual(false);
+                          setBizForm((prev) => ({
+                            ...prev,
+                            code: generateBusinessCode(prev.business_name)
+                          }));
+                        }}
+                        className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center space-x-1 cursor-pointer"
+                        title="Khôi phục tự động tạo theo Tên"
+                      >
+                        <RefreshCw size={10} />
+                        <span>Tự động lại</span>
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
                     required
-                    placeholder="VD:  SOULMADE_02"
+                    placeholder="VD: SOULMADE_02"
                     value={bizForm.code}
-                    onChange={(e) => setBizForm({ ...bizForm, code: e.target.value.toUpperCase() })}
+                    onChange={(e) => {
+                      setIsCodeManual(true);
+                      setBizForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }));
+                    }}
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono uppercase focus:ring-2 focus:ring-[#f05a28] focus:outline-none"
                   />
                 </div>
