@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
+import { useToast } from '../../contexts/ToastContext.jsx';
+import { businessService } from '../../services/business.service.js';
 import JoinOrCreateBusinessModal from '../../components/modals/JoinOrCreateBusinessModal.jsx';
 import {
   Building2,
@@ -16,18 +18,23 @@ import {
   Layers,
   ArrowRight,
   ShieldCheck,
-  RefreshCw
+  RefreshCw,
+  Archive,
+  RotateCcw,
+  Snowflake
 } from 'lucide-react';
 
 const DashboardPage = () => {
   const { user } = useAuth();
   const { businesses, activeBusiness, switchBusiness, loading, fetchBusinesses } = useBusiness();
+  const { showToast } = useToast();
   const navigate = useNavigate();
 
   const [search, setSearch] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [modalDefaultStep, setModalDefaultStep] = useState('select');
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Lọc doanh nghiệp theo từ khóa
   const filteredBusinesses = businesses.filter((b) => {
@@ -42,12 +49,44 @@ const DashboardPage = () => {
     );
   });
 
+  // Tách biệt danh sách đang hoạt động và danh sách đã lưu trữ (đóng băng)
+  const activeList = filteredBusinesses.filter((b) => b.is_active !== false);
+  const archivedList = filteredBusinesses.filter((b) => b.is_active === false);
+
   // Khi chọn truy cập vào 1 business -> Vào Trang Nhắn tin của Business đó
   const handleEnterBusiness = (biz, targetPath = '/livechat') => {
     switchBusiness(biz);
     navigate(targetPath);
   };
 
+  // Xử lý Lưu trữ (Đóng băng) hoặc Khôi phục hoạt động
+  const handleToggleArchive = async (biz, isArchiving) => {
+    const actionText = isArchiving ? 'Lưu trữ (Đóng băng)' : 'Khôi phục hoạt động';
+    if (
+      !window.confirm(
+        `Bạn có chắc muốn ${actionText} cho Doanh nghiệp "${biz.business_name || biz.name}"?`
+      )
+    )
+      return;
+
+    try {
+      setActionLoading(true);
+      const res = await businessService.toggleArchiveBusiness(biz._id);
+      if (res.data?.success || res.status === 200) {
+        showToast(
+          'success',
+          isArchiving
+            ? `Đã lưu trữ và đóng băng hoạt động của "${biz.business_name}"`
+            : `Đã khôi phục hoạt động cho "${biz.business_name}"`
+        );
+        if (fetchBusinesses) await fetchBusinesses();
+      }
+    } catch (err) {
+      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi cập nhật trạng thái');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -58,7 +97,7 @@ const DashboardPage = () => {
             Danh sách Business
           </h1>
           <span className="text-slate-400 font-semibold text-base sm:text-lg">
-            ({filteredBusinesses.length})
+            ({activeList.length})
           </span>
         </div>
 
@@ -75,7 +114,7 @@ const DashboardPage = () => {
             />
           </div>
 
-          {/* Nút Thêm Business (Mở 2 tùy chọn) */}
+          {/* Nút Thêm Business */}
           <button
             type="button"
             onClick={() => {
@@ -90,20 +129,20 @@ const DashboardPage = () => {
         </div>
       </div>
 
-      {/* 2. DANH SÁCH CARDS DOANH NGHIỆP (PORTAL CARDS) */}
+      {/* 2. DANH SÁCH CARDS DOANH NGHIỆP ĐANG HOẠT ĐỘNG */}
       {loading ? (
         <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-3">
           <RefreshCw size={28} className="animate-spin text-blue-600" />
           <p className="text-xs font-semibold">Đang tải danh sách không gian kinh doanh...</p>
         </div>
-      ) : filteredBusinesses.length === 0 ? (
+      ) : activeList.length === 0 ? (
         <div className="bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center space-y-4">
           <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 flex items-center justify-center mx-auto shadow-sm">
             <Store size={32} />
           </div>
           <div>
             <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-              Chưa có Business nào được kết nối
+              Chưa có Business nào đang hoạt động
             </h3>
             <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
               Bạn có thể tham gia vào một Business có sẵn bằng mã định danh hoặc tự khởi tạo một cửa hàng mới hoàn toàn.
@@ -132,20 +171,23 @@ const DashboardPage = () => {
         </div>
       ) : (
         <div className="space-y-3.5">
-          {filteredBusinesses.map((biz) => {
-            const isCurrentlyActive = activeBusiness?._id === biz._id;
+          {activeList.map((biz) => {
             const bizName = biz.business_name || biz.name;
             const bizCode = biz.code || 'BM';
             const bizIndustry = biz.industry || 'Bán lẻ - Thời trang & Phụ kiện';
-            const ownerName = biz.owner_id?.full_name || user?.full_name || 'Admin';
-            const ownerAvatar = biz.owner_id?.avatar || user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+            const ownerName = biz.owner_user_id?.full_name || biz.owner_id?.full_name || user?.full_name || 'Admin';
+            const ownerAvatar =
+              biz.owner_user_id?.avatar ||
+              biz.owner_id?.avatar ||
+              user?.avatar ||
+              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
 
             return (
               <div
                 key={biz._id}
                 className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-4 sm:p-5 shadow-sm hover:shadow-md transition duration-200 space-y-3.5 group"
               >
-                {/* Hàng trên: Logo + Tên + Mã Code + Kênh + Owner + Nút vào Cửa hàng */}
+                {/* Hàng trên: Logo + Tên + Mã Code + Kênh + Owner + Nút vào Cửa hàng + Nút Lưu trữ */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   {/* Bên trái: Avatar + Tên Shop + Ngành Hàng */}
                   <div
@@ -179,12 +221,12 @@ const DashboardPage = () => {
                     </div>
                   </div>
 
-                  {/* Bên phải: Kênh/Channels + Owner + Nút Vào Cửa Hàng / Vào Chat */}
-                  <div className="flex items-center justify-between md:justify-end space-x-4 sm:space-x-6 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-700 shrink-0">
-                    {/* Channels count */}
+                  {/* Bên phải: Kênh/Channels + Owner + Nút Vào Chat + Nút Lưu trữ */}
+                  <div className="flex items-center justify-between md:justify-end space-x-4 sm:space-x-5 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100 dark:border-slate-700 shrink-0">
+                    {/* Số lượng kênh Fanpage thực tế (Sửa triệt để bug 3 channels) */}
                     <div className="text-center px-2">
                       <span className="text-base sm:text-lg font-extrabold text-slate-800 dark:text-white">
-                        {biz.channels_count || 3}
+                        {biz.channels_count ?? 0}
                       </span>
                       <p className="text-[11px] text-slate-400 font-medium">Channels</p>
                     </div>
@@ -206,13 +248,26 @@ const DashboardPage = () => {
                       <button
                         type="button"
                         onClick={() => handleEnterBusiness(biz, '/livechat')}
-                        className="px-4 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 text-blue-600 hover:text-white dark:text-blue-300 dark:hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                        className="px-4 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 text-blue-600 hover:text-white dark:text-blue-300 dark:group-hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
                         title="Vào Nhắn tin của Doanh nghiệp"
                       >
                         <MessageSquare size={14} />
                         <span>Vào Chat</span>
                       </button>
 
+                      {/* Nút Lưu trữ (Archive) */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleArchive(biz, true);
+                        }}
+                        disabled={actionLoading}
+                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer shrink-0"
+                        title="Lưu trữ & Đóng băng hoạt động Business này"
+                      >
+                        <Archive size={15} />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -230,21 +285,70 @@ const DashboardPage = () => {
         </div>
       )}
 
-      {/* 3. MỤC DOANH NGHIỆP ĐÃ LƯU TRỮ */}
-      <div className="pt-2">
+      {/* 3. MỤC DOANH NGHIỆP ĐÃ LƯU TRỮ (ĐÓNG BĂNG HOẠT ĐỘNG) */}
+      <div className="pt-3">
         <button
           type="button"
           onClick={() => setShowArchived(!showArchived)}
-          className="flex items-center space-x-2 text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition cursor-pointer"
+          className="flex items-center space-x-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition cursor-pointer py-1"
         >
-          <Store size={15} />
-          <span>Danh sách Business đã lưu trữ</span>
+          <Archive size={16} className="text-amber-500" />
+          <span>Danh sách Business đã lưu trữ / Đóng băng</span>
+          <span className="px-2 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px]">
+            {archivedList.length}
+          </span>
           {showArchived ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         </button>
 
         {showArchived && (
-          <div className="mt-3 p-6 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-400">
-            Hiện chưa có doanh nghiệp nào trong mục lưu trữ.
+          <div className="mt-3 space-y-3 animate-fadeIn">
+            {archivedList.length === 0 ? (
+              <div className="p-6 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-400">
+                Hiện chưa có doanh nghiệp nào trong mục lưu trữ.
+              </div>
+            ) : (
+              archivedList.map((biz) => {
+                const bizName = biz.business_name || biz.name;
+                const bizCode = biz.code || 'BM';
+
+                return (
+                  <div
+                    key={biz._id}
+                    className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 flex items-center justify-between gap-4 opacity-80 hover:opacity-100 transition"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-slate-300 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold flex items-center justify-center shrink-0">
+                        {bizCode.substring(0, 2)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
+                            {bizName}
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold flex items-center space-x-1">
+                            <Snowflake size={10} />
+                            <span>Đã đóng băng</span>
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Mã: {bizCode} • {biz.channels_count ?? 0} Channels
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleArchive(biz, false)}
+                      disabled={actionLoading}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                    >
+                      <RotateCcw size={13} />
+                      <span>Khôi phục hoạt động</span>
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
         )}
       </div>

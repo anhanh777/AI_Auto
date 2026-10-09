@@ -1,7 +1,7 @@
-import { Business, User } from '../models/index.js';
+import { Business, User, Channel } from '../models/index.js';
 
 /**
- * Lấy danh sách doanh nghiệp
+ * Lấy danh sách doanh nghiệp (kèm channels_count thực tế)
  */
 export const getBusinessesService = async ({ search = '', is_active, userId, role }) => {
   const filter = {};
@@ -38,20 +38,60 @@ export const getBusinessesService = async ({ search = '', is_active, userId, rol
 
   const businesses = await Business.find(filter)
     .populate('owner_user_id', 'full_name email avatar')
-    .sort({ created_at: -1 });
+    .sort({ created_at: -1 })
+    .lean();
 
-  return businesses;
+  // Đếm chính xác số lượng kênh Fanpage thực tế cho từng Business
+  const businessesWithCounts = await Promise.all(
+    businesses.map(async (biz) => {
+      const count = await Channel.countDocuments({ business_id: biz._id });
+      return {
+        ...biz,
+        channels_count: count
+      };
+    })
+  );
+
+  return businessesWithCounts;
 };
 
 /**
  * Chi tiết doanh nghiệp theo ID
  */
 export const getBusinessByIdService = async (businessId) => {
-  const business = await Business.findById(businessId).populate('owner_user_id', 'full_name email avatar');
+  const business = await Business.findById(businessId).populate('owner_user_id', 'full_name email avatar').lean();
   if (!business) {
     throw new Error('Không tìm thấy doanh nghiệp');
   }
-  return business;
+  const count = await Channel.countDocuments({ business_id: businessId });
+  return {
+    ...business,
+    channels_count: count
+  };
+};
+
+/**
+ * Chuyển trạng thái Lưu trữ / Khôi phục Business (Đóng băng hoạt động)
+ */
+export const toggleArchiveBusinessService = async (businessId, userId) => {
+  const business = await Business.findById(businessId);
+  if (!business) {
+    throw new Error('Không tìm thấy doanh nghiệp');
+  }
+
+  const newActiveState = !business.is_active;
+  business.is_active = newActiveState;
+  business.status = newActiveState ? 'ACTIVE' : 'ARCHIVED';
+  if (userId) business.updated_by = userId;
+
+  await business.save();
+
+  return {
+    business,
+    message: newActiveState
+      ? `Đã khôi phục hoạt động cho "${business.business_name}"`
+      : `Đã chuyển "${business.business_name}" vào danh sách lưu trữ (Đóng băng hoạt động)`
+  };
 };
 
 /**
@@ -67,7 +107,7 @@ export const createBusinessService = async (data, userId) => {
   const newBusiness = await Business.create({
     business_name: data.business_name.trim(),
     code: cleanCode,
-    industry: data.industry || 'Thời trang & May mặc',
+    industry: data.industry || 'Bán lẻ - Thời trang & Phụ kiện',
     logo_url: data.logo_url || '',
     phone: data.phone || '',
     email: data.email || '',
@@ -103,7 +143,7 @@ export const joinBusinessByCodeService = async (code, userId) => {
   const cleanCode = code.trim().toUpperCase();
   const business = await Business.findOne({ code: cleanCode, is_active: true });
   if (!business) {
-    throw new Error(`Không tìm thấy Doanh nghiệp với mã "${cleanCode}" hoặc doanh nghiệp đã tạm ngưng`);
+    throw new Error(`Không tìm thấy Doanh nghiệp với mã "${cleanCode}" hoặc doanh nghiệp đã tạm ngưng/lưu trữ`);
   }
 
   if (!userId) {

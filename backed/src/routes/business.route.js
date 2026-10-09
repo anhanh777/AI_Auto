@@ -5,7 +5,8 @@ import {
   createBusiness,
   joinBusiness,
   updateBusiness,
-  deleteBusiness
+  deleteBusiness,
+  toggleArchiveBusiness
 } from '../controllers/business.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
@@ -21,6 +22,7 @@ businessRouter.get('/:id', getBusinessById);
 businessRouter.post('/', validateBody(validateBusinessInput), createBusiness);
 businessRouter.post('/join', joinBusiness);
 businessRouter.put('/:id', updateBusiness);
+businessRouter.put('/:id/archive', toggleArchiveBusiness);
 businessRouter.delete('/:id', deleteBusiness);
 
 export default businessRouter;

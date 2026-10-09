@@ -4,7 +4,8 @@ import {
   createBusinessService,
   joinBusinessByCodeService,
   updateBusinessService,
-  deleteBusinessService
+  deleteBusinessService,
+  toggleArchiveBusinessService
 } from '../services/business.service.js';
 import { sendSuccess, sendError } from '../utils/response.util.js';
 
@@ -53,6 +54,15 @@ export const updateBusiness = async (req, res) => {
   try {
     const updated = await updateBusinessService(req.params.id, req.body, req.user?._id);
     return sendSuccess(res, 'Cập nhật doanh nghiệp thành công', updated);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const toggleArchiveBusiness = async (req, res) => {
+  try {
+    const result = await toggleArchiveBusinessService(req.params.id, req.user?._id);
+    return sendSuccess(res, result.message, result.business);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

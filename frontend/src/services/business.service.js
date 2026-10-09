@@ -21,6 +21,10 @@ export const businessService = {
     return await apiClient.put(`/businesses/${id}`, data);
   },
 
+  toggleArchiveBusiness: async (id) => {
+    return await apiClient.put(`/businesses/${id}/archive`);
+  },
+
   deleteBusiness: async (id) => {
     return await apiClient.delete(`/businesses/${id}`);
   }
