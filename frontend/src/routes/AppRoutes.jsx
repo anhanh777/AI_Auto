@@ -30,6 +30,7 @@ const AppRoutes = () => {
 
           {/* 1. Nhắn tin (Channels, LiveChat & Messenger) */}
           <Route path="/livechat" element={<LiveChatPage />} />
+          <Route path="/chat" element={<LiveChatPage />} />
 
           {/* 2. Cấu hình Bot-Auto */}
           <Route path="/bot-auto" element={<BotAutoPage />} />
