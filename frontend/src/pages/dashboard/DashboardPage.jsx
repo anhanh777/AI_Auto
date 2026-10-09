@@ -20,8 +20,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Archive,
-  RotateCcw,
-  Snowflake
+  RotateCcw
 } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -56,7 +55,7 @@ const DashboardPage = () => {
     isArchiving: true,
   });
 
-  // Tách biệt danh sách đang hoạt động và danh sách đã lưu trữ (đóng băng)
+  // Tách biệt danh sách đang hoạt động và danh sách đã lưu trữ
   const activeList = filteredBusinesses.filter((b) => b.is_active !== false);
   const archivedList = filteredBusinesses.filter((b) => b.is_active === false);
 
@@ -76,7 +75,7 @@ const DashboardPage = () => {
     });
   };
 
-  // Xử lý thực hiện Lưu trữ (Đóng băng) hoặc Khôi phục hoạt động
+  // Xử lý thực hiện Lưu trữ hoặc Khôi phục hoạt động
   const handleConfirmArchive = async () => {
     const { biz, isArchiving } = archiveModal;
     if (!biz) return;
@@ -88,7 +87,7 @@ const DashboardPage = () => {
         showToast(
           'success',
           isArchiving
-            ? `Đã lưu trữ và đóng băng hoạt động của "${biz.business_name || biz.name}"`
+            ? `Đã lưu trữ "${biz.business_name || biz.name}"`
             : `Đã khôi phục hoạt động cho "${biz.business_name || biz.name}"`
         );
         setArchiveModal({ isOpen: false, biz: null, isArchiving: true });
@@ -274,7 +273,7 @@ const DashboardPage = () => {
                         onClick={(e) => openArchiveConfirm(biz, true, e)}
                         disabled={actionLoading}
                         className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer shrink-0"
-                        title="Lưu trữ & Đóng băng hoạt động Business này"
+                        title="Lưu trữ Business"
                       >
                         <Archive size={15} />
                       </button>
@@ -295,7 +294,7 @@ const DashboardPage = () => {
         </div>
       )}
 
-      {/* 3. MỤC DOANH NGHIỆP ĐÃ LƯU TRỮ (ĐÓNG BĂNG HOẠT ĐỘNG) */}
+      {/* 3. MỤC DOANH NGHIỆP ĐÃ LƯU TRỮ */}
       <div className="pt-3">
         <button
           type="button"
@@ -303,7 +302,7 @@ const DashboardPage = () => {
           className="flex items-center space-x-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 transition cursor-pointer py-1"
         >
           <Archive size={16} className="text-amber-500" />
-          <span>Danh sách Business đã lưu trữ / Đóng băng</span>
+          <span>Danh sách Business đã lưu trữ</span>
           <span className="px-2 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-[10px]">
             {archivedList.length}
           </span>
@@ -336,8 +335,8 @@ const DashboardPage = () => {
                             {bizName}
                           </h3>
                           <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 text-[10px] font-bold flex items-center space-x-1">
-                            <Snowflake size={10} />
-                            <span>Đã đóng băng</span>
+                            <Archive size={10} />
+                            <span>Đã lưu trữ</span>
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 mt-0.5">
@@ -363,7 +362,7 @@ const DashboardPage = () => {
         )}
       </div>
 
-      {/* CUSTOM MODAL XÁC NHẬN LƯU TRỮ / ĐÓNG BĂNG HOẶC KHÔI PHỤC */}
+      {/* CUSTOM MODAL XÁC NHẬN LƯU TRỮ HOẶC KHÔI PHỤC */}
       {archiveModal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 space-y-5 animate-scaleUp">
@@ -379,7 +378,7 @@ const DashboardPage = () => {
               </div>
               <div>
                 <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
-                  {archiveModal.isArchiving ? 'Lưu trữ & Đóng băng Business' : 'Khôi phục hoạt động Business'}
+                  {archiveModal.isArchiving ? 'Lưu trữ Business' : 'Khôi phục Business'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   Doanh nghiệp: <strong className="text-slate-800 dark:text-slate-200">{archiveModal.biz?.business_name || archiveModal.biz?.name}</strong>
@@ -390,7 +389,7 @@ const DashboardPage = () => {
             <div className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-2xl border border-slate-200/80 dark:border-slate-800 leading-relaxed">
               {archiveModal.isArchiving ? (
                 <span>
-                  Khi chuyển sang trạng thái <strong>Lưu trữ (Đóng băng)</strong>, mọi hoạt động của bot AI, xử lý tin nhắn và dữ liệu của Business này sẽ tạm ngưng. Bạn có thể khôi phục lại bất kỳ lúc nào ở danh sách lưu trữ bên dưới.
+                  Khi chuyển sang trạng thái <strong>Lưu trữ</strong>, mọi hoạt động của bot AI, xử lý tin nhắn và dữ liệu của Business này sẽ tạm ngưng. Bạn có thể khôi phục lại bất kỳ lúc nào ở danh sách lưu trữ bên dưới.
                 </span>
               ) : (
                 <span>
@@ -404,7 +403,7 @@ const DashboardPage = () => {
                 type="button"
                 onClick={() => setArchiveModal({ isOpen: false, biz: null, isArchiving: true })}
                 disabled={actionLoading}
-                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition"
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
               >
                 Huỷ bỏ
               </button>
@@ -412,7 +411,7 @@ const DashboardPage = () => {
                 type="button"
                 onClick={handleConfirmArchive}
                 disabled={actionLoading}
-                className={`px-4 py-2 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center space-x-1.5 ${
+                className={`px-4 py-2 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center space-x-1.5 cursor-pointer ${
                   archiveModal.isArchiving
                     ? 'bg-amber-600 hover:bg-amber-700'
                     : 'bg-emerald-600 hover:bg-emerald-700'
@@ -420,7 +419,7 @@ const DashboardPage = () => {
               >
                 {actionLoading && <RefreshCw size={14} className="animate-spin" />}
                 <span>
-                  {archiveModal.isArchiving ? 'Đồng ý Đóng băng' : 'Đồng ý Khôi phục'}
+                  {archiveModal.isArchiving ? 'Đồng ý Lưu trữ' : 'Đồng ý Khôi phục'}
                 </span>
               </button>
             </div>
