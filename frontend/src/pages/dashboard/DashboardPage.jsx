@@ -42,11 +42,12 @@ const DashboardPage = () => {
     );
   });
 
-  // Khi chọn truy cập vào 1 business -> Vào Trang chủ của Business đó (kênh chat & options)
-  const handleEnterBusiness = (biz, targetPath = '/business/home') => {
+  // Khi chọn truy cập vào 1 business -> Vào Trang Nhắn tin của Business đó
+  const handleEnterBusiness = (biz, targetPath = '/livechat') => {
     switchBusiness(biz);
     navigate(targetPath);
   };
+
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -204,13 +205,14 @@ const DashboardPage = () => {
                     <div className="flex items-center space-x-2">
                       <button
                         type="button"
-                        onClick={() => handleEnterBusiness(biz, '/business/home')}
+                        onClick={() => handleEnterBusiness(biz, '/livechat')}
                         className="px-4 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 text-blue-600 hover:text-white dark:text-blue-300 dark:hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
-                        title="Vào Trang chủ Doanh nghiệp (Kênh chat & Phân hệ quản lý)"
+                        title="Vào Nhắn tin của Doanh nghiệp"
                       >
                         <MessageSquare size={14} />
                         <span>Vào Chat</span>
                       </button>
+
                     </div>
                   </div>
                 </div>

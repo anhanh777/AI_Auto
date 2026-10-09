@@ -21,8 +21,9 @@ const AppRoutes = () => {
           {/* Cổng Doanh Nghiệp (Portal) */}
           <Route path="/dashboard" element={<DashboardPage />} />
 
-          {/* Trang chủ của Business đã chọn (Kênh chat Fanpage) */}
-          <Route path="/business/home" element={<BusinessHomePage />} />
+          {/* Trang chủ / Nhắn tin của Business đã chọn (Kênh chat Fanpage & LiveChat) */}
+          <Route path="/business/home" element={<Navigate to="/livechat" replace />} />
+
 
           {/* Hộp thư Live Chat / Nhắn tin */}
           <Route path="/livechat" element={<LiveChatPage />} />
