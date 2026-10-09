@@ -4,6 +4,7 @@ dotenv.config();
 
 import {
   Business,
+  Channel,
   Role,
   User,
   Category,
@@ -28,6 +29,7 @@ const seedDatabase = async () => {
     console.log('[Seeder] Đang làm sạch dữ liệu cũ...');
     await Promise.all([
       Business.deleteMany({}),
+      Channel.deleteMany({}),
       Role.deleteMany({}),
       User.deleteMany({}),
       Category.deleteMany({}),
@@ -127,6 +129,51 @@ const seedDatabase = async () => {
 
     user3.business_ids = [mainBusiness._id];
     await user3.save();
+
+    // 4.1. Nạp Bảng Channels (Khớp Biểu đồ Lớp Class Diagram)
+    console.log('[Seeder] 3.1/8. Đang tạo Kênh Chat (Channels)...');
+    await Channel.create([
+      {
+        business_id: mainBusiness._id,
+        page_id: 'soulmade.official.fanpage',
+        page_name: 'Soulmade Official - Fanpage Facebook',
+        platform: 'facebook',
+        avatar_url: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=150',
+        operating_mode: 'AI_AUTO',
+        is_active: true,
+        created_by: adminUser._id
+      },
+      {
+        business_id: mainBusiness._id,
+        page_id: 'soulmade.zalo.oa',
+        page_name: 'Soulmade Fashion - Zalo OA Doanh Nghiệp',
+        platform: 'zalo',
+        avatar_url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=150',
+        operating_mode: 'AI_AUTO',
+        is_active: true,
+        created_by: adminUser._id
+      },
+      {
+        business_id: mainBusiness._id,
+        page_id: 'soulmade.web.livechat',
+        page_name: 'Website LiveChat Widget (soulmade.vn)',
+        platform: 'web',
+        avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+        operating_mode: 'HYBRID',
+        is_active: true,
+        created_by: adminUser._id
+      },
+      {
+        business_id: secondBusiness._id,
+        page_id: 'aisales.cn2.facebook',
+        page_name: 'AI Sales Chi Nhánh 2 - Fanpage',
+        platform: 'facebook',
+        avatar_url: 'https://images.unsplash.com/photo-1542272604-780c96856592?w=150',
+        operating_mode: 'AI_AUTO',
+        is_active: true,
+        created_by: adminUser._id
+      }
+    ]);
 
     // 5. Nạp Bảng Categories (Bảng 3.31)
     console.log('[Seeder] 4/8. Đang tạo Categories...');
