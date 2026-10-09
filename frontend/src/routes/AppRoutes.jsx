@@ -10,6 +10,7 @@ import ProductListPage from '../pages/products/ProductListPage.jsx';
 import OrderListPage from '../pages/orders/OrderListPage.jsx';
 import KnowledgeBasePage from '../pages/knowledge/KnowledgeBasePage.jsx';
 import UserManagementPage from '../pages/settings/UserManagementPage.jsx';
+import BusinessSettingsPage from '../pages/settings/BusinessSettingsPage.jsx';
 import MainLayout from '../components/layout/MainLayout.jsx';
 import ProtectedRoute from '../components/guards/ProtectedRoute.jsx';
 
@@ -53,6 +54,9 @@ const AppRoutes = () => {
           {/* 8. Quản lý Thành viên */}
           <Route path="/settings/users" element={<UserManagementPage />} />
           <Route path="/settings/roles" element={<Navigate to="/settings/users" replace />} />
+
+          {/* 9. Quản lý Thông tin Doanh nghiệp */}
+          <Route path="/settings/business" element={<BusinessSettingsPage />} />
 
           {/* Chuyển hướng mặc định */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
