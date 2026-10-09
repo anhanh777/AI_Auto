@@ -75,7 +75,7 @@ const DashboardPage = () => {
     });
   };
 
-  // Xử lý thực hiện Lưu trữ hoặc Khôi phục hoạt động
+  // Xử lý thực hiện Lưu trữ hoặc Khôi phục hoạt động mượt mà
   const handleConfirmArchive = async () => {
     const { biz, isArchiving } = archiveModal;
     if (!biz) return;
@@ -83,18 +83,23 @@ const DashboardPage = () => {
     try {
       setActionLoading(true);
       const res = await businessService.toggleArchiveBusiness(biz._id);
-      if (res.data?.success || res.status === 200) {
-        showToast(
-          'success',
-          isArchiving
-            ? `Đã lưu trữ "${biz.business_name || biz.name}"`
-            : `Đã khôi phục hoạt động cho "${biz.business_name || biz.name}"`
-        );
-        setArchiveModal({ isOpen: false, biz: null, isArchiving: true });
-        if (fetchBusinesses) await fetchBusinesses();
+      
+      // Đóng modal ngay và thông báo thành công
+      setArchiveModal({ isOpen: false, biz: null, isArchiving: true });
+      showToast(
+        'success',
+        isArchiving
+          ? `Đã lưu trữ "${biz.business_name || biz.name}"`
+          : `Đã khôi phục hoạt động cho "${biz.business_name || biz.name}"`
+      );
+
+      // Cập nhật lại danh sách doanh nghiệp
+      if (fetchBusinesses) {
+        await fetchBusinesses();
       }
     } catch (err) {
-      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi cập nhật trạng thái');
+      const msg = err?.message || err?.response?.data?.message || 'Lỗi khi cập nhật trạng thái';
+      showToast('error', msg);
     } finally {
       setActionLoading(false);
     }

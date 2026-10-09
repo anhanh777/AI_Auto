@@ -90,7 +90,7 @@ export const toggleArchiveBusinessService = async (businessId, userId) => {
     business,
     message: newActiveState
       ? `Đã khôi phục hoạt động cho "${business.business_name}"`
-      : `Đã chuyển "${business.business_name}" vào danh sách lưu trữ (Đóng băng hoạt động)`
+      : `Đã chuyển "${business.business_name}" vào danh sách lưu trữ`
   };
 };
 
