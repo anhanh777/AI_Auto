@@ -2,6 +2,7 @@ import {
   getBusinessesService,
   getBusinessByIdService,
   createBusinessService,
+  joinBusinessByCodeService,
   updateBusinessService,
   deleteBusinessService
 } from '../services/business.service.js';
@@ -9,8 +10,22 @@ import { sendSuccess, sendError } from '../utils/response.util.js';
 
 export const getBusinesses = async (req, res) => {
   try {
-    const businesses = await getBusinessesService(req.query);
+    const businesses = await getBusinessesService({
+      ...req.query,
+      userId: req.user?._id,
+      role: req.user?.role
+    });
     return sendSuccess(res, 'Lấy danh sách doanh nghiệp thành công', businesses);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const joinBusiness = async (req, res) => {
+  try {
+    const { code } = req.body;
+    const business = await joinBusinessByCodeService(code, req.user?._id);
+    return sendSuccess(res, `Đã tham gia doanh nghiệp "${business.business_name}" thành công!`, business);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

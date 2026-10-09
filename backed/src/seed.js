@@ -95,9 +95,9 @@ const seedDatabase = async () => {
     // 4. Nạp Bảng Businesses (Bảng 3.23)
     console.log('[Seeder] 3/8. Đang tạo Doanh nghiệp mẫu (Business)...');
     const mainBusiness = await Business.create({
-      business_name: 'Soulmade Fashion & Beauty',
-      code: 'SOULMADE_STORE',
-      industry: 'Chăm sóc sắc đẹp & Thời trang',
+      business_name: 'Soulmade - Chạm cảm xúc, nâng tầm phong cách',
+      code: 'SOULMADE',
+      industry: 'Bán lẻ - Thời trang nam nữ',
       phone: '0901234567',
       email: 'contact@soulmade.vn',
       logo_url: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=150',
@@ -105,6 +105,28 @@ const seedDatabase = async () => {
       owner_user_id: adminUser._id,
       created_by: adminUser._id
     });
+
+    const secondBusiness = await Business.create({
+      business_name: 'AI Sales Fashion Store (Chi nhánh 2)',
+      code: 'AISALES_CN2',
+      industry: 'Thời trang công sở cao cấp',
+      phone: '0988776655',
+      email: 'store2@aisales.ai',
+      logo_url: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=150',
+      is_active: true,
+      owner_user_id: adminUser._id,
+      created_by: adminUser._id
+    });
+
+    // Cập nhật mảng business_ids cho Users
+    adminUser.business_ids = [mainBusiness._id, secondBusiness._id];
+    await adminUser.save();
+
+    staffUser.business_ids = [mainBusiness._id];
+    await staffUser.save();
+
+    user3.business_ids = [mainBusiness._id];
+    await user3.save();
 
     // 5. Nạp Bảng Categories (Bảng 3.31)
     console.log('[Seeder] 4/8. Đang tạo Categories...');

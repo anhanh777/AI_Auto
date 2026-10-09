@@ -3,6 +3,7 @@ import {
   getBusinesses,
   getBusinessById,
   createBusiness,
+  joinBusiness,
   updateBusiness,
   deleteBusiness
 } from '../controllers/business.controller.js';
@@ -18,6 +19,7 @@ businessRouter.use(authenticate);
 businessRouter.get('/', getBusinesses);
 businessRouter.get('/:id', getBusinessById);
 businessRouter.post('/', validateBody(validateBusinessInput), createBusiness);
+businessRouter.post('/join', joinBusiness);
 businessRouter.put('/:id', updateBusiness);
 businessRouter.delete('/:id', deleteBusiness);
 

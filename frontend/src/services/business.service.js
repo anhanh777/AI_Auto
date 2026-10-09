@@ -13,6 +13,10 @@ export const businessService = {
     return await apiClient.post('/businesses', data);
   },
 
+  joinBusiness: async (code) => {
+    return await apiClient.post('/businesses/join', { code });
+  },
+
   updateBusiness: async (id, data) => {
     return await apiClient.put(`/businesses/${id}`, data);
   },

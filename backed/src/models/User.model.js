@@ -8,6 +8,13 @@ const userSchema = new mongoose.Schema(
       ref: 'Role',
       required: [true, 'Vai trò người dùng là bắt buộc']
     },
+    business_ids: {
+      type: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Business'
+      }],
+      default: []
+    },
     username: {
       type: String,
       required: [true, 'Tên đăng nhập là bắt buộc'],

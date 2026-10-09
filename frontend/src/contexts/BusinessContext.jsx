@@ -56,9 +56,33 @@ export const BusinessProvider = ({ children }) => {
         return res.data;
       }
     } catch (error) {
-      showToast('error', error.message || 'Lỗi khi tạo cửa hàng mới');
+      const msg = error.response?.data?.message || error.message || 'Lỗi khi tạo cửa hàng mới';
+      showToast('error', msg);
       throw error;
     }
+  };
+
+  const joinBusiness = async (code) => {
+    try {
+      const res = await businessService.joinBusiness(code);
+      if (res.success) {
+        showToast('success', res.message || 'Tham gia doanh nghiệp thành công');
+        await fetchBusinesses();
+        if (res.data) {
+          switchBusiness(res.data);
+        }
+        return res.data;
+      }
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message || 'Lỗi khi tham gia doanh nghiệp';
+      showToast('error', msg);
+      throw error;
+    }
+  };
+
+  const exitBusiness = () => {
+    setActiveBusiness(null);
+    localStorage.removeItem('ai_sales_active_business_id');
   };
 
   return (
@@ -67,8 +91,10 @@ export const BusinessProvider = ({ children }) => {
         businesses,
         activeBusiness,
         switchBusiness,
+        exitBusiness,
         fetchBusinesses,
         createBusiness,
+        joinBusiness,
         loading
       }}
     >

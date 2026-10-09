@@ -1,24 +1,45 @@
-import { Business } from '../models/index.js';
+import { Business, User } from '../models/index.js';
 
 /**
  * Lấy danh sách doanh nghiệp
  */
-export const getBusinessesService = async ({ search = '', is_active }) => {
+export const getBusinessesService = async ({ search = '', is_active, userId, role }) => {
   const filter = {};
+
+  // Nếu không phải ADMIN tổng, chỉ lấy các business mà user sở hữu hoặc trực thuộc
+  if (userId && role !== 'ADMIN') {
+    const user = await User.findById(userId);
+    const userBizIds = user?.business_ids || [];
+    filter.$or = [
+      { owner_user_id: userId },
+      { _id: { $in: userBizIds } }
+    ];
+  }
+
   if (search && search.trim() !== '') {
     const searchRegex = new RegExp(search.trim(), 'i');
-    filter.$or = [
+    const searchConditions = [
       { business_name: searchRegex },
       { code: searchRegex },
       { industry: searchRegex },
       { email: searchRegex }
     ];
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: searchConditions }];
+      delete filter.$or;
+    } else {
+      filter.$or = searchConditions;
+    }
   }
+
   if (is_active !== undefined && is_active !== '') {
     filter.is_active = is_active === 'true' || is_active === true;
   }
 
-  const businesses = await Business.find(filter).sort({ created_at: -1 });
+  const businesses = await Business.find(filter)
+    .populate('owner_user_id', 'full_name email avatar')
+    .sort({ created_at: -1 });
+
   return businesses;
 };
 
@@ -26,7 +47,7 @@ export const getBusinessesService = async ({ search = '', is_active }) => {
  * Chi tiết doanh nghiệp theo ID
  */
 export const getBusinessByIdService = async (businessId) => {
-  const business = await Business.findById(businessId);
+  const business = await Business.findById(businessId).populate('owner_user_id', 'full_name email avatar');
   if (!business) {
     throw new Error('Không tìm thấy doanh nghiệp');
   }
@@ -34,17 +55,18 @@ export const getBusinessByIdService = async (businessId) => {
 };
 
 /**
- * Tạo mới doanh nghiệp
+ * Tạo mới doanh nghiệp và tự động gán vào mảng business_ids của User tạo
  */
 export const createBusinessService = async (data, userId) => {
-  const existingCode = await Business.findOne({ code: data.code.trim().toUpperCase() });
+  const cleanCode = data.code.trim().toUpperCase();
+  const existingCode = await Business.findOne({ code: cleanCode });
   if (existingCode) {
-    throw new Error(`Mã doanh nghiệp "${data.code}" đã tồn tại trong hệ thống`);
+    throw new Error(`Mã doanh nghiệp "${cleanCode}" đã tồn tại trong hệ thống`);
   }
 
   const newBusiness = await Business.create({
     business_name: data.business_name.trim(),
-    code: data.code.trim().toUpperCase(),
+    code: cleanCode,
     industry: data.industry || 'Thời trang & May mặc',
     logo_url: data.logo_url || '',
     phone: data.phone || '',
@@ -55,7 +77,60 @@ export const createBusinessService = async (data, userId) => {
     created_by: userId || null
   });
 
+  // Tự động thêm business_id vào tài khoản người tạo
+  if (userId) {
+    const user = await User.findById(userId);
+    if (user) {
+      if (!Array.isArray(user.business_ids)) user.business_ids = [];
+      if (!user.business_ids.some((id) => id.toString() === newBusiness._id.toString())) {
+        user.business_ids.push(newBusiness._id);
+        await user.save();
+      }
+    }
+  }
+
   return newBusiness;
+};
+
+/**
+ * Tham gia Doanh nghiệp theo Mã Code
+ */
+export const joinBusinessByCodeService = async (code, userId) => {
+  if (!code || code.trim() === '') {
+    throw new Error('Vui lòng nhập Mã doanh nghiệp');
+  }
+
+  const cleanCode = code.trim().toUpperCase();
+  const business = await Business.findOne({ code: cleanCode, is_active: true });
+  if (!business) {
+    throw new Error(`Không tìm thấy Doanh nghiệp với mã "${cleanCode}" hoặc doanh nghiệp đã tạm ngưng`);
+  }
+
+  if (!userId) {
+    throw new Error('Yêu cầu xác thực tài khoản để tham gia doanh nghiệp');
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error('Tài khoản người dùng không tồn tại');
+  }
+
+  if (!Array.isArray(user.business_ids)) {
+    user.business_ids = [];
+  }
+
+  const isAlreadyMember =
+    user.business_ids.some((id) => id.toString() === business._id.toString()) ||
+    business.owner_user_id?.toString() === userId.toString();
+
+  if (isAlreadyMember) {
+    throw new Error(`Bạn đã là thành viên của doanh nghiệp "${business.business_name}"`);
+  }
+
+  user.business_ids.push(business._id);
+  await user.save();
+
+  return business;
 };
 
 /**
