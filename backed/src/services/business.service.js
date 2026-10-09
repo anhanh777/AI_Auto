@@ -109,9 +109,13 @@ export const createBusinessService = async (data, userId) => {
     code: cleanCode,
     industry: data.industry || 'Bán lẻ - Thời trang & Phụ kiện',
     logo_url: data.logo_url || '',
-    phone: data.phone || '',
+    hotline: data.hotline || data.phone || '',
+    phone: data.phone || data.hotline || '',
     email: data.email || '',
+    address: data.address || '',
     gemini_api_key: data.gemini_api_key || '',
+    subscription_tier: data.subscription_tier || 'FREE',
+    status: data.status || (data.is_active === false ? 'ARCHIVED' : 'ACTIVE'),
     is_active: data.is_active !== undefined ? data.is_active : true,
     owner_user_id: userId || null,
     created_by: userId || null
@@ -196,10 +200,26 @@ export const updateBusinessService = async (businessId, data, userId) => {
   if (data.business_name) business.business_name = data.business_name.trim();
   if (data.industry) business.industry = data.industry.trim();
   if (data.logo_url !== undefined) business.logo_url = data.logo_url;
-  if (data.phone !== undefined) business.phone = data.phone;
+  if (data.hotline !== undefined) {
+    business.hotline = data.hotline;
+    business.phone = data.hotline;
+  }
+  if (data.phone !== undefined) {
+    business.phone = data.phone;
+    business.hotline = data.phone;
+  }
   if (data.email !== undefined) business.email = data.email;
+  if (data.address !== undefined) business.address = data.address;
   if (data.gemini_api_key !== undefined) business.gemini_api_key = data.gemini_api_key;
-  if (data.is_active !== undefined) business.is_active = data.is_active;
+  if (data.subscription_tier !== undefined) business.subscription_tier = data.subscription_tier;
+  if (data.status !== undefined) {
+    business.status = data.status;
+    business.is_active = data.status === 'ACTIVE';
+  }
+  if (data.is_active !== undefined) {
+    business.is_active = data.is_active;
+    business.status = data.is_active ? 'ACTIVE' : 'ARCHIVED';
+  }
   if (userId) business.updated_by = userId;
 
   await business.save();
