@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import {
   X,
-  Plus,
-  MessageSquare,
   Facebook,
-  Globe,
   Bot,
   Sparkles,
   ShieldCheck,
-  CheckCircle2
+  CheckCircle2,
+  KeyRound
 } from 'lucide-react';
 import { channelService } from '../../services/channel.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
@@ -30,7 +28,7 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.page_name || !form.page_id) {
-      showToast('warning', 'Vui lòng điền đầy đủ Tên kênh và ID kênh');
+      showToast('warning', 'Vui lòng điền đầy đủ Tên Fanpage và Page ID Facebook');
       return;
     }
 
@@ -38,10 +36,11 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
       setLoading(true);
       const res = await channelService.createChannel({
         ...form,
+        platform: 'facebook',
         business_id: businessId
       });
       if (res.success) {
-        showToast('success', 'Kết nối Kênh Chat mới thành công!');
+        showToast('success', 'Kết nối Fanpage Facebook mới thành công!');
         if (onChannelCreated) onChannelCreated(res.data);
         onClose();
         setForm({
@@ -54,7 +53,7 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
         });
       }
     } catch (error) {
-      const msg = error.response?.data?.message || error.message || 'Lỗi khi kết nối kênh';
+      const msg = error.response?.data?.message || error.message || 'Lỗi khi kết nối Fanpage';
       showToast('error', msg);
     } finally {
       setLoading(false);
@@ -74,79 +73,30 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
 
         <div className="mb-5">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold mb-2">
-            <MessageSquare size={14} />
-            <span>Kênh Tư Vấn Bán Hàng</span>
+            <Facebook size={14} />
+            <span>Kênh Fanpage Facebook</span>
           </div>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">
-            Kết Nối Kênh Chat Mới
+            Kết Nối Fanpage Facebook Mới
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">
-            Tích hợp Fanpage Facebook, Zalo OA hoặc LiveChat Widget vào hệ thống AI Sales
+            Tích hợp Fanpage Facebook để AI Bot tiếp nhận tin nhắn Messenger và chốt đơn tự động
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Nền tảng */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              Nền tảng kết nối *
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, platform: 'facebook' })}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center space-y-1 transition ${
-                  form.platform === 'facebook'
-                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-500 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                }`}
-              >
-                <Facebook size={18} className="text-blue-600" />
-                <span>Facebook</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, platform: 'zalo' })}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center space-y-1 transition ${
-                  form.platform === 'zalo'
-                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-500 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                }`}
-              >
-                <div className="w-5 h-5 rounded-full bg-blue-500 text-white text-[9px] font-black flex items-center justify-center">
-                  Z
-                </div>
-                <span>Zalo OA</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setForm({ ...form, platform: 'web' })}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center justify-center space-y-1 transition ${
-                  form.platform === 'web'
-                    ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-500 text-blue-600 dark:text-blue-400 ring-2 ring-blue-500/20'
-                    : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
-                }`}
-              >
-                <Globe size={18} className="text-emerald-500" />
-                <span>Web Widget</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Tên Kênh */}
+          {/* Tên Fanpage */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Tên Kênh / Fanpage / Tên Cửa Hàng *
+              Tên Fanpage Facebook *
             </label>
             <input
               type="text"
               required
-              placeholder="Ví dụ: Soulmade Official - Fanpage Facebook"
+              placeholder="Ví dụ: Soulmade Official - Thời trang cao cấp"
               value={form.page_name}
               onChange={(e) => setForm({ ...form, page_name: e.target.value })}
-              className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
             />
           </div>
 
@@ -154,7 +104,7 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                ID Kênh / Page ID *
+                Facebook Page ID *
               </label>
               <input
                 type="text"
@@ -169,7 +119,7 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
             {/* Chế độ vận hành */}
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Chế độ vận hành
+                Chế độ vận hành AI
               </label>
               <select
                 value={form.operating_mode}
@@ -186,15 +136,18 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
           {/* Access Token (Tùy chọn) */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Page Access Token / Secret Key (Tùy chọn)
+              Page Access Token (Tùy chọn)
             </label>
-            <input
-              type="password"
-              placeholder="EAAG... (Nhập token xác thực Webhook)"
-              value={form.access_token}
-              onChange={(e) => setForm({ ...form, access_token: e.target.value })}
-              className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
+            <div className="relative">
+              <KeyRound size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="password"
+                placeholder="EAAG... (Nhập token xác thực Webhook Graph API)"
+                value={form.access_token}
+                onChange={(e) => setForm({ ...form, access_token: e.target.value })}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
+              />
+            </div>
           </div>
 
           <div className="flex justify-end space-x-2.5 pt-3 border-t border-slate-100 dark:border-slate-700">

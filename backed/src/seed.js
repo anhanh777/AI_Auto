@@ -130,8 +130,8 @@ const seedDatabase = async () => {
     user3.business_ids = [mainBusiness._id];
     await user3.save();
 
-    // 4.1. Nạp Bảng Channels (Khớp Biểu đồ Lớp Class Diagram)
-    console.log('[Seeder] 3.1/8. Đang tạo Kênh Chat (Channels)...');
+    // 4.1. Nạp Bảng Channels (Khớp Biểu đồ Lớp Class Diagram - Kênh Facebook Fanpage)
+    console.log('[Seeder] 3.1/8. Đang tạo Kênh Chat Fanpage Facebook...');
     await Channel.create([
       {
         business_id: mainBusiness._id,
@@ -145,21 +145,11 @@ const seedDatabase = async () => {
       },
       {
         business_id: mainBusiness._id,
-        page_id: 'soulmade.zalo.oa',
-        page_name: 'Soulmade Fashion - Zalo OA Doanh Nghiệp',
-        platform: 'zalo',
+        page_id: 'soulmade.outlet.facebook',
+        page_name: 'Soulmade Outlet & Sneaker - Fanpage',
+        platform: 'facebook',
         avatar_url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=150',
         operating_mode: 'AI_AUTO',
-        is_active: true,
-        created_by: adminUser._id
-      },
-      {
-        business_id: mainBusiness._id,
-        page_id: 'soulmade.web.livechat',
-        page_name: 'Website LiveChat Widget (soulmade.vn)',
-        platform: 'web',
-        avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-        operating_mode: 'HYBRID',
         is_active: true,
         created_by: adminUser._id
       },
