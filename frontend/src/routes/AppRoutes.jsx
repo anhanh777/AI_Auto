@@ -2,9 +2,13 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from '../pages/auth/LoginPage.jsx';
 import DashboardPage from '../pages/dashboard/DashboardPage.jsx';
-import BusinessHomePage from '../pages/business/BusinessHomePage.jsx';
 import LiveChatPage from '../pages/livechat/LiveChatPage.jsx';
+import BotAutoPage from '../pages/bot/BotAutoPage.jsx';
+import CustomerListPage from '../pages/customers/CustomerListPage.jsx';
+import AnalyticsPage from '../pages/analytics/AnalyticsPage.jsx';
 import ProductListPage from '../pages/products/ProductListPage.jsx';
+import OrderListPage from '../pages/orders/OrderListPage.jsx';
+import KnowledgeBasePage from '../pages/knowledge/KnowledgeBasePage.jsx';
 import UserManagementPage from '../pages/settings/UserManagementPage.jsx';
 import MainLayout from '../components/layout/MainLayout.jsx';
 import ProtectedRoute from '../components/guards/ProtectedRoute.jsx';
@@ -24,19 +28,29 @@ const AppRoutes = () => {
           {/* Trang chủ / Nhắn tin của Business đã chọn (Kênh chat Fanpage & LiveChat) */}
           <Route path="/business/home" element={<Navigate to="/livechat" replace />} />
 
-
-          {/* Hộp thư Live Chat / Nhắn tin */}
+          {/* 1. Nhắn tin (Channels, LiveChat & Messenger) */}
           <Route path="/livechat" element={<LiveChatPage />} />
 
-          {/* Quản lý Sản phẩm & Kho (Yêu cầu quyền PRODUCT_VIEW) */}
-          <Route element={<ProtectedRoute requiredPermission="PRODUCT_VIEW" />}>
-            <Route path="/products" element={<ProductListPage />} />
-          </Route>
+          {/* 2. Cấu hình Bot-Auto */}
+          <Route path="/bot-auto" element={<BotAutoPage />} />
 
-          {/* Quản lý thành viên (Yêu cầu quyền USER_MANAGE) */}
-          <Route element={<ProtectedRoute requiredPermission="USER_MANAGE" />}>
-            <Route path="/settings/users" element={<UserManagementPage />} />
-          </Route>
+          {/* 3. Quản lý Khách hàng */}
+          <Route path="/customers" element={<CustomerListPage />} />
+
+          {/* 4. Báo cáo Thống kê */}
+          <Route path="/analytics" element={<AnalyticsPage />} />
+
+          {/* 5. Quản lý Sản phẩm & Kho */}
+          <Route path="/products" element={<ProductListPage />} />
+
+          {/* 6. Quản lý Đơn hàng */}
+          <Route path="/orders" element={<OrderListPage />} />
+
+          {/* 7. Kho Tri Thức RAG */}
+          <Route path="/knowledge" element={<KnowledgeBasePage />} />
+
+          {/* 8. Quản lý Thành viên */}
+          <Route path="/settings/users" element={<UserManagementPage />} />
           <Route path="/settings/roles" element={<Navigate to="/settings/users" replace />} />
 
           {/* Chuyển hướng mặc định */}

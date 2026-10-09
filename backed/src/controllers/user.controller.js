@@ -10,7 +10,8 @@ import { sendSuccess, sendError } from '../utils/response.util.js';
 
 export const getUsers = async (req, res) => {
   try {
-    const result = await getUsersService(req.query);
+    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const result = await getUsersService({ ...req.query, business_id });
     return sendSuccess(res, 'Lấy danh sách nhân viên thành công', result);
   } catch (error) {
     return sendError(res, error.message, null, 400);
@@ -28,12 +29,14 @@ export const getUserById = async (req, res) => {
 
 export const createUser = async (req, res) => {
   try {
-    const newUser = await createUserService(req.body);
+    const business_id = req.headers['x-business-id'] || req.body.business_id;
+    const newUser = await createUserService({ ...req.body, business_id });
     return sendSuccess(res, 'Tạo tài khoản nhân viên thành công', newUser, 201);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }
 };
+
 
 export const updateUser = async (req, res) => {
   try {

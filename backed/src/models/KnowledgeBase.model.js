@@ -2,6 +2,12 @@ import mongoose from 'mongoose';
 
 const knowledgeBaseSchema = new mongoose.Schema(
   {
+    business_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Business',
+      required: [true, 'Doanh nghiệp là bắt buộc'],
+      index: true
+    },
     title: {
       type: String,
       required: [true, 'Tiêu đề tài liệu tri thức là bắt buộc'],
@@ -34,5 +40,7 @@ const knowledgeBaseSchema = new mongoose.Schema(
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
   }
 );
+
+knowledgeBaseSchema.index({ business_id: 1, category: 1 });
 
 export const KnowledgeBase = mongoose.model('KnowledgeBase', knowledgeBaseSchema);

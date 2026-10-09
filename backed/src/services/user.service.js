@@ -5,8 +5,12 @@ import { getPagination } from '../helpers/pagination.helper.js';
 /**
  * Lấy danh sách nhân viên có phân trang, tìm kiếm theo tên/email/username, lọc vai trò
  */
-export const getUsersService = async ({ page = 1, limit = 10, search = '', role_id = '', is_active }) => {
+export const getUsersService = async ({ page = 1, limit = 10, search = '', role_id = '', is_active, business_id }) => {
   const filter = {};
+
+  if (business_id && business_id.trim() !== '') {
+    filter.business_ids = business_id;
+  }
 
   if (search && search.trim() !== '') {
     const searchRegex = new RegExp(search.trim(), 'i');
@@ -25,6 +29,7 @@ export const getUsersService = async ({ page = 1, limit = 10, search = '', role_
   if (is_active !== undefined && is_active !== '') {
     filter.is_active = is_active === 'true' || is_active === true;
   }
+
 
   const totalItems = await User.countDocuments(filter);
   const pagination = getPagination(page, limit, totalItems);
@@ -70,7 +75,8 @@ export const createUserService = async ({
   phone = '',
   avatar = '',
   custom_permissions = [],
-  role_id
+  role_id,
+  business_id
 }) => {
   // 1. Kiểm tra trùng lặp username
   const existingUsername = await User.findOne({ username: username.toLowerCase().trim() });
@@ -100,12 +106,14 @@ export const createUserService = async ({
     avatar,
     custom_permissions: Array.isArray(custom_permissions) ? custom_permissions : [],
     role_id,
+    business_ids: business_id ? [business_id] : [],
     is_active: true
   });
 
   const populatedUser = await User.findById(newUser._id).populate('role_id');
   return sanitizeUser(populatedUser);
 };
+
 
 /**
  * Cập nhật thông tin nhân viên

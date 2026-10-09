@@ -7,6 +7,11 @@ import channelRouter from './channel.route.js';
 import conversationRouter from './conversation.route.js';
 import categoryRouter from './category.route.js';
 import productRouter from './product.route.js';
+import customerRouter from './customer.route.js';
+import aiConfigRouter from './aiConfig.route.js';
+import orderRouter from './order.route.js';
+import knowledgeRouter from './knowledge.route.js';
+import analyticsRouter from './analytics.route.js';
 
 const rootRouter = Router();
 
@@ -20,7 +25,7 @@ rootRouter.get('/health', (req, res) => {
   });
 });
 
-// Đăng ký các router phân hệ
+// Đăng ký toàn bộ các router phân hệ của Business
 rootRouter.use('/auth', authRouter);
 rootRouter.use('/users', userRouter);
 rootRouter.use('/upload', uploadRouter);
@@ -29,5 +34,10 @@ rootRouter.use('/channels', channelRouter);
 rootRouter.use('/conversations', conversationRouter);
 rootRouter.use('/categories', categoryRouter);
 rootRouter.use('/products', productRouter);
+rootRouter.use('/customers', customerRouter);
+rootRouter.use('/ai-config', aiConfigRouter);
+rootRouter.use('/orders', orderRouter);
+rootRouter.use('/knowledge', knowledgeRouter);
+rootRouter.use('/analytics', analyticsRouter);
 
 export default rootRouter;

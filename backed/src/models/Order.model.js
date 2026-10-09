@@ -9,6 +9,12 @@ const orderSchema = new mongoose.Schema(
       trim: true,
       index: true
     },
+    business_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Business',
+      required: [true, 'Doanh nghiệp là bắt buộc'],
+      index: true
+    },
     customer_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
@@ -26,7 +32,7 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['PENDING', 'CONFIRMED', 'SHIPPING', 'COMPLETED', 'CANCELLED'],
+      enum: ['PENDING', 'CONFIRMED', 'SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'],
       default: 'PENDING',
       index: true
     },
@@ -45,6 +51,19 @@ const orderSchema = new mongoose.Schema(
       required: true,
       trim: true
     },
+    order_items: [
+      {
+        product_id: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Product'
+        },
+        product_name: String,
+        sku: String,
+        variant: String,
+        quantity: { type: Number, default: 1 },
+        price: { type: Number, required: true }
+      }
+    ],
     subtotal_amount: {
       type: Number,
       required: true,
@@ -67,17 +86,21 @@ const orderSchema = new mongoose.Schema(
     },
     payment_method: {
       type: String,
-      enum: ['COD', 'BANKING'],
+      enum: ['COD', 'BANKING', 'TRANSFER'],
       default: 'COD'
     },
     payment_status: {
       type: String,
-      enum: ['UNPAID', 'PAID'],
+      enum: ['UNPAID', 'PAID', 'REFUNDED'],
       default: 'UNPAID'
     },
     notes: {
       type: String,
       default: ''
+    },
+    extracted_by_ai: {
+      type: Boolean,
+      default: true
     },
     extracted_from_conversation_id: {
       type: mongoose.Schema.Types.ObjectId,
@@ -89,5 +112,7 @@ const orderSchema = new mongoose.Schema(
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
   }
 );
+
+orderSchema.index({ business_id: 1, created_at: -1 });
 
 export const Order = mongoose.model('Order', orderSchema);

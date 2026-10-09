@@ -3,6 +3,7 @@ import { userService } from '../../services/user.service.js';
 import { authService } from '../../services/auth.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Users,
@@ -98,6 +99,7 @@ const UserManagementPage = () => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarInputRef = useRef(null);
   const { showToast } = useToast();
+  const { activeBusiness } = useBusiness();
 
   // Custom Confirm Dialog State
   const [confirmDialog, setConfirmDialog] = useState({
@@ -111,11 +113,15 @@ const UserManagementPage = () => {
     onConfirm: () => {}
   });
 
-  // Load danh sách người dùng
+  // Load danh sách người dùng thuộc business hiện tại
   const fetchUsers = async () => {
     setLoading(true);
     try {
-      const res = await userService.getUsers({ limit: 100, search });
+      const res = await userService.getUsers({
+        limit: 100,
+        search,
+        business_id: activeBusiness?._id
+      });
       if (res.success) {
         setUsers(res.data.users);
       }
@@ -125,6 +131,7 @@ const UserManagementPage = () => {
       setLoading(false);
     }
   };
+
 
   // Load Roles & Permissions từ Backend
   const fetchRolesAndPermissions = async () => {
@@ -145,7 +152,8 @@ const UserManagementPage = () => {
   useEffect(() => {
     fetchUsers();
     fetchRolesAndPermissions();
-  }, []);
+  }, [activeBusiness?._id, search]);
+
 
   // Lọc danh sách hiển thị
   const filteredUsers = users.filter((u) => {
@@ -400,6 +408,7 @@ const UserManagementPage = () => {
       if (modalMode === 'create') {
         payload.username = formData.username || formData.email.split('@')[0];
         payload.password = formData.password || '123456';
+        payload.business_id = activeBusiness?._id;
 
         const res = await userService.createUser(payload);
         if (res.success) {
@@ -407,6 +416,7 @@ const UserManagementPage = () => {
           setShowModal(false);
           fetchUsers();
         }
+
       } else {
         const res = await userService.updateUser(selectedUser._id, payload);
         if (res.success) {

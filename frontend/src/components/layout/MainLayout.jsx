@@ -61,17 +61,18 @@ const MainLayout = () => {
 
   const isPortal = location.pathname === '/dashboard' || location.pathname === '/';
 
-  // Danh mục toàn bộ các Ứng dụng của Business (Khớp Header ảnh chụp)
+  // Danh mục toàn bộ 8 Ứng dụng của Business (Khớp hoàn toàn Hệ thống & Multi-Tenant)
   const allApplications = [
     { id: 'chat', name: 'Nhắn tin', path: '/livechat', icon: MessageSquare, permission: 'CHAT_VIEW', badge: 'AI Active', category: 'Tư vấn' },
-    { id: 'bot_auto', name: 'Bot-Auto', path: '/knowledge', icon: Bot, permission: 'AI_CONFIG_MANAGE', category: 'Trí tuệ nhân tạo' },
+    { id: 'bot_auto', name: 'Bot-Auto', path: '/bot-auto', icon: Bot, permission: 'AI_CONFIG_MANAGE', category: 'Trí tuệ nhân tạo' },
     { id: 'customers', name: 'Khách hàng', path: '/customers', icon: Users, permission: 'CUSTOMER_VIEW', category: 'Kinh doanh' },
-    { id: 'analytics', name: 'Thống kê', path: '/business/home', icon: BarChart3, permission: 'DASHBOARD_VIEW', category: 'Báo cáo' },
+    { id: 'analytics', name: 'Thống kê', path: '/analytics', icon: BarChart3, permission: 'DASHBOARD_VIEW', category: 'Báo cáo' },
     { id: 'products', name: 'Sản phẩm & Kho', path: '/products', icon: Package, permission: 'PRODUCT_VIEW', category: 'Kinh doanh' },
     { id: 'orders', name: 'Quản lý Đơn hàng', path: '/orders', icon: ShoppingCart, permission: 'ORDER_VIEW', category: 'Kinh doanh' },
     { id: 'knowledge', name: 'Kho Tri Thức RAG', path: '/knowledge', icon: Brain, permission: 'KNOWLEDGE_MANAGE', category: 'Trí tuệ nhân tạo' },
     { id: 'users', name: 'Quản lý Thành viên', path: '/settings/users', icon: UserCheck, permission: 'USER_MANAGE', category: 'Hệ thống' }
   ];
+
 
   const [pinnedAppIds, setPinnedAppIds] = useState(() => {
     const saved = localStorage.getItem('ai_sales_pinned_apps');
