@@ -1,6 +1,7 @@
 export { Business } from './Business.model.js';
 export { Channel } from './Channel.model.js';
 export { Role } from './Role.model.js';
+export { Permission } from './Permission.model.js';
 export { User } from './User.model.js';
 export { Customer } from './Customer.model.js';
 export { Category } from './Category.model.js';
