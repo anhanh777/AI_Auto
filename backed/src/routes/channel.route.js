@@ -5,11 +5,11 @@ import {
   updateChannel,
   deleteChannel
 } from '../controllers/channel.controller.js';
-import { requireAuth } from '../middlewares/auth.middleware.js';
+import { authenticate } from '../middlewares/auth.middleware.js';
 
 const channelRouter = Router();
 
-channelRouter.use(requireAuth);
+channelRouter.use(authenticate);
 
 channelRouter.get('/', getChannels);
 channelRouter.post('/', createChannel);

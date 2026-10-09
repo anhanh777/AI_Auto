@@ -28,3 +28,5 @@ export const authenticate = async (req, res, next) => {
     return sendError(res, 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn', error.message, 401);
   }
 };
+
+export const requireAuth = authenticate;
