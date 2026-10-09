@@ -132,7 +132,7 @@ const seedDatabase = async () => {
 
     // 4.1. Nạp Bảng Channels (Khớp Biểu đồ Lớp Class Diagram - Kênh Facebook Fanpage)
     console.log('[Seeder] 3.1/8. Đang tạo Kênh Chat Fanpage Facebook...');
-    await Channel.create([
+    const channels = await Channel.create([
       {
         business_id: mainBusiness._id,
         page_id: 'soulmade.official.fanpage',
@@ -164,6 +164,7 @@ const seedDatabase = async () => {
         created_by: adminUser._id
       }
     ]);
+    const mainChannel = channels[0];
 
     // 5. Nạp Bảng Categories (Bảng 3.31)
     console.log('[Seeder] 4/8. Đang tạo Categories...');
@@ -338,6 +339,122 @@ const seedDatabase = async () => {
       is_active: true,
       updated_by: adminUser._id
     });
+
+    // 8. Nạp Bảng Customers, Conversations, Messages (Khớp hoàn toàn ảnh chụp giao diện Live Chat)
+    console.log('[Seeder] 7/8. Đang tạo Cuộc hội thoại Chat đa kênh (Conversations)...');
+    const sampleChatThreads = [
+      {
+        customer_name: 'Phạm Thị Nghĩa',
+        phone: '0912345678',
+        avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100',
+        tags: ["Sp/L'vento", 'Hot MKT'],
+        last_message: '↩ - Chị Phạm Thị Nghĩa Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        date: new Date(Date.now() - 5 * 60 * 1000)
+      },
+      {
+        customer_name: 'Thị Thị Nguyen',
+        phone: '0987654321',
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
+        tags: ["Sp/L'vento", 'Hot MKT'],
+        last_message: '↩ - Chị Thị Thị Nguyen Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        date: new Date(Date.now() - 15 * 60 * 1000)
+      },
+      {
+        customer_name: 'Hoàng Thị Thanh Thúy',
+        phone: '0933221144',
+        avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100',
+        tags: ["Sp/L'vento", 'Hot MKT'],
+        last_message: '↩ - Chị Hoàng Thị Thanh Thúy Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        date: new Date(Date.now() - 30 * 60 * 1000)
+      },
+      {
+        customer_name: 'Tuyết Bùi',
+        phone: '0909887766',
+        avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100',
+        tags: ['Khách mới'],
+        last_message: '↩ - Cảm ơn bạn Tuyết Bùi đã hỏi! Giá sản phẩm có thể thay đổi theo...',
+        date: new Date(Date.now() - 2 * 3600 * 1000)
+      },
+      {
+        customer_name: 'Hàn Quỳnh',
+        phone: '0918273645',
+        avatar: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100',
+        tags: ['Quan tâm Body Sline'],
+        last_message: '↩ - Xin chào bạn Hàn Quỳnh! Để nhận được thông tin chính xác về...',
+        date: new Date(Date.now() - 5 * 3600 * 1000)
+      },
+      {
+        customer_name: 'Văn Thiên Ngô',
+        phone: '0944556677',
+        avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
+        tags: ['Hỏi giá'],
+        last_message: '↩ - Cảm ơn bạn Văn Thiên Ngô đã hỏi! Giá sản phẩm có thể thay đ...',
+        date: new Date(Date.now() - 12 * 3600 * 1000)
+      },
+      {
+        customer_name: 'Còn Lại Gì',
+        phone: '0966778899',
+        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
+        tags: [],
+        last_message: '↩ - Cảm ơn bạn Còn Lại Gì đã hỏi! Để đảm bảo bạn nhận được thôn...',
+        date: new Date(Date.now() - 24 * 3600 * 1000)
+      },
+      {
+        customer_name: 'Longhoang',
+        phone: '0977112233',
+        avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=100',
+        tags: ['Chờ tư vấn'],
+        last_message: 'Xin giá',
+        date: new Date(Date.now() - 36 * 3600 * 1000)
+      },
+      {
+        customer_name: 'Cửa Hàng Mỹ Phẩm Cao Cấp Chính Hãng',
+        phone: '0901992288',
+        avatar: 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100',
+        tags: ['Đối tác'],
+        last_message: 'THÔNG BÁO NÂNG CẤP SẢN PHẨM',
+        date: new Date(Date.now() - 48 * 3600 * 1000)
+      }
+    ];
+
+    for (const item of sampleChatThreads) {
+      const cust = await Customer.create({
+        full_name: item.customer_name,
+        phone: item.phone,
+        source: 'facebook',
+        tags: item.tags
+      });
+
+      const conv = await Conversation.create({
+        business_id: mainBusiness._id,
+        channel_id: mainChannel._id,
+        customer_id: cust._id,
+        channel: 'facebook_messenger',
+        external_channel_id: `fb_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+        tags: item.tags,
+        is_bot_active: true,
+        status: 'OPEN',
+        last_message_text: item.last_message,
+        last_message_at: item.date,
+        unread_count: 1
+      });
+
+      // Tạo tin nhắn mẫu
+      await Message.create([
+        {
+          conversation_id: conv._id,
+          sender_type: 'CUSTOMER',
+          content: item.customer_name === 'Longhoang' ? 'Xin giá shop ơi' : `Chào shop, mình quan tâm đến sản phẩm ${item.tags[0] || 'Kem massage'}`,
+          created_at: new Date(item.date.getTime() - 60000)
+        },
+        {
+          conversation_id: conv._id,
+          sender_type: 'AI_BOT',
+          content: item.last_message,
+          created_at: item.date
+        }
+      ]);
+    }
 
     console.log('\n======================================================');
     console.log('🎉 SEED DỮ LIỆU MẪU THEO ĐÚNG ẢNH THÀNH CÔNG 100%!');

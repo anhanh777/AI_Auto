@@ -61,22 +61,21 @@ const MainLayout = () => {
 
   const isPortal = location.pathname === '/dashboard' || location.pathname === '/';
 
-  // Danh mục toàn bộ các Ứng dụng của Business
+  // Danh mục toàn bộ các Ứng dụng của Business (Khớp Header ảnh chụp)
   const allApplications = [
-    { id: 'dashboard', name: 'Trang chủ', path: '/business/home', icon: LayoutDashboard, permission: null, category: 'Tổng quan' },
-    { id: 'livechat', name: 'Hộp thư Live Chat', path: '/livechat', icon: MessageSquare, permission: 'CHAT_VIEW', badge: 'AI Active', category: 'Tư vấn' },
+    { id: 'chat', name: 'Nhắn tin', path: '/livechat', icon: MessageSquare, permission: 'CHAT_VIEW', badge: 'AI Active', category: 'Tư vấn' },
+    { id: 'bot_auto', name: 'Bot-Auto', path: '/knowledge', icon: Bot, permission: 'AI_CONFIG_MANAGE', category: 'Trí tuệ nhân tạo' },
+    { id: 'customers', name: 'Khách hàng', path: '/customers', icon: Users, permission: 'CUSTOMER_VIEW', category: 'Kinh doanh' },
+    { id: 'analytics', name: 'Thống kê', path: '/business/home', icon: BarChart3, permission: 'DASHBOARD_VIEW', category: 'Báo cáo' },
     { id: 'products', name: 'Sản phẩm & Kho', path: '/products', icon: Package, permission: 'PRODUCT_VIEW', category: 'Kinh doanh' },
     { id: 'orders', name: 'Quản lý Đơn hàng', path: '/orders', icon: ShoppingCart, permission: 'ORDER_VIEW', category: 'Kinh doanh' },
-    { id: 'customers', name: 'Khách hàng CRM', path: '/customers', icon: Users, permission: 'CUSTOMER_VIEW', category: 'Kinh doanh' },
     { id: 'knowledge', name: 'Kho Tri Thức RAG', path: '/knowledge', icon: Brain, permission: 'KNOWLEDGE_MANAGE', category: 'Trí tuệ nhân tạo' },
-    { id: 'bot_auto', name: 'Cấu hình Bot AI', path: '/knowledge', icon: Bot, permission: 'AI_CONFIG_MANAGE', category: 'Trí tuệ nhân tạo' },
-    { id: 'analytics', name: 'Thống kê Báo cáo', path: '/business/home', icon: BarChart3, permission: 'DASHBOARD_VIEW', category: 'Báo cáo' },
     { id: 'users', name: 'Quản lý Thành viên', path: '/settings/users', icon: UserCheck, permission: 'USER_MANAGE', category: 'Hệ thống' }
   ];
 
   const [pinnedAppIds, setPinnedAppIds] = useState(() => {
     const saved = localStorage.getItem('ai_sales_pinned_apps');
-    return saved ? JSON.parse(saved) : ['products', 'livechat', 'orders', 'customers', 'knowledge'];
+    return saved ? JSON.parse(saved) : ['chat', 'bot_auto', 'customers', 'analytics', 'products', 'users'];
   });
 
   // State Dropdowns & Modals

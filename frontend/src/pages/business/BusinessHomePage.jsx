@@ -196,67 +196,74 @@ const BusinessHomePage = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {channels.map((ch) => (
-              <div
-                key={ch._id}
-                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-5 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between space-y-4 group"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center space-x-3 min-w-0">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center shrink-0 shadow-sm border border-blue-200 dark:border-blue-800">
-                      <Facebook size={26} />
+                <div
+                  key={ch._id}
+                  onClick={() => navigate(`/livechat?channel_id=${ch._id}`)}
+                  className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-5 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between space-y-4 group cursor-pointer hover:border-blue-300 dark:hover:border-blue-700"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-blue-600 flex items-center justify-center shrink-0 shadow-sm border border-blue-200 dark:border-blue-800">
+                        <Facebook size={26} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition">
+                          {ch.page_name}
+                        </h3>
+                        <p className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
+                          Page ID: {ch.page_id}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="min-w-0">
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                        {ch.page_name}
-                      </h3>
-                      <p className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
-                        Page ID: {ch.page_id}
-                      </p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChannel(ch._id, ch.page_name);
+                      }}
+                      className="text-slate-300 hover:text-red-500 p-1 rounded-lg transition"
+                      title="Xóa Fanpage"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  {/* Trạng thái & Chế độ vận hành */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Chế độ AI:</span>
+                      <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center space-x-1">
+                        <Sparkles size={13} />
+                        <span>{ch.operating_mode === 'AI_AUTO' ? 'AI Tự Động 24/7' : ch.operating_mode === 'HYBRID' ? 'Chế độ Lai (Hybrid)' : 'Thủ công'}</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Trạng thái:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>Sẵn sàng tiếp nhận tin nhắn</span>
+                      </span>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteChannel(ch._id, ch.page_name)}
-                    className="text-slate-300 hover:text-red-500 p-1 rounded-lg transition"
-                    title="Xóa Fanpage"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                {/* Trạng thái & Chế độ vận hành */}
-                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Chế độ AI:</span>
-                    <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center space-x-1">
-                      <Sparkles size={13} />
-                      <span>{ch.operating_mode === 'AI_AUTO' ? 'AI Tự Động 24/7' : ch.operating_mode === 'HYBRID' ? 'Chế độ Lai (Hybrid)' : 'Thủ công'}</span>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-400">Trạng thái:</span>
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span>Sẵn sàng tiếp nhận tin nhắn</span>
-                    </span>
+                  {/* Nút hành động */}
+                  <div className="flex items-center space-x-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/livechat?channel_id=${ch._id}`);
+                      }}
+                      className="flex-1 py-2 bg-blue-50 dark:bg-blue-950/60 group-hover:bg-blue-600 text-blue-600 group-hover:text-white dark:text-blue-300 dark:group-hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                    >
+                      <MessageSquare size={14} />
+                      <span>Xem Tin Nhắn Fanpage</span>
+                    </button>
                   </div>
                 </div>
-
-                {/* Nút hành động */}
-                <div className="flex items-center space-x-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/livechat')}
-                    className="flex-1 py-2 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-600 text-blue-600 hover:text-white dark:text-blue-300 dark:hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
-                  >
-                    <MessageSquare size={14} />
-                    <span>Vào Live Chat</span>
-                  </button>
-                </div>
-              </div>
             ))}
           </div>
         )}

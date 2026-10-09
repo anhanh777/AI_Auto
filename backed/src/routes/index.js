@@ -4,6 +4,7 @@ import userRouter from './user.route.js';
 import uploadRouter from './upload.route.js';
 import businessRouter from './business.route.js';
 import channelRouter from './channel.route.js';
+import conversationRouter from './conversation.route.js';
 import categoryRouter from './category.route.js';
 import productRouter from './product.route.js';
 
@@ -25,6 +26,7 @@ rootRouter.use('/users', userRouter);
 rootRouter.use('/upload', uploadRouter);
 rootRouter.use('/businesses', businessRouter);
 rootRouter.use('/channels', channelRouter);
+rootRouter.use('/conversations', conversationRouter);
 rootRouter.use('/categories', categoryRouter);
 rootRouter.use('/products', productRouter);
 

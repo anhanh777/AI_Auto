@@ -2,6 +2,16 @@ import mongoose from 'mongoose';
 
 const conversationSchema = new mongoose.Schema(
   {
+    business_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Business',
+      index: true
+    },
+    channel_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Channel',
+      index: true
+    },
     customer_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Customer',
@@ -18,6 +28,10 @@ const conversationSchema = new mongoose.Schema(
       required: true,
       trim: true,
       index: true
+    },
+    tags: {
+      type: [String],
+      default: []
     },
     is_bot_active: {
       type: Boolean,

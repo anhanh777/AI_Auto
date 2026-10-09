@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from '../pages/auth/LoginPage.jsx';
 import DashboardPage from '../pages/dashboard/DashboardPage.jsx';
 import BusinessHomePage from '../pages/business/BusinessHomePage.jsx';
+import LiveChatPage from '../pages/livechat/LiveChatPage.jsx';
 import ProductListPage from '../pages/products/ProductListPage.jsx';
 import UserManagementPage from '../pages/settings/UserManagementPage.jsx';
 import MainLayout from '../components/layout/MainLayout.jsx';
@@ -20,8 +21,11 @@ const AppRoutes = () => {
           {/* Cổng Doanh Nghiệp (Portal) */}
           <Route path="/dashboard" element={<DashboardPage />} />
 
-          {/* Trang chủ của Business đã chọn (Kênh chat + Phân hệ) */}
+          {/* Trang chủ của Business đã chọn (Kênh chat Fanpage) */}
           <Route path="/business/home" element={<BusinessHomePage />} />
+
+          {/* Hộp thư Live Chat / Nhắn tin */}
+          <Route path="/livechat" element={<LiveChatPage />} />
 
           {/* Quản lý Sản phẩm & Kho (Yêu cầu quyền PRODUCT_VIEW) */}
           <Route element={<ProtectedRoute requiredPermission="PRODUCT_VIEW" />}>
