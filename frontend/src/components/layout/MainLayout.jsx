@@ -39,7 +39,8 @@ import {
   BarChart3,
   Plus,
   Check,
-  Store
+  Store,
+  Clock
 } from 'lucide-react';
 
 import JoinOrCreateBusinessModal from '../modals/JoinOrCreateBusinessModal.jsx';
@@ -522,7 +523,7 @@ const MainLayout = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              removeNotification(item.id);
+                              removeNotification(itemId);
                             }}
                             className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-500 rounded-md hover:bg-white dark:hover:bg-slate-800 transition shrink-0 cursor-pointer"
                             title="Xóa thông báo này"
