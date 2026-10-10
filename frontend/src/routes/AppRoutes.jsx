@@ -1,6 +1,7 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from '../pages/auth/LoginPage.jsx';
+import RegisterPage from '../pages/auth/RegisterPage.jsx';
 import DashboardPage from '../pages/dashboard/DashboardPage.jsx';
 import LiveChatPage from '../pages/livechat/LiveChatPage.jsx';
 import BotAutoPage from '../pages/bot/BotAutoPage.jsx';
@@ -17,8 +18,9 @@ import ProtectedRoute from '../components/guards/ProtectedRoute.jsx';
 const AppRoutes = () => {
   return (
     <Routes>
-      {/* 1. Tuyến đường công khai: Đăng nhập */}
+      {/* 1. Tuyến đường công khai: Đăng nhập & Đăng ký */}
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* 2. Tuyến đường được bảo vệ bởi MainLayout & ProtectedRoute */}
       <Route element={<ProtectedRoute />}>

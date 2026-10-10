@@ -47,6 +47,20 @@ export const AuthProvider = ({ children }) => {
     throw new Error(res.message || 'Đăng nhập thất bại');
   };
 
+  // Hàm Đăng ký tài khoản
+  const register = async (userData) => {
+    const res = await apiClient.post('/auth/register', userData);
+    if (res.success) {
+      const { token: receivedToken, user: receivedUser } = res.data;
+      localStorage.setItem('ai_sales_token', receivedToken);
+      localStorage.setItem('ai_sales_user', JSON.stringify(receivedUser));
+      setToken(receivedToken);
+      setUser(receivedUser);
+      return res;
+    }
+    throw new Error(res.message || 'Đăng ký tài khoản thất bại');
+  };
+
   // Hàm Đăng xuất
   const logout = () => {
     localStorage.removeItem('ai_sales_token');
@@ -79,6 +93,7 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: !!token && !!user,
         loading,
         login,
+        register,
         logout,
         hasPermission,
         isAdmin: user?.role_id?.name === 'ADMIN'

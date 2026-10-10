@@ -2,6 +2,7 @@ import apiClient from '../config/axios.config.js';
 
 export const authService = {
   login: (username, password) => apiClient.post('/auth/login', { username, password }),
+  register: (userData) => apiClient.post('/auth/register', userData),
   getMe: () => apiClient.get('/auth/me'),
   changePassword: (oldPassword, newPassword) => apiClient.post('/auth/change-password', { oldPassword, newPassword }),
   getPermissions: () => apiClient.get('/auth/permissions'),

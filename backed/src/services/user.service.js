@@ -90,19 +90,34 @@ export const createUserService = async ({
     throw new Error('Địa chỉ email này đã được sử dụng');
   }
 
-  // 3. Kiểm tra vai trò có tồn tại không
+  // 3. Kiểm tra trùng lặp Số điện thoại (bắt cả phone và phone_number)
+  const cleanPhone = phone ? phone.trim().replace(/\s+/g, '') : '';
+  if (cleanPhone) {
+    const existingPhone = await User.findOne({
+      $or: [
+        { phone: cleanPhone },
+        { phone_number: cleanPhone }
+      ]
+    });
+    if (existingPhone) {
+      throw new Error('Số điện thoại này đã được sử dụng bởi một tài khoản khác');
+    }
+  }
+
+  // 4. Kiểm tra vai trò có tồn tại không
   const role = await Role.findById(role_id);
   if (!role) {
     throw new Error('Vai trò được chỉ định không hợp lệ');
   }
 
-  // 4. Tạo tài khoản mới
+  // 5. Tạo tài khoản mới
   const newUser = await User.create({
     username: username.toLowerCase().trim(),
     password,
     full_name: full_name.trim(),
     email: email.toLowerCase().trim(),
-    phone: phone.trim(),
+    phone: cleanPhone,
+    phone_number: cleanPhone,
     avatar,
     custom_permissions: Array.isArray(custom_permissions) ? custom_permissions : [],
     role_id,
@@ -144,8 +159,24 @@ export const updateUserService = async (userId, {
     user.email = email.toLowerCase().trim();
   }
 
-  if (full_name !== undefined) user.full_name = full_name.trim();
-  if (phone !== undefined) user.phone = phone.trim();
+  // Kiểm tra trùng số điện thoại nếu phone thay đổi
+  if (phone !== undefined) {
+    const cleanPhone = phone.trim().replace(/\s+/g, '');
+    if (cleanPhone && cleanPhone !== user.phone && cleanPhone !== user.phone_number) {
+      const existingPhone = await User.findOne({
+        _id: { $ne: userId },
+        $or: [
+          { phone: cleanPhone },
+          { phone_number: cleanPhone }
+        ]
+      });
+      if (existingPhone) {
+        throw new Error('Số điện thoại này đã được sử dụng bởi một tài khoản khác');
+      }
+    }
+    user.phone = cleanPhone;
+    user.phone_number = cleanPhone;
+  }
   if (avatar !== undefined) user.avatar = avatar;
   if (custom_permissions !== undefined && Array.isArray(custom_permissions)) {
     user.custom_permissions = custom_permissions;

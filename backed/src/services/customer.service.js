@@ -53,8 +53,25 @@ export const getCustomerByIdService = async (id, business_id) => {
 
 export const createCustomerService = async (data, userId) => {
   if (!data.business_id) throw new Error('business_id là bắt buộc');
+
+  const cleanPhone = (data.phone || data.phone_number || '').trim().replace(/\s+/g, '');
+  if (cleanPhone) {
+    const existingCustomer = await Customer.findOne({
+      business_id: data.business_id,
+      $or: [
+        { phone: cleanPhone },
+        { phone_number: cleanPhone }
+      ]
+    });
+    if (existingCustomer) {
+      throw new Error(`Khách hàng với số điện thoại "${cleanPhone}" đã tồn tại trong cửa hàng`);
+    }
+  }
+
   const customer = await Customer.create({
     ...data,
+    phone: cleanPhone,
+    phone_number: cleanPhone,
     created_by: userId
   });
   return customer;
@@ -63,8 +80,31 @@ export const createCustomerService = async (data, userId) => {
 export const updateCustomerService = async (id, data, business_id) => {
   const filter = { _id: id };
   if (business_id) filter.business_id = business_id;
+
+  const currentCustomer = await Customer.findOne(filter);
+  if (!currentCustomer) throw new Error('Không tìm thấy khách hàng để cập nhật');
+
+  const cleanPhone = (data.phone !== undefined ? data.phone : data.phone_number);
+  if (cleanPhone !== undefined) {
+    const formattedPhone = cleanPhone.trim().replace(/\s+/g, '');
+    if (formattedPhone && formattedPhone !== currentCustomer.phone && formattedPhone !== currentCustomer.phone_number) {
+      const existingCustomer = await Customer.findOne({
+        _id: { $ne: id },
+        business_id: currentCustomer.business_id,
+        $or: [
+          { phone: formattedPhone },
+          { phone_number: formattedPhone }
+        ]
+      });
+      if (existingCustomer) {
+        throw new Error(`Khách hàng với số điện thoại "${formattedPhone}" đã tồn tại trong cửa hàng`);
+      }
+    }
+    data.phone = formattedPhone;
+    data.phone_number = formattedPhone;
+  }
+
   const customer = await Customer.findOneAndUpdate(filter, data, { new: true });
-  if (!customer) throw new Error('Không tìm thấy khách hàng để cập nhật');
   return customer;
 };
 

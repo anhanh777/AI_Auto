@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import {
   Sparkles,
@@ -147,7 +147,7 @@ const LoginPage = () => {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Nhập tên đăng nhập (admin / staff01)"
+                  placeholder="Nhập tên đăng nhập hoặc email"
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition text-sm"
                 />
               </div>
@@ -197,6 +197,17 @@ const LoginPage = () => {
               )}
             </button>
           </form>
+
+          {/* Điều hướng sang Đăng ký */}
+          <div className="mt-5 text-center text-xs text-slate-500 dark:text-slate-400">
+            <span>Chưa có tài khoản? </span>
+            <Link
+              to="/register"
+              className="font-bold text-[#1877f2] hover:underline"
+            >
+              Đăng ký ngay
+            </Link>
+          </div>
 
           {/* Gợi ý tài khoản kiểm thử */}
           <div className="mt-6 p-4 bg-slate-100 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-400 space-y-1">

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   login,
+  register,
   getMe,
   changePassword,
   getPermissions,
@@ -10,12 +11,19 @@ import {
 import { authenticate } from '../middlewares/auth.middleware.js';
 import { hasPermission } from '../middlewares/role.middleware.js';
 import { validateBody } from '../middlewares/validate.middleware.js';
-import { validateLoginInput, validateChangePasswordInput } from '../validations/auth.validation.js';
+import {
+  validateLoginInput,
+  validateRegisterInput,
+  validateChangePasswordInput
+} from '../validations/auth.validation.js';
 
 const authRouter = Router();
 
 // 1. Đăng nhập (Public)
 authRouter.post('/login', validateBody(validateLoginInput), login);
+
+// 2. Đăng ký tài khoản mới (Public)
+authRouter.post('/register', validateBody(validateRegisterInput), register);
 
 // 2. Lấy thông tin tài khoản hiện tại
 authRouter.get('/me', authenticate, getMe);

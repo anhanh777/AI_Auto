@@ -1,5 +1,6 @@
 import {
   loginService,
+  registerService,
   getMeService,
   changePasswordService,
   getRolesService,
@@ -12,6 +13,15 @@ export const login = async (req, res) => {
   try {
     const result = await loginService(req.body);
     return sendSuccess(res, 'Đăng nhập thành công', result);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const register = async (req, res) => {
+  try {
+    const result = await registerService(req.body);
+    return sendSuccess(res, 'Đăng ký tài khoản thành công', result, 201);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }
