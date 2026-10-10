@@ -472,16 +472,20 @@ const MainLayout = () => {
                             return <AlertCircle size={16} className="text-rose-500 shrink-0 mt-0.5" />;
                           case 'warning':
                             return <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />;
+                          case 'join_request':
+                            return <Clock size={16} className="text-orange-500 shrink-0 mt-0.5" />;
                           default:
                             return <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />;
                         }
                       };
 
+                      const itemId = item._id || item.id;
+
                       return (
                         <div
-                          key={item.id}
+                          key={itemId}
                           onClick={() => {
-                            markAsRead(item.id);
+                            markAsRead(itemId);
                             if (item.link) {
                               navigate(item.link);
                               setShowNotificationDropdown(false);

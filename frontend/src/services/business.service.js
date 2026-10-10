@@ -27,5 +27,17 @@ export const businessService = {
 
   deleteBusiness: async (id) => {
     return await apiClient.delete(`/businesses/${id}`);
+  },
+
+  getJoinRequests: async (businessId, status = 'PENDING') => {
+    return await apiClient.get(`/businesses/${businessId}/join-requests`, { params: { status } });
+  },
+
+  approveJoinRequest: async (requestId) => {
+    return await apiClient.post(`/businesses/join-requests/${requestId}/approve`);
+  },
+
+  rejectJoinRequest: async (requestId, note = '') => {
+    return await apiClient.post(`/businesses/join-requests/${requestId}/reject`, { note });
   }
 };

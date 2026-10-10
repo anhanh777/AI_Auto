@@ -12,6 +12,7 @@ import aiConfigRouter from './aiConfig.route.js';
 import orderRouter from './order.route.js';
 import knowledgeRouter from './knowledge.route.js';
 import analyticsRouter from './analytics.route.js';
+import notificationRouter from './notification.route.js';
 
 const rootRouter = Router();
 
@@ -39,5 +40,6 @@ rootRouter.use('/ai-config', aiConfigRouter);
 rootRouter.use('/orders', orderRouter);
 rootRouter.use('/knowledge', knowledgeRouter);
 rootRouter.use('/analytics', analyticsRouter);
+rootRouter.use('/notifications', notificationRouter);
 
 export default rootRouter;

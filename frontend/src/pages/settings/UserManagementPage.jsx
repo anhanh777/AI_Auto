@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { userService } from '../../services/user.service.js';
 import { authService } from '../../services/auth.service.js';
+import { businessService } from '../../services/business.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
@@ -23,7 +24,9 @@ import {
   Calculator,
   CheckCircle2,
   ArrowRight,
-  Camera
+  Camera,
+  Clock,
+  UserPlus
 } from 'lucide-react';
 
 // Danh mục 19 quyền hạn hệ thống chuẩn theo Đề cương
@@ -149,10 +152,60 @@ const UserManagementPage = () => {
     }
   };
 
+  // Tab chính: 'members' (Danh sách thành viên) | 'requests' (Yêu cầu chờ duyệt)
+  const [mainTab, setMainTab] = useState('members');
+  const [joinRequests, setJoinRequests] = useState([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+
+  // Tải danh sách yêu cầu tham gia đang chờ duyệt
+  const fetchJoinRequests = async () => {
+    if (!activeBusiness?._id) return;
+    try {
+      setLoadingRequests(true);
+      const res = await businessService.getJoinRequests(activeBusiness._id, 'PENDING');
+      if (res.success && Array.isArray(res.data)) {
+        setJoinRequests(res.data);
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải yêu cầu tham gia:', err);
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchRolesAndPermissions();
+    fetchJoinRequests();
   }, [activeBusiness?._id, search]);
+
+  // Phê duyệt yêu cầu tham gia
+  const handleApproveRequest = async (requestId) => {
+    try {
+      const res = await businessService.approveJoinRequest(requestId);
+      if (res.success) {
+        showToast('success', res.message || 'Đã phê duyệt thành viên thành công!');
+        fetchJoinRequests();
+        fetchUsers();
+      }
+    } catch (err) {
+      showToast('error', err.message || 'Lỗi khi phê duyệt yêu cầu');
+    }
+  };
+
+  // Từ chối yêu cầu tham gia
+  const handleRejectRequest = async (requestId) => {
+    if (!window.confirm('Bạn có chắc chắn muốn từ chối yêu cầu tham gia này?')) return;
+    try {
+      const res = await businessService.rejectJoinRequest(requestId, 'Từ chối bởi Quản trị viên');
+      if (res.success) {
+        showToast('success', res.message || 'Đã từ chối yêu cầu tham gia');
+        fetchJoinRequests();
+      }
+    } catch (err) {
+      showToast('error', err.message || 'Lỗi khi từ chối yêu cầu');
+    }
+  };
 
 
   // Lọc danh sách hiển thị
@@ -434,16 +487,57 @@ const UserManagementPage = () => {
 
   return (
     <div className="space-y-5 animate-fadeIn">
-      {/* ================= 1. HEADER ROW ================= */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-        <div className="flex items-center space-x-3">
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">
-            Thành viên
-          </h1>
-          <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-            {filteredUsers.length} tài khoản
-          </span>
-        </div>
+      {/* ================= TABS ĐIỀU HƯỚNG CHÍNH ================= */}
+      <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-700 pb-2">
+        <button
+          type="button"
+          onClick={() => setMainTab('members')}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+            mainTab === 'members'
+              ? 'bg-[#f05a48] text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Users size={16} />
+          <span>Danh sách thành viên ({users.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainTab('requests')}
+          className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer relative ${
+            mainTab === 'requests'
+              ? 'bg-[#f05a48] text-white shadow-sm'
+              : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Clock size={16} />
+          <span>Yêu cầu chờ duyệt</span>
+          {joinRequests.length > 0 && (
+            <span
+              className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                mainTab === 'requests' ? 'bg-white text-[#f05a48]' : 'bg-rose-500 text-white animate-pulse'
+              }`}
+            >
+              {joinRequests.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ================= NỘI DUNG TAB 1: DANH SÁCH THÀNH VIÊN ================= */}
+      {mainTab === 'members' && (
+        <>
+          {/* ================= 1. HEADER ROW ================= */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+            <div className="flex items-center space-x-3">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800 dark:text-white tracking-tight">
+                Thành viên
+              </h1>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                {filteredUsers.length} tài khoản
+              </span>
+            </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Ô Tìm kiếm */}
@@ -719,6 +813,132 @@ const UserManagementPage = () => {
           </table>
         </div>
       </div>
+        </>
+      )}
+
+      {/* ================= NỘI DUNG TAB 2: YÊU CẦU CHỜ DUYỆT ================= */}
+      {mainTab === 'requests' && (
+        <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden animate-fadeIn">
+          <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-white flex items-center space-x-2">
+                <Clock size={16} className="text-[#f05a48]" />
+                <span>Danh sách Yêu cầu tham gia Doanh nghiệp ({joinRequests.length})</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Các tài khoản đã nhập mã Code của cửa hàng và đang chờ Quản trị viên phê duyệt quyền truy cập
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={fetchJoinRequests}
+              className="px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-xs font-bold rounded-xl text-slate-700 dark:text-slate-200 transition cursor-pointer"
+            >
+              Làm mới
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
+                <tr>
+                  <th className="py-3.5 pl-6 pr-4 font-bold">THÀNH VIÊN YÊU CẦU</th>
+                  <th className="py-3.5 px-4 font-bold">TÊN ĐĂNG NHẬP</th>
+                  <th className="py-3.5 px-4 font-bold">EMAIL LIÊN HỆ</th>
+                  <th className="py-3.5 px-4 font-bold">SỐ ĐIỆN THOẠI</th>
+                  <th className="py-3.5 px-4 font-bold">THỜI GIAN GỬI</th>
+                  <th className="py-3.5 px-6 text-right font-bold">HÀNH ĐỘNG</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
+                {loadingRequests ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-10 text-slate-400">
+                      Đang tải danh sách yêu cầu chờ duyệt...
+                    </td>
+                  </tr>
+                ) : joinRequests.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-12 text-slate-400">
+                      <div className="max-w-xs mx-auto text-center space-y-2">
+                        <CheckCircle2 size={36} className="text-emerald-500 mx-auto opacity-80" />
+                        <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                          Không có yêu cầu chờ duyệt nào
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Tất cả các yêu cầu tham gia cửa hàng đều đã được xử lý.
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  joinRequests.map((req) => {
+                    const requester = req.user_id;
+                    return (
+                      <tr
+                        key={req._id}
+                        className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition"
+                      >
+                        <td className="py-3.5 pl-6 pr-4">
+                          <div className="flex items-center space-x-3">
+                            <img
+                              src={requester?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                              alt="Avatar"
+                              className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm"
+                            />
+                            <div>
+                              <p className="font-bold text-slate-800 dark:text-slate-200">
+                                {requester?.full_name || 'Chưa đặt tên'}
+                              </p>
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/40">
+                                Đang chờ phê duyệt
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono font-bold text-slate-600 dark:text-slate-300">
+                          @{requester?.username || '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300">
+                          {requester?.email || '—'}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-300">
+                          {requester?.phone || requester?.phone_number || '—'}
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-400">
+                          {req.created_at ? new Date(req.created_at).toLocaleString('vi-VN') : '—'}
+                        </td>
+                        <td className="py-3.5 px-6 text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => handleApproveRequest(req._id)}
+                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer flex items-center space-x-1"
+                              title="Phê duyệt cho phép thành viên tham gia"
+                            >
+                              <Check size={14} />
+                              <span>Phê duyệt</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectRequest(req._id)}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-900/40 transition active:scale-95 cursor-pointer flex items-center space-x-1"
+                              title="Từ chối yêu cầu tham gia"
+                            >
+                              <X size={14} />
+                              <span>Từ chối</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* ================= 4. MODAL THÊM / SỬA THÀNH VIÊN (2 TAB CHUẨN) ================= */}
       {showModal && (

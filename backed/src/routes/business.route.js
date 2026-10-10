@@ -4,6 +4,9 @@ import {
   getBusinessById,
   createBusiness,
   joinBusiness,
+  getBusinessJoinRequests,
+  approveJoinRequest,
+  rejectJoinRequest,
   updateBusiness,
   deleteBusiness,
   toggleArchiveBusiness
@@ -21,6 +24,9 @@ businessRouter.get('/', getBusinesses);
 businessRouter.get('/:id', getBusinessById);
 businessRouter.post('/', validateBody(validateBusinessInput), createBusiness);
 businessRouter.post('/join', joinBusiness);
+businessRouter.get('/:id/join-requests', getBusinessJoinRequests);
+businessRouter.post('/join-requests/:requestId/approve', approveJoinRequest);
+businessRouter.post('/join-requests/:requestId/reject', rejectJoinRequest);
 businessRouter.put('/:id', updateBusiness);
 businessRouter.put('/:id/archive', toggleArchiveBusiness);
 businessRouter.delete('/:id', deleteBusiness);

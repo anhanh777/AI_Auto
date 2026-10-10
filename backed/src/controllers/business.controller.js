@@ -3,6 +3,9 @@ import {
   getBusinessByIdService,
   createBusinessService,
   joinBusinessByCodeService,
+  getBusinessJoinRequestsService,
+  approveJoinRequestService,
+  rejectJoinRequestService,
   updateBusinessService,
   deleteBusinessService,
   toggleArchiveBusinessService
@@ -25,8 +28,40 @@ export const getBusinesses = async (req, res) => {
 export const joinBusiness = async (req, res) => {
   try {
     const { code } = req.body;
-    const business = await joinBusinessByCodeService(code, req.user?._id);
-    return sendSuccess(res, `Đã tham gia doanh nghiệp "${business.business_name}" thành công!`, business);
+    const result = await joinBusinessByCodeService(code, req.user?._id);
+    return sendSuccess(res, result.message, result);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const getBusinessJoinRequests = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.query;
+    const requests = await getBusinessJoinRequestsService(id, status);
+    return sendSuccess(res, 'Lấy danh sách yêu cầu tham gia thành công', requests);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const approveJoinRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const result = await approveJoinRequestService(requestId, req.user?._id);
+    return sendSuccess(res, result.message, result);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const rejectJoinRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { note } = req.body;
+    const result = await rejectJoinRequestService(requestId, req.user?._id, note);
+    return sendSuccess(res, result.message, result);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

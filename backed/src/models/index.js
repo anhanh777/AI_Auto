@@ -13,3 +13,5 @@ export { Conversation } from './Conversation.model.js';
 export { Message } from './Message.model.js';
 export { KnowledgeBase } from './KnowledgeBase.model.js';
 export { AIConfig } from './AIConfig.model.js';
+export { BusinessJoinRequest } from './BusinessJoinRequest.model.js';
+export { Notification } from './Notification.model.js';

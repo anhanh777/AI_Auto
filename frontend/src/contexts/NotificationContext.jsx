@@ -1,102 +1,83 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { notificationService } from '../services/notification.service.js';
 
 const NotificationContext = createContext();
 
 const STORAGE_KEY = 'ai_sales_notifications';
 
-// Danh sách sự kiện hệ thống & nghiệp vụ mẫu
-const initialNotifications = [
-  {
-    id: 'notif-1',
-    title: 'Đơn hàng mới #DH2026',
-    message: 'Khách hàng Nguyễn Văn An vừa đặt đơn hàng mới trị giá 299.000 đ.',
-    type: 'success',
-    link: '/orders',
-    is_read: false,
-    created_at: new Date(Date.now() - 3 * 60 * 1000).toISOString()
-  },
-  {
-    id: 'notif-2',
-    title: 'Hộp thư Live Chat & AI',
-    message: 'Trợ lý AI vừa tư vấn và giải đáp chính sách giao hàng cho khách hàng.',
-    type: 'info',
-    link: '/livechat',
-    is_read: false,
-    created_at: new Date(Date.now() - 15 * 60 * 1000).toISOString()
-  },
-  {
-    id: 'notif-3',
-    title: 'Cảnh báo tồn kho',
-    message: 'Sản phẩm "Đai Nịt Bụng Cao Cấp" có 1 biến thể sắp chạm ngưỡng tồn kho an toàn.',
-    type: 'warning',
-    link: '/products',
-    is_read: false,
-    created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString()
-  },
-  {
-    id: 'notif-4',
-    title: 'Hệ thống AI Gemini',
-    message: 'Mô hình AI RAG đã nạp và học 100% dữ liệu sản phẩm của cửa hàng.',
-    type: 'info',
-    link: '/knowledge',
-    is_read: true,
-    created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString()
-  }
-];
-
 export const NotificationProvider = ({ children }) => {
-  const [notifications, setNotifications] = useState(() => {
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  // Tải danh sách thông báo thực tế từ CSDL
+  const fetchNotifications = async () => {
+    const token = localStorage.getItem('ai_sales_token');
+    if (!token) return;
+
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
+      setLoading(true);
+      const res = await notificationService.getNotifications();
+      if (res.success && Array.isArray(res.data)) {
+        setNotifications(res.data);
       }
-    } catch (e) {
-      console.error('Lỗi khi đọc notifications từ localStorage', e);
+    } catch (err) {
+      console.warn('Không thể tải thông báo từ máy chủ:', err.message);
+    } finally {
+      setLoading(false);
     }
-    return initialNotifications;
-  });
+  };
 
-  // Lưu vào LocalStorage mỗi khi notifications thay đổi
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications));
-    } catch (e) {
-      console.error('Lỗi khi lưu notifications vào localStorage', e);
-    }
-  }, [notifications]);
+    fetchNotifications();
+    // Tự động kiểm tra thông báo mới mỗi 30 giây
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-  // Thêm thông báo mới
+  // Thêm thông báo mới cục bộ
   const addNotification = ({ title, message, type = 'info', link = null }) => {
     const newNotif = {
-      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      title: title || (type === 'success' ? 'Thành công' : type === 'error' ? 'Lỗi hệ thống' : type === 'warning' ? 'Cảnh báo' : 'Thông báo'),
+      _id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: title || 'Thông báo hệ thống',
       message: message || '',
       type,
       link,
       is_read: false,
       created_at: new Date().toISOString()
     };
-
-    setNotifications((prev) => [newNotif, ...prev.slice(0, 49)]); // Giữ tối đa 50 thông báo gần nhất
+    setNotifications((prev) => [newNotif, ...prev]);
   };
 
   // Đánh dấu 1 thông báo là đã đọc
-  const markAsRead = (id) => {
+  const markAsRead = async (id) => {
     setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
+      prev.map((n) => (n._id === id || n.id === id ? { ...n, is_read: true } : n))
     );
+    try {
+      await notificationService.markAsRead(id);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Đánh dấu tất cả là đã đọc
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    try {
+      await notificationService.markAllAsRead();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Xóa 1 thông báo
-  const removeNotification = (id) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  const removeNotification = async (id) => {
+    setNotifications((prev) => prev.filter((n) => n._id !== id && n.id !== id));
+    try {
+      await notificationService.deleteNotification(id);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   // Xóa tất cả thông báo

@@ -204,9 +204,9 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
               </button>
               <div>
                 <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
-                  Tham Gia Doanh Nghiệp
+                  Yêu Cầu Tham Gia Doanh Nghiệp
                 </h2>
-                <p className="text-xs text-slate-400">Nhập mã code được cấp để đồng bộ quyền truy cập</p>
+                <p className="text-xs text-slate-400">Nhập mã code để gửi yêu cầu xét duyệt gia nhập cửa hàng</p>
               </div>
             </div>
 
@@ -226,8 +226,8 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm font-mono uppercase tracking-wider text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
                   />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  💡 Mã Business do Chủ sở hữu cửa hàng cung cấp trong phần cài đặt doanh nghiệp.
+                <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                  💡 Mã Code do Chủ sở hữu cửa hàng cung cấp. Sau khi gửi, hệ thống sẽ thông báo tới Quản trị viên để phê duyệt quyền truy cập cho bạn.
                 </p>
               </div>
 
@@ -244,7 +244,7 @@ const JoinOrCreateBusinessModal = ({ isOpen, onClose, defaultStep = 'select' }) 
                   disabled={loading || !joinCode.trim()}
                   className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow transition disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
                 >
-                  {loading ? <span>Đang xác thực...</span> : <span>Tham gia ngay</span>}
+                  {loading ? <span>Đang gửi yêu cầu...</span> : <span>Gửi yêu cầu tham gia</span>}
                 </button>
               </div>
             </form>

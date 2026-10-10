@@ -1,4 +1,4 @@
-import { Business, User, Channel } from '../models/index.js';
+import { Business, User, Channel, BusinessJoinRequest, Notification } from '../models/index.js';
 
 /**
  * Lấy danh sách doanh nghiệp (kèm channels_count thực tế)
@@ -137,7 +137,7 @@ export const createBusinessService = async (data, userId) => {
 };
 
 /**
- * Tham gia Doanh nghiệp theo Mã Code
+ * Gửi Yêu cầu Tham gia Doanh nghiệp theo Mã Code (Trạng thái: PENDING & Bắn thông báo Admin)
  */
 export const joinBusinessByCodeService = async (code, userId) => {
   if (!code || code.trim() === '') {
@@ -171,10 +171,160 @@ export const joinBusinessByCodeService = async (code, userId) => {
     throw new Error(`Bạn đã là thành viên của doanh nghiệp "${business.business_name}"`);
   }
 
-  user.business_ids.push(business._id);
-  await user.save();
+  // Kiểm tra xem đã có yêu cầu nào đang chờ xét duyệt chưa
+  const existingPendingRequest = await BusinessJoinRequest.findOne({
+    business_id: business._id,
+    user_id: userId,
+    status: 'PENDING'
+  });
 
-  return business;
+  if (existingPendingRequest) {
+    throw new Error(`Bạn đã gửi yêu cầu tham gia "${business.business_name}" trước đó. Vui lòng chờ Quản trị viên xét duyệt!`);
+  }
+
+  // Khởi tạo phiếu yêu cầu tham gia mới với trạng thái PENDING
+  const joinRequest = await BusinessJoinRequest.create({
+    business_id: business._id,
+    user_id: userId,
+    status: 'PENDING'
+  });
+
+  // Bắn thông báo tới Chủ doanh nghiệp (Owner) hoặc Admin
+  const targetRecipientId = business.owner_user_id || business.created_by;
+  if (targetRecipientId) {
+    await Notification.create({
+      user_id: targetRecipientId,
+      business_id: business._id,
+      title: 'Yêu cầu tham gia cửa hàng mới',
+      message: `Thành viên ${user.full_name || user.username} (${user.email || ''} - ${user.phone || ''}) vừa gửi yêu cầu tham gia cửa hàng "${business.business_name}".`,
+      type: 'join_request',
+      link: '/settings/users',
+      metadata: {
+        request_id: joinRequest._id,
+        requester_id: user._id,
+        requester_name: user.full_name || user.username,
+        business_id: business._id
+      }
+    });
+  }
+
+  return {
+    pending: true,
+    business_name: business.business_name,
+    message: `Yêu cầu tham gia cửa hàng "${business.business_name}" đã được gửi thành công! Vui lòng chờ Quản trị viên xét duyệt.`
+  };
+};
+
+/**
+ * Lấy danh sách các yêu cầu tham gia cửa hàng (Dành cho Quản trị viên/Chủ cửa hàng)
+ */
+export const getBusinessJoinRequestsService = async (businessId, status = 'PENDING') => {
+  const filter = { business_id: businessId };
+  if (status && status !== 'ALL') {
+    filter.status = status;
+  }
+
+  const requests = await BusinessJoinRequest.find(filter)
+    .populate('user_id', 'full_name username email phone avatar created_at')
+    .sort({ created_at: -1 });
+
+  return requests;
+};
+
+/**
+ * Phê duyệt yêu cầu tham gia Doanh nghiệp
+ */
+export const approveJoinRequestService = async (requestId, reviewerId) => {
+  const request = await BusinessJoinRequest.findById(requestId);
+  if (!request) {
+    throw new Error('Không tìm thấy yêu cầu tham gia');
+  }
+
+  if (request.status !== 'PENDING') {
+    throw new Error(`Yêu cầu này đã được xử lý trước đó (${request.status})`);
+  }
+
+  const [business, user] = await Promise.all([
+    Business.findById(request.business_id),
+    User.findById(request.user_id)
+  ]);
+
+  if (!business || !user) {
+    throw new Error('Dữ liệu cửa hàng hoặc người dùng không còn tồn tại');
+  }
+
+  // Thêm business_id vào danh sách của user
+  if (!Array.isArray(user.business_ids)) user.business_ids = [];
+  if (!user.business_ids.some((id) => id.toString() === business._id.toString())) {
+    user.business_ids.push(business._id);
+    await user.save();
+  }
+
+  // Cập nhật trạng thái phiếu yêu cầu
+  request.status = 'APPROVED';
+  request.reviewed_by = reviewerId;
+  request.reviewed_at = new Date();
+  await request.save();
+
+  // Bắn thông báo xác nhận thành công tới Người dùng được duyệt
+  await Notification.create({
+    user_id: user._id,
+    business_id: business._id,
+    title: 'Yêu cầu tham gia đã được chấp thuận! 🎉',
+    message: `Chúc mừng! Quản trị viên đã phê duyệt yêu cầu gia nhập vào cửa hàng "${business.business_name}".`,
+    type: 'success',
+    link: '/dashboard',
+    metadata: {
+      business_id: business._id,
+      business_name: business.business_name
+    }
+  });
+
+  return {
+    success: true,
+    message: `Đã phê duyệt tài khoản ${user.full_name || user.username} tham gia cửa hàng "${business.business_name}" thành công!`
+  };
+};
+
+/**
+ * Từ chối yêu cầu tham gia Doanh nghiệp
+ */
+export const rejectJoinRequestService = async (requestId, reviewerId, note = '') => {
+  const request = await BusinessJoinRequest.findById(requestId);
+  if (!request) {
+    throw new Error('Không tìm thấy yêu cầu tham gia');
+  }
+
+  if (request.status !== 'PENDING') {
+    throw new Error(`Yêu cầu này đã được xử lý trước đó (${request.status})`);
+  }
+
+  const [business, user] = await Promise.all([
+    Business.findById(request.business_id),
+    User.findById(request.user_id)
+  ]);
+
+  request.status = 'REJECTED';
+  request.note = note || 'Từ chối bởi Quản trị viên';
+  request.reviewed_by = reviewerId;
+  request.reviewed_at = new Date();
+  await request.save();
+
+  if (user && business) {
+    await Notification.create({
+      user_id: user._id,
+      business_id: business._id,
+      title: 'Yêu cầu tham gia chưa được phê duyệt',
+      message: `Yêu cầu tham gia vào cửa hàng "${business.business_name}" của bạn đã bị Quản trị viên từ chối.${note ? ` Lý do: ${note}` : ''}`,
+      type: 'warning',
+      link: '/dashboard'
+    });
+  }
+
+  return {
+    success: true,
+    message: `Đã từ chối yêu cầu tham gia của ${user?.full_name || 'người dùng'}`
+  };
 };
 
 /**
