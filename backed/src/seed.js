@@ -45,16 +45,18 @@ const seedDatabase = async () => {
     ]);
 
     // 2. Nạp Bảng Roles
-    console.log('[Seeder] 1/8. Đang tạo Roles (ADMIN, STAFF)...');
+    console.log('[Seeder] 1/8. Đang tạo Roles (ADMIN, MEMBER)...');
     const adminRole = await Role.create({
       name: 'ADMIN',
+      role_name: 'ADMIN',
       description: 'Quản trị viên toàn quyền hệ thống',
       permissions: ['ALL']
     });
 
     const staffRole = await Role.create({
-      name: 'STAFF',
-      description: 'Nhân viên tư vấn bán hàng trực tiếp',
+      name: 'MEMBER',
+      role_name: 'MEMBER',
+      description: 'Thành viên cửa hàng / Nhân viên tư vấn trực tiếp',
       permissions: ['CHAT_VIEW', 'CHAT_REPLY', 'ORDER_VIEW', 'ORDER_CREATE', 'PRODUCT_VIEW', 'CUSTOMER_VIEW']
     });
 

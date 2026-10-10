@@ -1,4 +1,4 @@
-import { Business, User, Channel, BusinessJoinRequest, Notification } from '../models/index.js';
+import { Business, User, Channel, BusinessJoinRequest, Notification, Role } from '../models/index.js';
 
 /**
  * Lấy danh sách doanh nghiệp (kèm channels_count thực tế)
@@ -253,36 +253,73 @@ export const approveJoinRequestService = async (requestId, reviewerId) => {
     throw new Error('Dữ liệu cửa hàng hoặc người dùng không còn tồn tại');
   }
 
-  // Thêm business_id vào danh sách của user
+  // 1. Thêm business_id vào danh sách của user
   if (!Array.isArray(user.business_ids)) user.business_ids = [];
   if (!user.business_ids.some((id) => id.toString() === business._id.toString())) {
     user.business_ids.push(business._id);
-    await user.save();
   }
 
-  // Cập nhật trạng thái phiếu yêu cầu
+  // 2. Thiết lập vai trò mặc định là MEMBER khi được phê duyệt
+  let memberRole = await Role.findOne({
+    $or: [
+      { name: 'MEMBER' },
+      { role_name: 'MEMBER' },
+      { name: 'STAFF' },
+      { role_name: 'STAFF' }
+    ]
+  });
+
+  const defaultMemberPerms = [
+    'PRODUCT_VIEW',
+    'ORDER_VIEW',
+    'ORDER_CREATE',
+    'CUSTOMER_VIEW',
+    'CHAT_VIEW',
+    'CHAT_REPLY'
+  ];
+
+  if (!memberRole) {
+    memberRole = await Role.create({
+      name: 'MEMBER',
+      role_name: 'MEMBER',
+      description: 'Thành viên cửa hàng / Nhân viên tư vấn',
+      permissions: defaultMemberPerms
+    });
+  }
+
+  // Gán vai trò là MEMBER và bộ quyền nhân viên mặc định
+  user.role_id = memberRole._id;
+  user.custom_permissions =
+    Array.isArray(memberRole.permissions) && memberRole.permissions.length > 0
+      ? memberRole.permissions
+      : defaultMemberPerms;
+
+  await user.save();
+
+  // 3. Cập nhật trạng thái phiếu yêu cầu
   request.status = 'APPROVED';
   request.reviewed_by = reviewerId;
   request.reviewed_at = new Date();
   await request.save();
 
-  // Bắn thông báo xác nhận thành công tới Người dùng được duyệt
+  // 4. Bắn thông báo xác nhận thành công tới Người dùng được duyệt
   await Notification.create({
     user_id: user._id,
     business_id: business._id,
     title: 'Yêu cầu tham gia đã được chấp thuận! 🎉',
-    message: `Chúc mừng! Quản trị viên đã phê duyệt yêu cầu gia nhập vào cửa hàng "${business.business_name}".`,
+    message: `Chúc mừng! Quản trị viên đã phê duyệt yêu cầu gia nhập vào cửa hàng "${business.business_name}". Quyền mặc định của bạn là Thành viên (Member).`,
     type: 'success',
     link: '/dashboard',
     metadata: {
       business_id: business._id,
-      business_name: business.business_name
+      business_name: business.business_name,
+      role: 'MEMBER'
     }
   });
 
   return {
     success: true,
-    message: `Đã phê duyệt tài khoản ${user.full_name || user.username} tham gia cửa hàng "${business.business_name}" thành công!`
+    message: `Đã phê duyệt tài khoản ${user.full_name || user.username} tham gia cửa hàng "${business.business_name}" với vai trò Member thành công!`
   };
 };
 

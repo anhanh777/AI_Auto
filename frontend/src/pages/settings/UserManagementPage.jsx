@@ -443,7 +443,7 @@ const UserManagementPage = () => {
     setSaving(true);
 
     try {
-      let targetRole = roles.find((r) => r.name === formData.role_type);
+      let targetRole = roles.find((r) => r.name === formData.role_type || (formData.role_type === 'MEMBER' && (r.name === 'MEMBER' || r.name === 'STAFF')));
       if (!targetRole && roles.length > 0) {
         targetRole = formData.role_type === 'ADMIN' ? roles[0] : (roles[1] || roles[0]);
       }
@@ -891,7 +891,7 @@ const UserManagementPage = () => {
                                 {requester?.full_name || 'Chưa đặt tên'}
                               </p>
                               <span className="text-[10px] text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800/40">
-                                Đang chờ phê duyệt
+                                Đang chờ phê duyệt • Quyền: Member
                               </span>
                             </div>
                           </div>

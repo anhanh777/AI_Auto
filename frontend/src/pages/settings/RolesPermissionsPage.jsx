@@ -33,7 +33,7 @@ const RolesPermissionsPage = () => {
         setRoles(rolesRes.data);
         setPermissions(permRes.data);
 
-        const defaultRole = rolesRes.data.find(r => r.name === 'STAFF') || rolesRes.data[0];
+        const defaultRole = rolesRes.data.find(r => r.name === 'MEMBER' || r.name === 'STAFF') || rolesRes.data[1] || rolesRes.data[0];
         if (defaultRole) {
           setSelectedRole(defaultRole);
           setSelectedPermissions(defaultRole.permissions || []);
