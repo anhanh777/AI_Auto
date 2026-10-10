@@ -6,5 +6,5 @@ export const userService = {
   createUser: (userData) => apiClient.post('/users', userData),
   updateUser: (id, userData) => apiClient.put(`/users/${id}`, userData),
   resetPassword: (id, defaultPassword) => apiClient.patch(`/users/${id}/reset-password`, { defaultPassword }),
-  deleteUser: (id) => apiClient.delete(`/users/${id}`)
+  deleteUser: (id, params = {}) => apiClient.delete(`/users/${id}`, { params })
 };

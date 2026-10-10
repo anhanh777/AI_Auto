@@ -58,8 +58,9 @@ export const resetPassword = async (req, res) => {
 
 export const deleteUser = async (req, res) => {
   try {
-    const result = await deleteUserService(req.params.id, req.user._id);
-    return sendSuccess(res, 'Xóa tài khoản nhân viên thành công', result);
+    const business_id = req.headers['x-business-id'] || req.query.business_id || req.body?.business_id;
+    const result = await deleteUserService(req.params.id, req.user._id, business_id);
+    return sendSuccess(res, result.message || 'Xóa thành viên khỏi cửa hàng thành công', result);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

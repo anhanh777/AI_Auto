@@ -1,4 +1,4 @@
-import { User, Role } from '../models/index.js';
+import { User, Role, Business, BusinessJoinRequest, Notification } from '../models/index.js';
 import { sanitizeUser } from '../helpers/user.helper.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 
@@ -212,11 +212,11 @@ export const resetPasswordService = async (userId, defaultPassword = '123456') =
 };
 
 /**
- * Xóa tài khoản nhân viên
+ * Xóa thành viên khỏi cửa hàng / Doanh nghiệp (Không xóa vĩnh viễn tài khoản người dùng)
  */
-export const deleteUserService = async (userId, currentAdminId) => {
+export const deleteUserService = async (userId, currentAdminId, businessId) => {
   if (userId.toString() === currentAdminId.toString()) {
-    throw new Error('Bạn không thể tự xóa tài khoản của chính mình');
+    throw new Error('Bạn không thể tự xóa tài khoản của chính mình khỏi cửa hàng');
   }
 
   const user = await User.findById(userId);
@@ -228,6 +228,50 @@ export const deleteUserService = async (userId, currentAdminId) => {
     throw new Error('Không thể xóa tài khoản Quản trị viên mặc định của hệ thống');
   }
 
-  await User.findByIdAndDelete(userId);
-  return { success: true, message: 'Đã xóa tài khoản nhân viên thành công' };
+  if (!businessId) {
+    throw new Error('Vui lòng chỉ định cửa hàng cần xóa thành viên');
+  }
+
+  const business = await Business.findById(businessId);
+  if (!business) {
+    throw new Error('Không tìm thấy dữ liệu cửa hàng');
+  }
+
+  // Không cho phép xóa chủ sở hữu doanh nghiệp
+  if (business.owner_user_id && business.owner_user_id.toString() === userId.toString()) {
+    throw new Error('Không thể xóa Chủ sở hữu (Owner) khỏi cửa hàng');
+  }
+
+  // 1. Gỡ businessId khỏi mảng business_ids của User
+  if (Array.isArray(user.business_ids)) {
+    user.business_ids = user.business_ids.filter(
+      (id) => id.toString() !== businessId.toString()
+    );
+    await user.save();
+  }
+
+  // 2. Dọn dẹp các yêu cầu tham gia liên quan của user tại business này
+  await BusinessJoinRequest.deleteMany({
+    business_id: business._id,
+    user_id: user._id
+  });
+
+  // 3. Gửi thông báo đến tài khoản người dùng bị xóa khỏi cửa hàng
+  await Notification.create({
+    user_id: user._id,
+    business_id: business._id,
+    title: 'Thông báo về tư cách thành viên',
+    message: `Bạn đã được gỡ khỏi danh sách thành viên của cửa hàng "${business.business_name}".`,
+    type: 'warning',
+    link: '/dashboard',
+    metadata: {
+      business_id: business._id,
+      business_name: business.business_name
+    }
+  });
+
+  return {
+    success: true,
+    message: `Đã xóa thành viên "${user.full_name || user.username}" khỏi cửa hàng "${business.business_name}" thành công!`
+  };
 };

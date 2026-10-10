@@ -379,32 +379,38 @@ const UserManagementPage = () => {
     });
   };
 
-  // Xóa tài khoản
+  // Xóa thành viên khỏi cửa hàng
   const handleDeleteUser = (user) => {
     if (user.username === 'admin') {
       showToast('warning', 'Không thể xóa tài khoản Quản trị viên hệ thống');
       return;
     }
+
+    if (activeBusiness?.owner_user_id === user._id) {
+      showToast('warning', 'Không thể xóa Chủ sở hữu (Owner) khỏi cửa hàng');
+      return;
+    }
+
     setConfirmDialog({
       isOpen: true,
-      title: 'Xác nhận xóa tài khoản',
-      message: `Bạn có chắc chắn muốn xóa vĩnh viễn tài khoản ${user.full_name}? Hành động này không thể hoàn tác.`,
-      confirmText: 'Xác nhận xóa',
+      title: 'Xóa thành viên khỏi cửa hàng',
+      message: `Bạn có chắc chắn muốn xóa thành viên "${user.full_name || user.username}" ra khỏi cửa hàng này? Tài khoản người dùng vẫn được bảo lưu an toàn trong hệ thống.`,
+      confirmText: 'Xác nhận xóa khỏi cửa hàng',
       cancelText: 'Hủy bỏ',
       type: 'danger',
       loading: false,
       onConfirm: async () => {
         try {
           setConfirmDialog((prev) => ({ ...prev, loading: true }));
-          const res = await userService.deleteUser(user._id);
+          const res = await userService.deleteUser(user._id, { business_id: activeBusiness?._id });
           if (res.success) {
-            showToast('success', res.message || 'Đã xóa tài khoản thành công');
+            showToast('success', res.message || 'Đã xóa thành viên khỏi cửa hàng thành công');
             setUsers((prev) => prev.filter((u) => u._id !== user._id));
           }
           setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
         } catch (err) {
           setConfirmDialog((prev) => ({ ...prev, loading: false }));
-          showToast('error', err.message || 'Lỗi khi xóa tài khoản');
+          showToast('error', err.message || 'Lỗi khi xóa thành viên khỏi cửa hàng');
         }
       }
     });
@@ -797,8 +803,8 @@ const UserManagementPage = () => {
                           <button
                             type="button"
                             onClick={() => handleDeleteUser(user)}
-                            disabled={user.username === 'admin'}
-                            title="Xóa tài khoản"
+                            disabled={user.username === 'admin' || user._id === activeBusiness?.owner_user_id}
+                            title={user._id === activeBusiness?.owner_user_id ? "Chủ sở hữu cửa hàng" : "Xóa thành viên khỏi cửa hàng"}
                             className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-30 cursor-pointer"
                           >
                             <Trash2 size={14} />
