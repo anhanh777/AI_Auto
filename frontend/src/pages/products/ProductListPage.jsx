@@ -1573,7 +1573,15 @@ const ProductListPage = () => {
                         maxLength={200}
                         placeholder="VD: Kem Massage Body Thon Gọn – Săn Chắc Sline 6D+..."
                         value={productForm.product_name}
-                        onChange={(e) => setProductForm({ ...productForm, product_name: e.target.value })}
+                        onChange={(e) => {
+                          const newName = e.target.value;
+                          setProductForm((prev) => ({
+                            ...prev,
+                            product_name: newName,
+                            // Khi tạo mới, tự động sinh SKU theo tên nếu chưa có SKU hoặc đang tự sinh
+                            sku: !editingProduct ? generateSku(newName) : prev.sku
+                          }));
+                        }}
                         className="w-full px-3 py-2 bg-slate-50/70 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
                       />
                     </div>
@@ -1772,23 +1780,20 @@ const ProductListPage = () => {
                             <label className="font-bold text-slate-700 dark:text-slate-300">
                               SKU (MÃ SẢN PHẨM) <span className="text-rose-500">*</span>
                             </label>
-                            <button
-                              type="button"
-                              onClick={handleGenerateSku}
-                              className="text-[10px] text-[#f05a28] hover:underline font-bold flex items-center space-x-0.5 cursor-pointer"
-                              title="Tự động tạo mã theo tên sản phẩm (viết tắt 3 chữ cái đầu + 3 số ngẫu nhiên)"
-                            >
-                              <Sparkles size={11} />
-                              <span>Tạo mã tự động</span>
-                            </button>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded flex items-center gap-1">
+                              <Sparkles size={10} />
+                              <span>Tự động sinh mã</span>
+                            </span>
                           </div>
                           <input
                             type="text"
                             required
-                            placeholder="VD: KMB-108 hoặc tự nhập..."
+                            readOnly
+                            disabled
+                            placeholder="Mã SKU sẽ tự động tạo theo tên sản phẩm..."
                             value={productForm.sku}
-                            onChange={(e) => setProductForm({ ...productForm, sku: e.target.value.toUpperCase() })}
-                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold uppercase focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                            title="Mã SKU được hệ thống tự động sinh theo tên sản phẩm và không thể chỉnh sửa thủ công để đảm bảo tính đồng bộ"
+                            className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl font-bold uppercase text-slate-700 dark:text-slate-200 cursor-not-allowed focus:outline-none"
                           />
                         </div>
 
