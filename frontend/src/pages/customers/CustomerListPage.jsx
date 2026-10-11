@@ -475,11 +475,11 @@ const CustomerListPage = () => {
           <button
             type="button"
             onClick={() => {
-              setSelectedTag('TIEM_NANG');
+              setSelectedTag('Tiềm năng');
               setPage(1);
             }}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-              selectedTag === 'TIEM_NANG'
+              selectedTag === 'Tiềm năng' || selectedTag === 'TIEM_NANG'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100'
             }`}
@@ -489,30 +489,30 @@ const CustomerListPage = () => {
           <button
             type="button"
             onClick={() => {
-              setSelectedTag("Sp/L'vento");
+              setSelectedTag('Khách mới');
               setPage(1);
             }}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-              selectedTag === "Sp/L'vento"
-                ? 'bg-rose-500 text-white shadow-sm'
-                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 hover:bg-rose-100'
+              selectedTag === 'Khách mới' || selectedTag === 'KHACH_MOI'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100'
             }`}
           >
-            Sp/L'vento
+            Khách mới
           </button>
           <button
             type="button"
             onClick={() => {
-              setSelectedTag('Hot MKT');
+              setSelectedTag('Đã mua hàng');
               setPage(1);
             }}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-              selectedTag === 'Hot MKT'
+              selectedTag === 'Đã mua hàng' || selectedTag === 'DA_MUA'
                 ? 'bg-purple-600 text-white shadow-sm'
                 : 'bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 hover:bg-purple-100'
             }`}
           >
-            Hot MKT
+            Đã mua hàng
           </button>
           <button
             type="button"
@@ -521,12 +521,12 @@ const CustomerListPage = () => {
               setPage(1);
             }}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition shrink-0 ${
-              selectedTag === 'BO_BOM'
-                ? 'bg-red-600 text-white shadow-sm'
-                : 'bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400 hover:bg-red-100'
+              selectedTag === 'BO_BOM' || selectedTag === 'Bom hàng'
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 hover:bg-rose-100'
             }`}
           >
-            ⚠️ Bom hàng / Cảnh giác
+            ⚠️ Cảnh giác bom hàng
           </button>
         </div>
       </div>
@@ -1072,7 +1072,7 @@ const CustomerListPage = () => {
                   <label className="block text-xs font-bold mb-1">Thẻ phân loại (cách nhau dấu phẩy)</label>
                   <input
                     type="text"
-                    placeholder="VIP, Tiềm năng, Sp/L'vento..."
+                    placeholder="VD: VIP, Tiềm năng, Khách mới, Đã mua hàng..."
                     value={form.tags}
                     onChange={(e) => setForm({ ...form, tags: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-[#f05a28] focus:outline-none"

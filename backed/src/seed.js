@@ -330,24 +330,24 @@ const seedDatabase = async () => {
         customer_name: 'Phạm Thị Nghĩa',
         phone: '0912345678',
         avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100',
-        tags: ["Sp/L'vento", 'Hot MKT'],
-        last_message: '↩ - Chị Phạm Thị Nghĩa Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        tags: ['VIP', 'Đã mua hàng'],
+        last_message: '↩ - Chị Phạm Thị Nghĩa ơi, đơn hàng của chị đã được gửi đi rồi ạ! ❤️',
         date: new Date(Date.now() - 5 * 60 * 1000)
       },
       {
         customer_name: 'Thị Thị Nguyen',
         phone: '0987654321',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100',
-        tags: ["Sp/L'vento", 'Hot MKT'],
-        last_message: '↩ - Chị Thị Thị Nguyen Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        tags: ['Tiềm năng'],
+        last_message: '↩ - Dạ shop gửi chị tư vấn chi tiết về sản phẩm nhé! ❤️',
         date: new Date(Date.now() - 15 * 60 * 1000)
       },
       {
         customer_name: 'Hoàng Thị Thanh Thúy',
         phone: '0933221144',
         avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100',
-        tags: ["Sp/L'vento", 'Hot MKT'],
-        last_message: '↩ - Chị Hoàng Thị Thanh Thúy Ơi Có Khuyến Mãi Khủng Này! ❤️',
+        tags: ['Khách mới', 'Tiềm năng'],
+        last_message: '↩ - Cảm ơn chị Hoàng Thị Thanh Thúy đã quan tâm sản phẩm ạ! ❤️',
         date: new Date(Date.now() - 30 * 60 * 1000)
       },
       {
@@ -355,7 +355,7 @@ const seedDatabase = async () => {
         phone: '0909887766',
         avatar: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100',
         tags: ['Khách mới'],
-        last_message: '↩ - Cảm ơn bạn Tuyết Bùi đã hỏi! Giá sản phẩm có thể thay đổi theo...',
+        last_message: '↩ - Cảm ơn bạn Tuyết Bùi đã hỏi! Shop có nhiều ưu đãi hấp dẫn ạ.',
         date: new Date(Date.now() - 2 * 3600 * 1000)
       }
     ];
