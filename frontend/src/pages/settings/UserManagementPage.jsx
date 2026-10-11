@@ -668,26 +668,25 @@ const UserManagementPage = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-white dark:bg-slate-800/80 text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider border-b border-slate-100 dark:border-slate-700">
               <tr>
-                <th className="py-4 pl-6 pr-2 w-12 text-center"></th>
-                <th className="py-4 px-4 font-bold">TÊN THÀNH VIÊN</th>
+                <th className="py-4 pl-6 px-4 font-bold">TÊN THÀNH VIÊN</th>
                 <th className="py-4 px-4 font-bold">TÊN ĐĂNG NHẬP</th>
                 <th className="py-4 px-4 font-bold">SỐ ĐIỆN THOẠI</th>
                 <th className="py-4 px-4 font-bold">NHÓM QUYỀN</th>
                 <th className="py-4 px-4 font-bold">QUYỀN HẠN</th>
                 <th className="py-4 px-4 font-bold">TRẠNG THÁI</th>
-                <th className="py-4 px-6 text-right font-bold"></th>
+                <th className="py-4 px-6 text-right font-bold">THAO TÁC</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-10 text-slate-400">
+                  <td colSpan="7" className="text-center py-10 text-slate-400">
                     Đang tải danh sách thành viên...
                   </td>
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-10 text-slate-400">
+                  <td colSpan="7" className="text-center py-10 text-slate-400">
                     Không tìm thấy thành viên phù hợp
                   </td>
                 </tr>
@@ -707,7 +706,6 @@ const UserManagementPage = () => {
                   // 1. Chỉ Admin hoặc Owner mới được quản lý người khác.
                   // 2. Member tuyệt đối không được sửa / phân quyền / xóa Admin hay bất kỳ ai.
                   // 3. Không ai được xóa hay sửa Owner (trừ chính Owner).
-                  // 4. Không ai được tự khóa hoạt động của chính mình.
                   const canEdit =
                     (isCurrentUserAdmin || isCurrentUserOwner) &&
                     (!isTargetOwner || isCurrentUserOwner);
@@ -716,12 +714,6 @@ const UserManagementPage = () => {
                     (isCurrentUserAdmin || isCurrentUserOwner) &&
                     !isTargetAdmin &&
                     !isTargetOwner;
-
-                  const canToggleActive =
-                    (isCurrentUserAdmin || isCurrentUserOwner) &&
-                    !isSelf &&
-                    !isTargetOwner &&
-                    (!isTargetAdmin || isCurrentUserOwner);
 
                   const canDelete =
                     (isCurrentUserAdmin || isCurrentUserOwner) &&
@@ -734,39 +726,8 @@ const UserManagementPage = () => {
                       key={user._id}
                       className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition group"
                     >
-                      {/* Cột 1: Toggle Switch Tạm ngưng / Hoạt động trong Business */}
-                      <td className="py-4 pl-6 pr-2 text-center align-middle">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleActive(user)}
-                          disabled={!canToggleActive}
-                          title={
-                            !canToggleActive
-                              ? isSelf
-                                ? 'Không thể tự tạm khóa chính mình'
-                                : isTargetOwner
-                                ? 'Không thể khóa Chủ sở hữu'
-                                : isTargetAdmin && !isCurrentUserOwner
-                                ? 'Chỉ Chủ sở hữu mới có quyền khóa Quản trị viên'
-                                : 'Bạn không có quyền thực hiện thao tác này'
-                              : user.is_active
-                              ? 'Nhấp để tạm ngưng hoạt động trong cửa hàng'
-                              : 'Nhấp để kích hoạt lại hoạt động'
-                          }
-                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition duration-300 ${
-                            user.is_active ? 'bg-[#f05a48]' : 'bg-slate-300 dark:bg-slate-600'
-                          } ${!canToggleActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-                        >
-                          <div
-                            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition duration-300 ${
-                              user.is_active ? 'translate-x-4' : 'translate-x-0'
-                            }`}
-                          ></div>
-                        </button>
-                      </td>
-
-                      {/* Cột 2: TÊN THÀNH VIÊN */}
-                      <td className="py-4 px-4">
+                      {/* Cột 1: TÊN THÀNH VIÊN */}
+                      <td className="py-4 pl-6 px-4">
                         <div className="flex items-center space-x-3">
                           <div className="relative shrink-0">
                             <img
