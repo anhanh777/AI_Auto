@@ -107,10 +107,10 @@ const ProductListPage = () => {
     category_ids: [],
     sku: '',
     barcode: '',
-    stock_physical: 100000,
-    stock_available: 100000,
-    base_price: 400000,
-    sale_price: 299000,
+    stock_physical: 0,
+    stock_available: 0,
+    base_price: 0,
+    sale_price: '',
     cost_price: 0,
     import_price: 0,
     currency: 'VND',
@@ -297,20 +297,17 @@ const ProductListPage = () => {
       category_ids: categories.length > 0 ? [categories[0]._id] : [],
       sku: randomSku,
       barcode: '',
-      stock_physical: 100000,
-      stock_available: 100000,
-      base_price: 400000,
-      sale_price: 299000,
+      stock_physical: 0,
+      stock_available: 0,
+      base_price: 0,
+      sale_price: '',
       cost_price: 0,
       import_price: 0,
       currency: 'VND',
       weight: 0,
       image_urls: [],
       video_url: '',
-      variants_json: [
-        { sku_con: `${randomSku}-M`, size: 'M', color: 'Mặc định', stock: 50000, price: 299000 },
-        { sku_con: `${randomSku}-L`, size: 'L', color: 'Mặc định', stock: 50000, price: 299000 }
-      ],
+      variants_json: [],
       ai_selling_points: '',
       status: 'ACTIVE'
     });
@@ -429,36 +426,54 @@ const ProductListPage = () => {
     }));
   };
 
-  // Biến thể
+  // Biến thể: Thêm / Sửa / Xóa dòng biến thể và tự động cập nhật tổng tồn kho
   const handleAddVariantRow = () => {
-    setProductForm((prev) => ({
-      ...prev,
-      variants_json: [
+    setProductForm((prev) => {
+      const newVariants = [
         ...prev.variants_json,
         {
           sku_con: `${prev.sku || 'SKU'}-${prev.variants_json.length + 1}`,
           size: 'M',
           color: 'Tiêu chuẩn',
-          stock: 10000,
+          stock: 10,
           price: prev.sale_price || prev.base_price || 0
         }
-      ]
-    }));
+      ];
+      const totalVariantStock = newVariants.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0);
+      return {
+        ...prev,
+        variants_json: newVariants,
+        stock_physical: totalVariantStock,
+        stock_available: totalVariantStock
+      };
+    });
   };
 
   const handleVariantChange = (index, field, value) => {
     setProductForm((prev) => {
       const updated = [...prev.variants_json];
       updated[index] = { ...updated[index], [field]: value };
-      return { ...prev, variants_json: updated };
+      const totalVariantStock = updated.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0);
+      return {
+        ...prev,
+        variants_json: updated,
+        stock_physical: totalVariantStock,
+        stock_available: totalVariantStock
+      };
     });
   };
 
   const handleRemoveVariantRow = (index) => {
-    setProductForm((prev) => ({
-      ...prev,
-      variants_json: prev.variants_json.filter((_, idx) => idx !== index)
-    }));
+    setProductForm((prev) => {
+      const remainingVariants = prev.variants_json.filter((_, idx) => idx !== index);
+      const totalVariantStock = remainingVariants.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0);
+      return {
+        ...prev,
+        variants_json: remainingVariants,
+        stock_physical: remainingVariants.length > 0 ? totalVariantStock : prev.stock_physical,
+        stock_available: remainingVariants.length > 0 ? totalVariantStock : prev.stock_available
+      };
+    });
   };
 
   // Submit Lưu Sản phẩm
@@ -1796,23 +1811,41 @@ const ProductListPage = () => {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            TỒN KHO THỰC TẾ
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 dark:text-slate-300">
+                              TỒN KHO THỰC TẾ
+                            </label>
+                            {productForm.variants_json && productForm.variants_json.length > 0 && (
+                              <span className="text-[10px] text-[#f05a28] font-bold bg-[#fff1ee] dark:bg-orange-950/40 px-1.5 py-0.5 rounded">
+                                Tính từ {productForm.variants_json.length} biến thể
+                              </span>
+                            )}
+                          </div>
                           <input
                             type="number"
                             min="0"
+                            disabled={productForm.variants_json && productForm.variants_json.length > 0}
+                            readOnly={productForm.variants_json && productForm.variants_json.length > 0}
                             value={productForm.stock_physical}
                             onChange={(e) => {
-                              const val = e.target.value;
+                              const val = Math.max(0, parseInt(e.target.value) || 0);
                               setProductForm((prev) => ({
                                 ...prev,
                                 stock_physical: val,
-                                // Khi tạo mới, tồn kho khả dụng tự động bằng tồn kho thực tế
-                                stock_available: editingProduct ? prev.stock_available : val
+                                // Khi không có biến thể, tồn khả dụng tự động bằng tồn thực tế
+                                stock_available: val
                               }));
                             }}
-                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                            title={
+                              productForm.variants_json && productForm.variants_json.length > 0
+                                ? 'Tồn kho được tự động tính bằng tổng số lượng của các biến thể ở Tab 4'
+                                : 'Số lượng hàng thực tế hiện có trong kho'
+                            }
+                            className={`w-full px-3 py-2 border rounded-xl font-bold focus:outline-none ${
+                              productForm.variants_json && productForm.variants_json.length > 0
+                                ? 'bg-slate-100 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-500 cursor-not-allowed'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-[#f05a28]'
+                            }`}
                           />
                         </div>
 
@@ -1821,13 +1854,16 @@ const ProductListPage = () => {
                             <label className="font-bold text-slate-700 dark:text-slate-300">
                               TỒN KHO KHẢ DỤNG
                             </label>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              (Sẵn sàng bán)
+                            </span>
                           </div>
                           <input
                             type="number"
                             readOnly
                             disabled
                             value={productForm.stock_available}
-                            title="Tồn kho khả dụng được hệ thống tự động tính toán (Tồn kho thực tế trừ đi các đơn hàng đang xử lý)"
+                            title="Tồn kho khả dụng = Tồn thực tế - Đơn hàng đang xử lý (không bao giờ vượt quá tồn thực tế)"
                             className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-500 dark:text-slate-400 cursor-not-allowed focus:outline-none"
                           />
                         </div>
@@ -2158,90 +2194,100 @@ const ProductListPage = () => {
                     </button>
                   </div>
 
-                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 dark:bg-slate-900/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-700">
-                          <th className="p-2.5">Kích cỡ (Size)</th>
-                          <th className="p-2.5">Màu sắc</th>
-                          <th className="p-2.5">Mã SKU con</th>
-                          <th className="p-2.5 w-24">Tồn kho</th>
-                          <th className="p-2.5 w-32">Giá bán (đ)</th>
-                          <th className="p-2.5 w-10 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {productForm.variants_json.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="p-4 text-center text-slate-400">
-                              Chưa có biến thể nào. Nhấn "+ Thêm biến thể" để thiết lập.
-                            </td>
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 dark:bg-slate-900/60 text-slate-500 font-bold border-b border-slate-200 dark:border-slate-700">
+                            <th className="p-2.5">Kích cỡ (Size)</th>
+                            <th className="p-2.5">Màu sắc</th>
+                            <th className="p-2.5">Mã SKU con</th>
+                            <th className="p-2.5 w-28 text-center">Tồn kho con</th>
+                            <th className="p-2.5 w-32">Giá bán (đ)</th>
+                            <th className="p-2.5 w-10 text-center"></th>
                           </tr>
-                        ) : (
-                          productForm.variants_json.map((variant, idx) => (
-                            <tr key={idx} className="hover:bg-slate-50/50">
-                              <td className="p-2">
-                                <input
-                                  type="text"
-                                  value={variant.size}
-                                  onChange={(e) => handleVariantChange(idx, 'size', e.target.value)}
-                                  placeholder="M, L, XL, 30..."
-                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="text"
-                                  value={variant.color}
-                                  onChange={(e) => handleVariantChange(idx, 'color', e.target.value)}
-                                  placeholder="Đen, Trắng..."
-                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="text"
-                                  value={variant.sku_con}
-                                  onChange={(e) => handleVariantChange(idx, 'sku_con', e.target.value)}
-                                  placeholder="TM10-M"
-                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={variant.stock}
-                                  onChange={(e) => handleVariantChange(idx, 'stock', e.target.value)}
-                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={variant.price}
-                                  onChange={(e) => handleVariantChange(idx, 'price', e.target.value)}
-                                  className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveVariantRow(idx)}
-                                  className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {productForm.variants_json.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-4 text-center text-slate-400">
+                                Chưa có biến thể nào. Nếu sản phẩm có phân loại (Size, Màu sắc...), nhấn "+ Thêm biến thể" để thiết lập.
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            productForm.variants_json.map((variant, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/50">
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={variant.size}
+                                    onChange={(e) => handleVariantChange(idx, 'size', e.target.value)}
+                                    placeholder="M, L, XL, 30..."
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={variant.color}
+                                    onChange={(e) => handleVariantChange(idx, 'color', e.target.value)}
+                                    placeholder="Đen, Trắng..."
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="text"
+                                    value={variant.sku_con}
+                                    onChange={(e) => handleVariantChange(idx, 'sku_con', e.target.value)}
+                                    placeholder="TM10-M"
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={variant.stock}
+                                    onChange={(e) => handleVariantChange(idx, 'stock', Math.max(0, parseInt(e.target.value) || 0))}
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-center"
+                                  />
+                                </td>
+                                <td className="p-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={variant.price}
+                                    onChange={(e) => handleVariantChange(idx, 'price', e.target.value)}
+                                    className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs"
+                                  />
+                                </td>
+                                <td className="p-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveVariantRow(idx)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* TỔNG TỒN KHO CÁC BIẾN THỂ */}
+                      {productForm.variants_json.length > 0 && (
+                        <div className="p-2.5 bg-orange-50/60 dark:bg-orange-950/20 border-t border-orange-200/60 dark:border-orange-800/40 flex items-center justify-between text-xs font-bold text-[#f05a28]">
+                          <span>Tổng tồn kho các biến thể:</span>
+                          <span className="font-mono text-sm px-2.5 py-0.5 rounded-md bg-white dark:bg-slate-900 shadow-2xs border border-orange-200 dark:border-orange-900">
+                            {productForm.variants_json.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0)} sản phẩm
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {/* Modal Footer (Ảnh 3, 4, 5) */}
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">

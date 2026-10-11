@@ -153,17 +153,25 @@ export const createProductService = async (data, userId) => {
   }
 
   // 3. Tồn kho vật lý và khả dụng
-  let calculatedPhysicalStock =
-    data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== ''
-      ? Number(data.stock_physical)
-      : Array.isArray(variants_json) && variants_json.length > 0
-      ? variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0)
-      : 0;
+  // Nếu có biến thể, tổng tồn kho thực tế bắt buộc bằng tổng tồn kho các biến thể
+  const hasVariants = Array.isArray(variants_json) && variants_json.length > 0;
+  let calculatedPhysicalStock = 0;
 
-  let calculatedAvailableStock =
-    data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== ''
-      ? Number(data.stock_available)
-      : calculatedPhysicalStock;
+  if (hasVariants) {
+    calculatedPhysicalStock = variants_json.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0);
+  } else {
+    calculatedPhysicalStock =
+      data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== ''
+        ? Math.max(0, Number(data.stock_physical))
+        : 0;
+  }
+
+  // Tồn khả dụng khi tạo mới luôn bằng tồn thực tế (chưa có đơn hold)
+  // và không bao giờ được vượt quá tồn thực tế
+  let calculatedAvailableStock = calculatedPhysicalStock;
+  if (data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== '') {
+    calculatedAvailableStock = Math.min(calculatedPhysicalStock, Math.max(0, Number(data.stock_available)));
+  }
 
   // Trạng thái
   let finalStatus = status;
@@ -278,16 +286,36 @@ export const updateProductService = async (productId, data, userId) => {
     product.variants_json = data.variants_json;
   }
 
-  if (data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== '') {
-    product.stock_physical = Number(data.stock_physical);
-  } else if (data.variants_json && data.variants_json.length > 0) {
-    product.stock_physical = data.variants_json.reduce((sum, v) => sum + (Number(v.stock) || 0), 0);
+  const hasVariants = Array.isArray(product.variants_json) && product.variants_json.length > 0;
+  const currentHold = Math.max(0, (product.stock_physical || 0) - (product.stock_available || 0));
+
+  if (hasVariants) {
+    // Có biến thể: Tồn thực tế luôn tính từ tổng biến thể
+    product.stock_physical = product.variants_json.reduce((sum, v) => sum + (Math.max(0, Number(v.stock)) || 0), 0);
+    // Tồn khả dụng = tồn thực tế mới trừ lượng đang giữ chỗ (không nhỏ hơn 0 và không lớn hơn tồn thực tế)
+    product.stock_available = Math.max(0, product.stock_physical - currentHold);
+  } else {
+    // Không có biến thể
+    if (data.stock_physical !== undefined && data.stock_physical !== null && data.stock_physical !== '') {
+      product.stock_physical = Math.max(0, Number(data.stock_physical));
+    }
+    if (data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== '') {
+      product.stock_available = Math.min(product.stock_physical, Math.max(0, Number(data.stock_available)));
+    } else {
+      product.stock_available = Math.max(0, product.stock_physical - currentHold);
+    }
   }
 
-  if (data.stock_available !== undefined && data.stock_available !== null && data.stock_available !== '') {
-    product.stock_available = Number(data.stock_available);
-  } else if (data.variants_json && data.variants_json.length > 0 && data.stock_physical === undefined) {
+  // Đảm bảo không bao giờ có chuyện tồn khả dụng > tồn thực tế
+  if (product.stock_available > product.stock_physical) {
     product.stock_available = product.stock_physical;
+  }
+
+  // Tự động chuyển trạng thái nếu hết hàng
+  if (product.stock_available <= 0 && product.status === 'ACTIVE') {
+    product.status = 'OUT_OF_STOCK';
+  } else if (product.stock_available > 0 && product.status === 'OUT_OF_STOCK') {
+    product.status = 'ACTIVE';
   }
 
   if (data.ai_selling_points !== undefined) product.ai_selling_points = data.ai_selling_points;
