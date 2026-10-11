@@ -13,6 +13,7 @@ import orderRouter from './order.route.js';
 import knowledgeRouter from './knowledge.route.js';
 import analyticsRouter from './analytics.route.js';
 import notificationRouter from './notification.route.js';
+import inventoryRouter from './inventory.route.js';
 
 const rootRouter = Router();
 
@@ -35,6 +36,7 @@ rootRouter.use('/channels', channelRouter);
 rootRouter.use('/conversations', conversationRouter);
 rootRouter.use('/categories', categoryRouter);
 rootRouter.use('/products', productRouter);
+rootRouter.use('/inventory', inventoryRouter);
 rootRouter.use('/customers', customerRouter);
 rootRouter.use('/ai-config', aiConfigRouter);
 rootRouter.use('/orders', orderRouter);

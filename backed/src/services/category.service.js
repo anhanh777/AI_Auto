@@ -33,7 +33,7 @@ export const getCategoriesService = async ({ business_id, search = '', is_active
     categories.map(async (cat) => {
       const productCount = await Product.countDocuments({
         business_id,
-        category_id: cat._id
+        $or: [{ category_ids: cat._id }, { category_id: cat._id }]
       });
       const catObj = cat.toObject();
       catObj.product_count = productCount;

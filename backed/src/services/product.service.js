@@ -1,4 +1,4 @@
-import { Product, Category } from '../models/index.js';
+import { Product, Category, Inventory } from '../models/index.js';
 import { createSlug } from '../helpers/slug.helper.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 
@@ -199,6 +199,22 @@ export const createProductService = async (data, userId) => {
     created_by: userId || null
   });
 
+  // Ghi nhật ký vào Inventory (lịch sử tạo mới sản phẩm và tồn kho ban đầu)
+  try {
+    await Inventory.create({
+      business_id,
+      product_id: newProduct._id,
+      variant_sku: newProduct.sku,
+      type: 'CREATE',
+      quantity: calculatedPhysicalStock,
+      unit_price: Number(import_price) || Number(cost_price) || 0,
+      note: `Tạo mới sản phẩm "${newProduct.product_name}" với số lượng ban đầu là ${calculatedPhysicalStock}`,
+      performed_by: userId || null
+    });
+  } catch (logErr) {
+    console.error('Lỗi khi ghi lịch sử khởi tạo sản phẩm vào Inventory:', logErr);
+  }
+
   const populatedProduct = await Product.findById(newProduct._id)
     .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username');
@@ -287,6 +303,22 @@ export const updateProductService = async (productId, data, userId) => {
   if (userId) product.updated_by = userId;
 
   await product.save();
+
+  // Ghi nhật ký vào Inventory (lịch sử cập nhật sản phẩm)
+  try {
+    await Inventory.create({
+      business_id: product.business_id,
+      product_id: product._id,
+      variant_sku: product.sku,
+      type: 'UPDATE',
+      quantity: product.stock_physical,
+      unit_price: product.import_price || product.cost_price || 0,
+      note: `Cập nhật thông tin sản phẩm "${product.product_name}" (Tồn kho hiện tại: ${product.stock_physical})`,
+      performed_by: userId || null
+    });
+  } catch (logErr) {
+    console.error('Lỗi khi ghi lịch sử cập nhật sản phẩm vào Inventory:', logErr);
+  }
 
   const updatedProduct = await Product.findById(productId)
     .populate('category_ids', 'category_name slug image_url')

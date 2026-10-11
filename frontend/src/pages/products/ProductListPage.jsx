@@ -4,6 +4,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { productService } from '../../services/product.service.js';
 import { categoryService } from '../../services/category.service.js';
+import { inventoryService } from '../../services/inventory.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { generateSku, generateSlug } from '../../utils/slug.utils.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
@@ -34,7 +35,13 @@ import {
   SlidersHorizontal,
   GripVertical,
   Camera,
-  Loader2
+  Loader2,
+  History,
+  Clock,
+  ArrowDownToLine,
+  TrendingUp,
+  FileSpreadsheet,
+  AlertTriangle
 } from 'lucide-react';
 
 const ProductListPage = () => {
@@ -42,7 +49,7 @@ const ProductListPage = () => {
   const { user } = useAuth();
   const { showToast } = useToast();
 
-  // Active Menu: 'products' | 'categories'
+  // Active Menu: 'products' | 'categories' | 'history'
   const [activeMenu, setActiveMenu] = useState('products');
 
   // Products state
@@ -60,6 +67,22 @@ const ProductListPage = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [editingCategory, setEditingCategory] = useState(null);
+
+  // Inventory & History state
+  const [historyList, setHistoryList] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyFilterType, setHistoryFilterType] = useState('');
+  const [historyFilterProduct, setHistoryFilterProduct] = useState('');
+  const [historySearch, setHistorySearch] = useState('');
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importForm, setImportForm] = useState({
+    product_id: '',
+    variant_sku: '',
+    quantity: 10,
+    unit_price: 0,
+    note: ''
+  });
+  const [submittingImport, setSubmittingImport] = useState(false);
 
   // Custom Confirm Dialog State (Thay thế hoàn toàn window.confirm)
   const [confirmDialog, setConfirmDialog] = useState({
@@ -204,12 +227,34 @@ const ProductListPage = () => {
     }
   }, [activeBusiness?._id, productSearch, showToast]);
 
+  // 3. Tải lịch sử biến động kho và thao tác sản phẩm (Nhập kho, Tạo mới, Sửa...)
+  const fetchHistory = useCallback(async () => {
+    if (!activeBusiness?._id) return;
+    try {
+      setHistoryLoading(true);
+      const res = await inventoryService.getHistory({
+        business_id: activeBusiness._id,
+        type: historyFilterType || undefined,
+        product_id: historyFilterProduct || undefined,
+        limit: 100
+      });
+      if (res.success && res.data?.history) {
+        setHistoryList(res.data.history);
+      }
+    } catch (err) {
+      console.error('Lỗi tải lịch sử:', err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [activeBusiness?._id, historyFilterType, historyFilterProduct]);
+
   useEffect(() => {
     if (activeBusiness?._id) {
       fetchCategories();
       fetchProducts();
+      fetchHistory();
     }
-  }, [activeBusiness?._id, fetchCategories, fetchProducts]);
+  }, [activeBusiness?._id, fetchCategories, fetchProducts, fetchHistory]);
 
   // Format tiền tệ VNĐ
   const formatCurrency = (amount) => {
@@ -630,10 +675,52 @@ const ProductListPage = () => {
     }
   };
 
-  const handleSelectOne = (id) => {
-    setSelectedProductIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
+  // Mở modal Nhập kho
+  const handleOpenImportModal = (product = null) => {
+    setImportForm({
+      product_id: product?._id || (products.length > 0 ? products[0]._id : ''),
+      variant_sku: product?.variants_json?.[0]?.sku_con || '',
+      quantity: 10,
+      unit_price: product?.import_price || product?.cost_price || 0,
+      note: ''
+    });
+    setShowImportModal(true);
+  };
+
+  // Submit tạo phiếu nhập kho
+  const handleSubmitImport = async (e) => {
+    e.preventDefault();
+    if (!importForm.product_id) {
+      showToast('error', 'Vui lòng chọn sản phẩm cần nhập');
+      return;
+    }
+    if (!importForm.quantity || Number(importForm.quantity) <= 0) {
+      showToast('error', 'Số lượng nhập phải lớn hơn 0');
+      return;
+    }
+
+    try {
+      setSubmittingImport(true);
+      const res = await inventoryService.importStock({
+        business_id: activeBusiness._id,
+        product_id: importForm.product_id,
+        variant_sku: importForm.variant_sku,
+        quantity: Number(importForm.quantity),
+        unit_price: Number(importForm.unit_price) || 0,
+        note: importForm.note
+      });
+
+      if (res.success) {
+        showToast('success', `Đã nhập +${importForm.quantity} sản phẩm vào kho thành công!`);
+        setShowImportModal(false);
+        fetchProducts();
+        fetchHistory();
+      }
+    } catch (err) {
+      showToast('error', err.message || 'Lỗi khi nhập kho');
+    } finally {
+      setSubmittingImport(false);
+    }
   };
 
   return (
@@ -672,6 +759,23 @@ const ProductListPage = () => {
             >
               <GripVertical size={16} className={activeMenu === 'categories' ? 'text-[#f05a28]' : 'text-slate-400'} />
               <span>Categories</span>
+            </button>
+
+            {/* Tab 3: Lịch sử (Audit log & biến động kho) */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveMenu('history');
+                fetchHistory();
+              }}
+              className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl transition text-left cursor-pointer ${
+                activeMenu === 'history'
+                  ? 'bg-[#fff1ee] text-[#f05a28] font-bold shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+            >
+              <History size={16} className={activeMenu === 'history' ? 'text-[#f05a28]' : 'text-slate-400'} />
+              <span>Lịch sử</span>
             </button>
           </nav>
         </div>
@@ -741,6 +845,17 @@ const ProductListPage = () => {
                   title="Ghi nhớ"
                 >
                   <Bookmark size={14} />
+                </button>
+
+                {/* NÚT TẠO PHIẾU NHẬP KHO */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenImportModal()}
+                  className="px-3.5 py-1.5 border border-[#f05a28] text-[#f05a28] hover:bg-[#fff1ee] dark:hover:bg-orange-950/30 rounded-lg text-xs font-bold flex items-center space-x-1.5 transition cursor-pointer"
+                  title="Tạo phiếu nhập hàng vào kho"
+                >
+                  <ArrowDownToLine size={14} />
+                  <span>Nhập kho</span>
                 </button>
 
                 {/* NÚT THÊM MỚI SẢN PHẨM (#f05a28) */}
@@ -1113,6 +1228,247 @@ const ProductListPage = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= MÀN HÌNH 3: LỊCH SỬ THAO TÁC & BIẾN ĐỘNG KHO ================= */}
+        {activeMenu === 'history' && (
+          <div className="space-y-4 flex-1 flex flex-col">
+            {/* Header Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3">
+              <div>
+                <h1 className="text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Lịch sử thao tác & kho hàng</span>
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-orange-100 text-[#f05a28] font-bold">
+                    {historyList.length} hoạt động
+                  </span>
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Theo dõi ai đã thêm, cập nhật sản phẩm nào, nhập kho bao nhiêu và vào thời gian nào
+                </p>
+              </div>
+
+              <div className="flex items-center flex-wrap gap-2">
+                {/* Lọc theo loại hành động */}
+                <select
+                  value={historyFilterType}
+                  onChange={(e) => setHistoryFilterType(e.target.value)}
+                  className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-[#f05a28]"
+                >
+                  <option value="">Tất cả hành động</option>
+                  <option value="CREATE">Tạo mới sản phẩm</option>
+                  <option value="UPDATE">Cập nhật sản phẩm</option>
+                  <option value="IMPORT">Nhập kho</option>
+                  <option value="EXPORT">Xuất kho</option>
+                  <option value="ADJUST">Điều chỉnh tồn</option>
+                </select>
+
+                {/* Nút Làm mới */}
+                <button
+                  type="button"
+                  onClick={fetchHistory}
+                  className="p-2 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500 transition cursor-pointer"
+                  title="Tải lại lịch sử"
+                >
+                  <RefreshCw size={14} className={historyLoading ? 'animate-spin text-[#f05a28]' : ''} />
+                </button>
+
+                {/* NÚT TẠO PHIẾU NHẬP KHO */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenImportModal()}
+                  className="px-3.5 py-1.5 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-sm transition cursor-pointer"
+                >
+                  <ArrowDownToLine size={14} />
+                  <span>+ Phiếu nhập kho</span>
+                </button>
+              </div>
+            </div>
+
+            {/* BẢNG DỮ LIỆU LỊCH SỬ */}
+            <div className="border border-slate-200/80 dark:border-slate-800 rounded-xl overflow-hidden flex-1 flex flex-col bg-white dark:bg-slate-900 shadow-xs">
+              <div className="overflow-x-auto flex-1">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 dark:bg-slate-900/80 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800 uppercase tracking-wider text-[11px]">
+                      <th className="py-3 px-3 w-12 text-center">#</th>
+                      <th className="py-3 px-3">HÀNH ĐỘNG</th>
+                      <th className="py-3 px-3 min-w-[220px]">SẢN PHẨM / BIẾN THỂ</th>
+                      <th className="py-3 px-3 text-center">SỐ LƯỢNG</th>
+                      <th className="py-3 px-3">CHI TIẾT & GHI CHÚ</th>
+                      <th className="py-3 px-3">NGƯỜI THỰC HIỆN</th>
+                      <th className="py-3 px-3 text-right whitespace-nowrap">THỜI GIAN</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {historyLoading ? (
+                      <tr>
+                        <td colSpan={7} className="py-16 text-center text-slate-400">
+                          <div className="flex flex-col items-center justify-center space-y-2">
+                            <Loader2 size={24} className="animate-spin text-[#f05a28]" />
+                            <span>Đang tải lịch sử kho hàng...</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : historyList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-16 text-center text-slate-400">
+                          <div className="flex flex-col items-center justify-center space-y-2">
+                            <Clock size={32} className="text-slate-300 dark:text-slate-600" />
+                            <p className="font-semibold text-slate-600 dark:text-slate-400">
+                              Chưa có lịch sử hoạt động nào
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              Các thao tác tạo sản phẩm, cập nhật thông tin và nhập kho sẽ được ghi lại tại đây.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      historyList.map((item, idx) => {
+                        const prod = item.product_id;
+                        const actor = item.performed_by;
+                        const actorName = actor?.full_name || actor?.username || 'Hệ thống';
+                        const actorRole = actor?.role_name || 'Thành viên';
+                        const prodImg =
+                          prod?.image_urls && prod.image_urls.length > 0
+                            ? prod.image_urls[0]
+                            : null;
+
+                        // Badge kiểu hành động
+                        let badgeColor = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+                        let badgeLabel = item.type;
+                        if (item.type === 'CREATE') {
+                          badgeColor = 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400';
+                          badgeLabel = 'Tạo mới sản phẩm';
+                        } else if (item.type === 'UPDATE') {
+                          badgeColor = 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-400';
+                          badgeLabel = 'Cập nhật sản phẩm';
+                        } else if (item.type === 'IMPORT') {
+                          badgeColor = 'bg-orange-50 text-[#f05a28] border border-orange-200 dark:bg-orange-950/40 dark:text-orange-400';
+                          badgeLabel = 'Nhập kho';
+                        } else if (item.type === 'EXPORT') {
+                          badgeColor = 'bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/40 dark:text-purple-400';
+                          badgeLabel = 'Xuất hàng';
+                        } else if (item.type === 'ADJUST') {
+                          badgeColor = 'bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-400';
+                          badgeLabel = 'Kiểm kho / Điều chỉnh';
+                        }
+
+                        return (
+                          <tr
+                            key={item._id}
+                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition"
+                          >
+                            {/* STT */}
+                            <td className="py-3 px-3 text-center text-slate-400 font-mono text-[11px]">
+                              {idx + 1}
+                            </td>
+
+                            {/* Badge Hành động */}
+                            <td className="py-3 px-3 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold ${badgeColor}`}>
+                                {badgeLabel}
+                              </span>
+                            </td>
+
+                            {/* Sản phẩm */}
+                            <td className="py-3 px-3">
+                              <div className="flex items-center space-x-3">
+                                {prodImg ? (
+                                  <img
+                                    src={prodImg}
+                                    alt={prod?.product_name || 'Product'}
+                                    className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 shrink-0">
+                                    <Package size={18} />
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-900 dark:text-white line-clamp-1">
+                                    {prod?.product_name || 'Sản phẩm đã bị xóa hoặc không rõ'}
+                                  </p>
+                                  <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
+                                    <span className="font-mono font-medium text-slate-600 dark:text-slate-400">
+                                      SKU: {item.variant_sku || prod?.sku || 'N/A'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Số lượng */}
+                            <td className="py-3 px-3 text-center whitespace-nowrap">
+                              {item.type === 'IMPORT' ? (
+                                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
+                                  +{item.quantity}
+                                </span>
+                              ) : item.type === 'EXPORT' ? (
+                                <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded">
+                                  -{item.quantity}
+                                </span>
+                              ) : (
+                                <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
+                                  {item.quantity}
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Ghi chú / Chi tiết */}
+                            <td className="py-3 px-3">
+                              <p className="text-slate-700 dark:text-slate-300 text-xs">
+                                {item.note || 'Không có ghi chú'}
+                              </p>
+                              {item.unit_price > 0 && (
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                  Đơn giá nhập: <span className="font-semibold text-slate-600 dark:text-slate-300">{formatCurrency(item.unit_price)}</span>
+                                </p>
+                              )}
+                            </td>
+
+                            {/* Người thực hiện */}
+                            <td className="py-3 px-3 whitespace-nowrap">
+                              <div className="flex items-center space-x-2">
+                                <img
+                                  src={actor?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=faces'}
+                                  alt={actorName}
+                                  className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                />
+                                <div>
+                                  <p className="font-bold text-slate-800 dark:text-slate-200">
+                                    {actorName}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400">
+                                    {actorRole}
+                                  </p>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Thời gian */}
+                            <td className="py-3 px-3 text-right whitespace-nowrap font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                              {formatDateTime(item.created_at)}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* FOOTER */}
+              <div className="p-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/40 dark:bg-slate-900/40 text-xs">
+                <span className="text-slate-500">
+                  Hiển thị lịch sử thao tác theo thời gian thực
+                </span>
+                <span className="font-bold text-slate-600 dark:text-slate-400">
+                  Tổng: {historyList.length} bản ghi
+                </span>
               </div>
             </div>
           </div>
@@ -2024,6 +2380,165 @@ const ProductListPage = () => {
                   className="px-5 py-2 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-xl font-bold shadow disabled:opacity-50 cursor-pointer"
                 >
                   {submittingCategory ? 'Đang lưu...' : 'Lưu'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL: TẠO PHIẾU NHẬP KHO HÀNG ================= */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative">
+            <button
+              onClick={() => setShowImportModal(false)}
+              className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg absolute top-4 right-4 cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center space-x-2 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-[#fff1ee] text-[#f05a28] flex items-center justify-center">
+                <ArrowDownToLine size={18} />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                  Tạo phiếu nhập kho
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Cập nhật tăng số lượng tồn kho và ghi nhật ký hoạt động
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSubmitImport} className="space-y-4 text-xs">
+              {/* Chọn sản phẩm */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  SẢN PHẨM CẦN NHẬP <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  required
+                  value={importForm.product_id}
+                  onChange={(e) => {
+                    const selProdId = e.target.value;
+                    const prod = products.find((p) => p._id === selProdId);
+                    setImportForm((prev) => ({
+                      ...prev,
+                      product_id: selProdId,
+                      variant_sku: prod?.variants_json?.[0]?.sku_con || '',
+                      unit_price: prod?.import_price || prod?.cost_price || 0
+                    }));
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-semibold text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                >
+                  <option value="">-- Chọn sản phẩm --</option>
+                  {products.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.product_name} (Tồn hiện tại: {p.stock_available})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Chọn Biến thể (nếu có) */}
+              {(() => {
+                const selectedProd = products.find((p) => p._id === importForm.product_id);
+                if (selectedProd && Array.isArray(selectedProd.variants_json) && selectedProd.variants_json.length > 0) {
+                  return (
+                    <div>
+                      <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                        BIẾN THỂ SẢN PHẨM
+                      </label>
+                      <select
+                        value={importForm.variant_sku}
+                        onChange={(e) => setImportForm({ ...importForm, variant_sku: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                      >
+                        <option value="">-- Toàn bộ sản phẩm (hoặc mặc định) --</option>
+                        {selectedProd.variants_json.map((v, i) => (
+                          <option key={i} value={v.sku_con}>
+                            {v.title || v.name || v.sku_con} (SKU: {v.sku_con} - Tồn: {v.stock || 0})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Số lượng nhập & Đơn giá nhập */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    SỐ LƯỢNG NHẬP <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={importForm.quantity}
+                    onChange={(e) => setImportForm({ ...importForm, quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-white focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    ĐƠN GIÁ NHẬP (VNĐ)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1000"
+                    value={importForm.unit_price}
+                    onChange={(e) => setImportForm({ ...importForm, unit_price: Math.max(0, parseInt(e.target.value) || 0) })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Ghi chú */}
+              <div>
+                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  GHI CHÚ / LÝ DO NHẬP
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Nhập bổ sung từ nhà cung cấp, lô hàng mới..."
+                  value={importForm.note}
+                  onChange={(e) => setImportForm({ ...importForm, note: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-1 focus:ring-[#f05a28] focus:outline-none"
+                ></textarea>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-xl font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingImport}
+                  className="px-5 py-2 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-xl font-bold shadow disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer"
+                >
+                  {submittingImport ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Đang lưu...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>Xác nhận nhập kho</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
