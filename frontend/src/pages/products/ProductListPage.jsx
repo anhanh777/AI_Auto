@@ -1289,16 +1289,6 @@ const ProductListPage = () => {
                 >
                   <RefreshCw size={14} className={historyLoading ? 'animate-spin text-[#f05a28]' : ''} />
                 </button>
-
-                {/* NÚT TẠO PHIẾU NHẬP KHO */}
-                <button
-                  type="button"
-                  onClick={() => handleOpenImportModal()}
-                  className="px-3.5 py-1.5 bg-[#f05a28] hover:bg-[#d94e20] text-white rounded-lg text-xs font-bold flex items-center space-x-1.5 shadow-sm transition cursor-pointer"
-                >
-                  <ArrowDownToLine size={14} />
-                  <span>+ Phiếu nhập kho</span>
-                </button>
               </div>
             </div>
 
