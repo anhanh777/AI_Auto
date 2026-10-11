@@ -40,7 +40,8 @@ export const createUser = async (req, res) => {
 
 export const updateUser = async (req, res) => {
   try {
-    const updatedUser = await updateUserService(req.params.id, req.body);
+    const business_id = req.headers['x-business-id'] || req.query.business_id || req.body?.business_id;
+    const updatedUser = await updateUserService(req.params.id, req.body, req.user, business_id);
     return sendSuccess(res, 'Cập nhật tài khoản nhân viên thành công', updatedUser);
   } catch (error) {
     return sendError(res, error.message, null, 400);

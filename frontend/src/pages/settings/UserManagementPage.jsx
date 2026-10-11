@@ -5,6 +5,7 @@ import { businessService } from '../../services/business.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Users,
@@ -69,10 +70,23 @@ const groupPermissionsList = (permsList) => {
 };
 
 const UserManagementPage = () => {
+  const { user: currentUser } = useAuth();
+  const { activeBusiness } = useBusiness();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [permissionsGrouped, setPermissionsGrouped] = useState(() => groupPermissionsList(DEFAULT_PERMISSIONS));
   const [loading, setLoading] = useState(true);
+
+  // Phân quyền của người đang đăng nhập
+  const isCurrentUserAdmin =
+    currentUser?.role_id?.name === 'ADMIN' ||
+    currentUser?.role_type === 'ADMIN' ||
+    currentUser?.role_name === 'ADMIN' ||
+    currentUser?.username === 'admin';
+  const isCurrentUserOwner =
+    activeBusiness?.owner_user_id &&
+    (activeBusiness.owner_user_id === currentUser?._id ||
+      activeBusiness.owner_user_id?._id === currentUser?._id);
 
   // Bộ lọc
   const [search, setSearch] = useState('');
@@ -102,7 +116,6 @@ const UserManagementPage = () => {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const avatarInputRef = useRef(null);
   const { showToast } = useToast();
-  const { activeBusiness } = useBusiness();
 
   // Custom Confirm Dialog State
   const [confirmDialog, setConfirmDialog] = useState({
@@ -680,23 +693,69 @@ const UserManagementPage = () => {
                 </tr>
               ) : (
                 filteredUsers.map((user) => {
-                  const isAdmin = user.role_id?.name === 'ADMIN';
+                  const isTargetAdmin =
+                    user.role_id?.name === 'ADMIN' ||
+                    user.role_type === 'ADMIN' ||
+                    user.username === 'admin';
+                  const isTargetOwner =
+                    activeBusiness?.owner_user_id &&
+                    (user._id === activeBusiness.owner_user_id ||
+                      user._id === activeBusiness.owner_user_id?._id);
+                  const isSelf = user._id === currentUser?._id;
+
+                  // Quyền thao tác trên dòng này:
+                  // 1. Chỉ Admin hoặc Owner mới được quản lý người khác.
+                  // 2. Member tuyệt đối không được sửa / phân quyền / xóa Admin hay bất kỳ ai.
+                  // 3. Không ai được xóa hay sửa Owner (trừ chính Owner).
+                  // 4. Không ai được tự khóa hoạt động của chính mình.
+                  const canEdit =
+                    (isCurrentUserAdmin || isCurrentUserOwner) &&
+                    (!isTargetOwner || isCurrentUserOwner);
+
+                  const canManagePermissions =
+                    (isCurrentUserAdmin || isCurrentUserOwner) &&
+                    !isTargetAdmin &&
+                    !isTargetOwner;
+
+                  const canToggleActive =
+                    (isCurrentUserAdmin || isCurrentUserOwner) &&
+                    !isSelf &&
+                    !isTargetOwner &&
+                    (!isTargetAdmin || isCurrentUserOwner);
+
+                  const canDelete =
+                    (isCurrentUserAdmin || isCurrentUserOwner) &&
+                    !isSelf &&
+                    !isTargetOwner &&
+                    (!isTargetAdmin || isCurrentUserOwner);
 
                   return (
                     <tr
                       key={user._id}
                       className="hover:bg-slate-50/60 dark:hover:bg-slate-700/20 transition group"
                     >
-                      {/* Cột 1: Toggle Switch */}
+                      {/* Cột 1: Toggle Switch Tạm ngưng / Hoạt động trong Business */}
                       <td className="py-4 pl-6 pr-2 text-center align-middle">
                         <button
                           type="button"
                           onClick={() => handleToggleActive(user)}
-                          disabled={user.username === 'admin'}
-                          title={user.is_active ? 'Nhấp để tạm khóa' : 'Nhấp để kích hoạt'}
-                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition duration-300 cursor-pointer ${
+                          disabled={!canToggleActive}
+                          title={
+                            !canToggleActive
+                              ? isSelf
+                                ? 'Không thể tự tạm khóa chính mình'
+                                : isTargetOwner
+                                ? 'Không thể khóa Chủ sở hữu'
+                                : isTargetAdmin && !isCurrentUserOwner
+                                ? 'Chỉ Chủ sở hữu mới có quyền khóa Quản trị viên'
+                                : 'Bạn không có quyền thực hiện thao tác này'
+                              : user.is_active
+                              ? 'Nhấp để tạm ngưng hoạt động trong cửa hàng'
+                              : 'Nhấp để kích hoạt lại hoạt động'
+                          }
+                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition duration-300 ${
                             user.is_active ? 'bg-[#f05a48]' : 'bg-slate-300 dark:bg-slate-600'
-                          } ${user.username === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          } ${!canToggleActive ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                         >
                           <div
                             className={`bg-white w-4 h-4 rounded-full shadow-md transform transition duration-300 ${
@@ -723,9 +782,21 @@ const UserManagementPage = () => {
                             )}
                           </div>
                           <div>
-                            <p className="font-bold text-slate-800 dark:text-white text-xs">
-                              {user.full_name}
-                            </p>
+                            <div className="flex items-center space-x-1.5">
+                              <p className="font-bold text-slate-800 dark:text-white text-xs">
+                                {user.full_name}
+                              </p>
+                              {isSelf && (
+                                <span className="text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-bold px-1.5 py-0.2 rounded">
+                                  Bạn
+                                </span>
+                              )}
+                              {isTargetOwner && (
+                                <span className="text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 font-bold px-1.5 py-0.2 rounded">
+                                  Owner
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-400 mt-0.5">Email: {user.email}</p>
                           </div>
                         </div>
@@ -745,15 +816,19 @@ const UserManagementPage = () => {
 
                       {/* Cột 5: NHÓM QUYỀN */}
                       <td className="py-4 px-4">
-                        <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                          {isAdmin ? 'Admin' : 'Member'}
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
+                          isTargetAdmin
+                            ? 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200/60'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                        }`}>
+                          {isTargetAdmin ? 'Admin' : 'Member'}
                         </span>
                       </td>
 
                       {/* Cột 6: QUYỀN HẠN */}
                       <td className="py-4 px-4">
                         <span className="text-xs text-slate-600 dark:text-slate-300">
-                          {isAdmin
+                          {isTargetAdmin
                             ? 'Toàn quyền'
                             : user.custom_permissions && user.custom_permissions.length > 0
                             ? `Tùy chỉnh (${user.custom_permissions.length} quyền)`
@@ -779,33 +854,74 @@ const UserManagementPage = () => {
                       {/* Cột 8: THAO TÁC */}
                       <td className="py-4 px-6 text-right">
                         <div className="flex items-center justify-end space-x-2">
+                          {/* Nút Xem / Tinh chỉnh quyền hạn (Chỉ Admin chỉnh cho Member) */}
                           <button
                             type="button"
+                            disabled={!canManagePermissions}
                             onClick={() => {
                               handleOpenEditModal(user);
                               setActiveTab('permissions');
                             }}
-                            title="Xem / Tinh chỉnh quyền hạn"
-                            className="p-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition cursor-pointer"
+                            title={
+                              !canManagePermissions
+                                ? isTargetAdmin
+                                  ? 'Quản trị viên luôn có toàn quyền'
+                                  : 'Bạn không có quyền phân quyền'
+                                : 'Xem / Tinh chỉnh quyền hạn'
+                            }
+                            className={`p-1.5 rounded-lg border transition ${
+                              canManagePermissions
+                                ? 'border-emerald-200 dark:border-emerald-800/60 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                            }`}
                           >
                             <Calendar size={14} />
                           </button>
 
+                          {/* Nút Chỉnh sửa thông tin */}
                           <button
                             type="button"
+                            disabled={!canEdit && !isSelf}
                             onClick={() => handleOpenEditModal(user)}
-                            title="Chỉnh sửa thông tin thành viên"
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                            title={
+                              !canEdit && !isSelf
+                                ? isTargetAdmin
+                                  ? 'Thành viên không thể sửa Quản trị viên'
+                                  : isTargetOwner
+                                  ? 'Không thể sửa Chủ sở hữu'
+                                  : 'Bạn không có quyền chỉnh sửa tài khoản này'
+                                : 'Chỉnh sửa thông tin'
+                            }
+                            className={`p-1.5 rounded-lg border transition ${
+                              canEdit || isSelf
+                                ? 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                            }`}
                           >
                             <Pencil size={14} />
                           </button>
 
+                          {/* Nút Xóa thành viên */}
                           <button
                             type="button"
+                            disabled={!canDelete}
                             onClick={() => handleDeleteUser(user)}
-                            disabled={user.username === 'admin' || user._id === activeBusiness?.owner_user_id}
-                            title={user._id === activeBusiness?.owner_user_id ? "Chủ sở hữu cửa hàng" : "Xóa thành viên khỏi cửa hàng"}
-                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-30 cursor-pointer"
+                            title={
+                              !canDelete
+                                ? isSelf
+                                  ? 'Không thể tự xóa chính mình'
+                                  : isTargetOwner
+                                  ? 'Không thể xóa Chủ sở hữu'
+                                  : isTargetAdmin && !isCurrentUserOwner
+                                  ? 'Chỉ Chủ sở hữu mới có quyền xóa Quản trị viên'
+                                  : 'Bạn không có quyền xóa thành viên này'
+                                : 'Xóa thành viên khỏi cửa hàng'
+                            }
+                            className={`p-1.5 rounded-lg border transition ${
+                              canDelete
+                                ? 'border-slate-200 dark:border-slate-700 text-slate-500 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/30 cursor-pointer'
+                                : 'border-slate-200 dark:border-slate-700 text-slate-300 dark:text-slate-600 opacity-40 cursor-not-allowed'
+                            }`}
                           >
                             <Trash2 size={14} />
                           </button>

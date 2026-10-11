@@ -131,22 +131,77 @@ export const createUserService = async ({
 
 
 /**
- * Cập nhật thông tin nhân viên
+ * Cập nhật thông tin nhân viên (kèm kiểm tra phân quyền bảo mật)
  */
-export const updateUserService = async (userId, {
-  full_name,
-  email,
-  phone,
-  avatar,
-  custom_permissions,
-  role_id,
-  is_active
-}) => {
-  const user = await User.findById(userId);
+export const updateUserService = async (
+  userId,
+  {
+    full_name,
+    email,
+    phone,
+    avatar,
+    custom_permissions,
+    role_id,
+    is_active
+  },
+  actorUser = null,
+  businessId = null
+) => {
+  const user = await User.findById(userId).populate('role_id');
   if (!user) {
     throw new Error('Không tìm thấy tài khoản nhân viên');
   }
 
+  // ================= 1. RÀO CHẮN BẢO MẬT PHÂN QUYỀN (RBAC SECURITY) =================
+  if (actorUser) {
+    const isActorAdmin = actorUser.role_id?.name === 'ADMIN' || actorUser.role_type === 'ADMIN';
+    const isTargetAdmin = user.role_id?.name === 'ADMIN' || user.role_type === 'ADMIN';
+    const isActorSelf = actorUser._id.toString() === userId.toString();
+
+    // 1.1 Kiểm tra xem người bị tác động có phải là Chủ sở hữu (Owner) của Business không
+    if (businessId) {
+      const business = await Business.findById(businessId);
+      if (business?.owner_user_id) {
+        const isTargetOwner = business.owner_user_id.toString() === userId.toString();
+        const isActorOwner = business.owner_user_id.toString() === actorUser._id.toString();
+
+        // Không ai được phép hạ quyền hoặc khóa Chủ sở hữu ngoại trừ chính Chủ sở hữu
+        if (isTargetOwner && !isActorOwner) {
+          throw new Error('Bạn không có quyền chỉnh sửa, khóa hoặc thay đổi quyền của Chủ sở hữu (Owner)');
+        }
+      }
+    }
+
+    // 1.2 Thành viên (Member) KHÔNG ĐƯỢC PHÉP chỉnh sửa Quản trị viên (Admin)
+    if (!isActorAdmin && isTargetAdmin && !isActorSelf) {
+      throw new Error('Tài khoản Thành viên không thể chỉnh sửa thông tin hoặc phân quyền của Quản trị viên (Admin)');
+    }
+
+    // 1.3 Thành viên KHÔNG ĐƯỢC PHÉP chỉnh sửa tài khoản người khác (chỉ Admin mới có quyền quản lý người khác)
+    if (!isActorAdmin && !isActorSelf) {
+      throw new Error('Bạn không có quyền quản lý tài khoản của thành viên khác');
+    }
+
+    // 1.4 Thành viên KHÔNG ĐƯỢC PHÉP tự nâng quyền mình thành ADMIN hoặc tự cấp quyền ROLE_MANAGE
+    if (!isActorAdmin) {
+      if (role_id) {
+        const targetRole = await Role.findById(role_id);
+        if (targetRole && targetRole.name === 'ADMIN') {
+          throw new Error('Chỉ Quản trị viên mới có quyền thăng cấp vai trò Admin');
+        }
+      }
+      if (custom_permissions !== undefined) {
+        throw new Error('Chỉ Quản trị viên mới có quyền tùy biến danh sách quyền hạn');
+      }
+    }
+
+    // 1.5 Không cho phép tài khoản tự khóa hoạt động của chính mình
+    if (isActorSelf && is_active === false) {
+      throw new Error('Bạn không thể tự tạm khóa tài khoản của chính mình');
+    }
+  }
+
+  // ================= 2. KIỂM TRA TRÙNG LẶP DỮ LIỆU =================
   // Kiểm tra trùng email nếu email thay đổi
   if (email && email.toLowerCase().trim() !== user.email) {
     const existingEmail = await User.findOne({
