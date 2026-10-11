@@ -289,13 +289,12 @@ const ProductListPage = () => {
   const handleOpenCreateProduct = () => {
     setEditingProduct(null);
     setActiveProductTab(1);
-    const randomSku = `TM${Math.floor(10 + Math.random() * 90)}`;
     setProductForm({
       product_name: '',
       description: '',
       product_url: '',
       category_ids: categories.length > 0 ? [categories[0]._id] : [],
-      sku: randomSku,
+      sku: '',
       barcode: '',
       stock_physical: 0,
       stock_available: 0,
@@ -312,6 +311,13 @@ const ProductListPage = () => {
       status: 'ACTIVE'
     });
     setShowProductModal(true);
+  };
+
+  // Tự động tạo mã SKU thông minh (Cách 1: 3-4 chữ cái đầu của tên sản phẩm + 3 số ngẫu nhiên)
+  const handleGenerateSku = () => {
+    const newSku = generateSku(productForm.product_name);
+    setProductForm((prev) => ({ ...prev, sku: newSku }));
+    showToast('info', `Đã tạo mã SKU: ${newSku}`);
   };
 
   const handleOpenEditProduct = (prod) => {
@@ -1762,13 +1768,24 @@ const ProductListPage = () => {
                     <div className="p-4 bg-slate-50/40 dark:bg-slate-800/50 rounded-2xl border border-slate-200/80 dark:border-slate-700 space-y-3">
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                            SKU (MÃ SẢN PHẨM) <span className="text-rose-500">*</span>
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="font-bold text-slate-700 dark:text-slate-300">
+                              SKU (MÃ SẢN PHẨM) <span className="text-rose-500">*</span>
+                            </label>
+                            <button
+                              type="button"
+                              onClick={handleGenerateSku}
+                              className="text-[10px] text-[#f05a28] hover:underline font-bold flex items-center space-x-0.5 cursor-pointer"
+                              title="Tự động tạo mã theo tên sản phẩm (viết tắt 3 chữ cái đầu + 3 số ngẫu nhiên)"
+                            >
+                              <Sparkles size={11} />
+                              <span>Tạo mã tự động</span>
+                            </button>
+                          </div>
                           <input
                             type="text"
                             required
-                            placeholder="TM10"
+                            placeholder="VD: KMB-108 hoặc tự nhập..."
                             value={productForm.sku}
                             onChange={(e) => setProductForm({ ...productForm, sku: e.target.value.toUpperCase() })}
                             className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl font-bold uppercase focus:ring-1 focus:ring-[#f05a28] focus:outline-none"

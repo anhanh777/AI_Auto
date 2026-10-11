@@ -38,15 +38,35 @@ export const generateSlug = (name) => {
 };
 
 /**
- * Tự động tạo SKU Sản phẩm: In hoa, ngăn cách bởi dấu gạch ngang (-)
- * Ví dụ: "Áo Polo Nam Trắng Size L" -> "AO-POLO-NAM-TRANG-SIZE-L"
+ * Tự động tạo SKU Sản phẩm thông minh (Cách 1):
+ * Lấy chữ cái đầu của 3-4 từ đầu tiên + hậu tố 3 số ngẫu nhiên
+ * Ví dụ: "Kem Massage Body Thon Gọn Săn Chắc Sline 6D" -> "KMB-108"
+ * Ví dụ: "Áo Thun Nam Cao Cấp" -> "ATN-452"
+ * Nếu tên quá ngắn hoặc rỗng -> "SP-108"
  */
 export const generateSku = (name) => {
-  if (!name) return '';
+  if (!name || !name.trim()) {
+    const randomNum = Math.floor(100 + Math.random() * 900);
+    return `SP-${randomNum}`;
+  }
+
   const clean = removeVietnameseTones(name)
-    .replace(/[^a-zA-Z0-9\s_-]/g, '')
-    .trim()
-    .replace(/[\s_]+/g, '-')
-    .toUpperCase();
-  return clean;
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .trim();
+
+  const words = clean.split(/\s+/).filter(Boolean);
+
+  // Lấy chữ cái đầu của tối đa 3-4 từ đầu tiên
+  const maxWords = Math.min(words.length, 3);
+  let prefix = words
+    .slice(0, maxWords)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+
+  if (!prefix || prefix.length < 2) {
+    prefix = 'SP';
+  }
+
+  const randomNum = Math.floor(100 + Math.random() * 900);
+  return `${prefix}-${randomNum}`;
 };
