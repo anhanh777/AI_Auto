@@ -68,3 +68,24 @@ export const validateRegisterInput = ({ full_name, username, email, phone, passw
     errors
   };
 };
+
+export const validateUpdateProfileInput = ({ full_name, email, phone }) => {
+  const errors = [];
+
+  if (!full_name || typeof full_name !== 'string' || full_name.trim().length < 2) {
+    errors.push('Họ và tên là bắt buộc (tối thiểu 2 ký tự)');
+  }
+
+  if (email !== undefined && (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim()))) {
+    errors.push('Địa chỉ email không hợp lệ');
+  }
+
+  if (phone !== undefined && phone && !isValidVietnamesePhone(phone)) {
+    errors.push('Số điện thoại không đúng định dạng (yêu cầu 10 chữ số, ví dụ: 0901234567)');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+};

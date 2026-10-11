@@ -133,6 +133,68 @@ export const getMeService = async (userId) => {
 };
 
 /**
+ * Cập nhật thông tin hồ sơ tài khoản cá nhân
+ */
+export const updateProfileService = async (userId, { full_name, email, phone, avatar }) => {
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new Error('Tài khoản không tồn tại');
+  }
+
+  // 1. Kiểm tra họ và tên
+  if (full_name) {
+    user.full_name = full_name.trim();
+  }
+
+  // 2. Kiểm tra trùng Email nếu người dùng sửa Email
+  if (email) {
+    const cleanEmail = email.toLowerCase().trim();
+    if (cleanEmail !== user.email) {
+      const existingEmail = await User.findOne({
+        email: cleanEmail,
+        _id: { $ne: userId }
+      });
+      if (existingEmail) {
+        throw new Error('Địa chỉ email này đã được sử dụng bởi một tài khoản khác');
+      }
+      user.email = cleanEmail;
+    }
+  }
+
+  // 3. Kiểm tra trùng Số điện thoại nếu người dùng sửa Số điện thoại
+  if (phone) {
+    const cleanPhone = phone.trim().replace(/\s+/g, '');
+    const currentPhone = (user.phone || user.phone_number || '').trim().replace(/\s+/g, '');
+    if (cleanPhone !== currentPhone) {
+      const existingPhone = await User.findOne({
+        $or: [
+          { phone: cleanPhone },
+          { phone_number: cleanPhone }
+        ],
+        _id: { $ne: userId }
+      });
+      if (existingPhone) {
+        throw new Error('Số điện thoại này đã được đăng ký cho một tài khoản khác');
+      }
+      user.phone = cleanPhone;
+      user.phone_number = cleanPhone;
+    }
+  }
+
+  // 4. Cập nhật ảnh đại diện nếu có
+  if (avatar !== undefined) {
+    user.avatar = avatar;
+    user.avatar_url = avatar;
+  }
+
+  await user.save();
+
+  const populatedUser = await User.findById(user._id).populate('role_id');
+  return sanitizeUser(populatedUser);
+};
+
+
+/**
  * Đổi mật khẩu tài khoản cá nhân
  */
 export const changePasswordService = async (userId, { oldPassword, newPassword }) => {

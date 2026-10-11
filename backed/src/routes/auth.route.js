@@ -3,6 +3,7 @@ import {
   login,
   register,
   getMe,
+  updateProfile,
   changePassword,
   getPermissions,
   getRoles,
@@ -14,6 +15,7 @@ import { validateBody } from '../middlewares/validate.middleware.js';
 import {
   validateLoginInput,
   validateRegisterInput,
+  validateUpdateProfileInput,
   validateChangePasswordInput
 } from '../validations/auth.validation.js';
 
@@ -25,10 +27,13 @@ authRouter.post('/login', validateBody(validateLoginInput), login);
 // 2. Đăng ký tài khoản mới (Public)
 authRouter.post('/register', validateBody(validateRegisterInput), register);
 
-// 2. Lấy thông tin tài khoản hiện tại
+// 3. Lấy thông tin tài khoản hiện tại
 authRouter.get('/me', authenticate, getMe);
 
-// 3. Đổi mật khẩu cá nhân
+// 4. Cập nhật hồ sơ tài khoản cá nhân
+authRouter.put('/profile', authenticate, validateBody(validateUpdateProfileInput), updateProfile);
+
+// 5. Đổi mật khẩu cá nhân
 authRouter.post('/change-password', authenticate, validateBody(validateChangePasswordInput), changePassword);
 
 // 4. Lấy danh mục quyền hệ thống (Dùng để vẽ bảng Checkbox trên Frontend)

@@ -44,6 +44,7 @@ import {
 } from 'lucide-react';
 
 import JoinOrCreateBusinessModal from '../modals/JoinOrCreateBusinessModal.jsx';
+import ProfileModal from '../modals/ProfileModal.jsx';
 
 const MainLayout = () => {
   const { user, logout, hasPermission } = useAuth();
@@ -91,15 +92,9 @@ const MainLayout = () => {
 
   // Modals state
   const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [profileModalTab, setProfileModalTab] = useState('profile');
   const [showJoinOrCreateModal, setShowJoinOrCreateModal] = useState(false);
   const [modalDefaultStep, setModalDefaultStep] = useState('select');
-
-
-
-  const [passwordForm, setPasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
-  const [passwordMsg, setPasswordMsg] = useState({ type: '', text: '' });
-  const [passwordLoading, setPasswordLoading] = useState(false);
 
   const launcherRef = useRef(null);
   const userDropdownRef = useRef(null);
@@ -167,32 +162,6 @@ const MainLayout = () => {
     const matches = app.name.toLowerCase().includes(appSearch.toLowerCase()) || app.category.toLowerCase().includes(appSearch.toLowerCase());
     return matches && (!app.permission || hasPermission(app.permission));
   });
-
-  // Xử lý đổi mật khẩu cá nhân
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setPasswordMsg({ type: 'error', text: 'Xác nhận mật khẩu mới không khớp' });
-      return;
-    }
-    setPasswordLoading(true);
-    setPasswordMsg({ type: '', text: '' });
-    try {
-      const res = await authService.changePassword(passwordForm.oldPassword, passwordForm.newPassword);
-      if (res.success) {
-        setPasswordMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
-        setTimeout(() => {
-          setShowPasswordModal(false);
-          setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
-          setPasswordMsg({ type: '', text: '' });
-        }, 1500);
-      }
-    } catch (err) {
-      setPasswordMsg({ type: 'error', text: err.message || 'Lỗi khi đổi mật khẩu' });
-    } finally {
-      setPasswordLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f0f2f5] dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 transition-colors duration-200">
@@ -592,6 +561,7 @@ const MainLayout = () => {
                 <div className="py-2 px-2 text-xs font-medium space-y-0.5">
                   <button
                     onClick={() => {
+                      setProfileModalTab('profile');
                       setShowProfileModal(true);
                       setShowUserDropdown(false);
                     }}
@@ -603,7 +573,8 @@ const MainLayout = () => {
 
                   <button
                     onClick={() => {
-                      setShowPasswordModal(true);
+                      setProfileModalTab('password');
+                      setShowProfileModal(true);
                       setShowUserDropdown(false);
                     }}
                     className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 transition text-left cursor-pointer"
@@ -651,108 +622,12 @@ const MainLayout = () => {
         defaultStep={modalDefaultStep}
       />
 
-      {/* ================= MODAL: HỒ SƠ CÁ NHÂN ================= */}
-      {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 relative">
-            <button onClick={() => setShowProfileModal(false)} className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white">
-              <X size={20} />
-            </button>
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-4 flex items-center space-x-2">
-              <User className="text-blue-600" />
-              <span>Thông Tin Tài Khoản</span>
-            </h3>
-            <div className="space-y-4 text-sm">
-              <div className="flex items-center space-x-4 p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
-                <img src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'} alt="Avatar" className="w-14 h-14 rounded-full object-cover border" />
-                <div>
-                  <h4 className="font-bold text-base">{user?.full_name}</h4>
-                  <p className="text-xs text-slate-400">@{user?.username}</p>
-                  <span className="text-xs text-blue-600 font-bold">{user?.role_id?.name}</span>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
-                  <p className="text-slate-400">Email:</p>
-                  <p className="font-semibold text-slate-700 dark:text-slate-200 truncate mt-1">{user?.email}</p>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-900 rounded-xl">
-                  <p className="text-slate-400">Số điện thoại:</p>
-                  <p className="font-semibold text-slate-700 dark:text-slate-200 mt-1">{user?.phone || 'Chưa cập nhật'}</p>
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end pt-4 mt-4 border-t border-slate-100 dark:border-slate-700">
-              <button onClick={() => setShowProfileModal(false)} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow">
-                Đóng
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= MODAL: ĐỔI MẬT KHẨU ================= */}
-      {showPasswordModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 relative">
-            <button onClick={() => setShowPasswordModal(false)} className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white">
-              <X size={20} />
-            </button>
-            <h3 className="text-lg font-extrabold text-slate-900 dark:text-white mb-4 flex items-center space-x-2">
-              <KeyRound className="text-blue-600" />
-              <span>Đổi Mật Khẩu Cá Nhân</span>
-            </h3>
-
-            {passwordMsg.text && (
-              <div className={`p-3 mb-4 rounded-xl text-xs flex items-center space-x-2 ${passwordMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-                {passwordMsg.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                <span>{passwordMsg.text}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleChangePassword} className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mật khẩu hiện tại *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.oldPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, oldPassword: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Mật khẩu mới (từ 6 ký tự) *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.newPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Xác nhận mật khẩu mới *</label>
-                <input
-                  type="password"
-                  required
-                  value={passwordForm.confirmPassword}
-                  onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
-                />
-              </div>
-              <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100 dark:border-slate-700">
-                <button type="button" onClick={() => setShowPasswordModal(false)} className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl">
-                  Hủy
-                </button>
-                <button type="submit" disabled={passwordLoading} className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow disabled:opacity-50">
-                  {passwordLoading ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* ================= MODAL: HỒ SƠ CÁ NHÂN & ĐỔI MẬT KHẨU ================= */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        defaultTab={profileModalTab}
+      />
 
       {/* ================= MAIN CONTENT ================= */}
       <main className="flex-1 p-3 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">

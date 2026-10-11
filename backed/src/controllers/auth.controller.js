@@ -2,6 +2,7 @@ import {
   loginService,
   registerService,
   getMeService,
+  updateProfileService,
   changePasswordService,
   getRolesService,
   updateRolePermissionsService,
@@ -31,6 +32,15 @@ export const getMe = async (req, res) => {
   try {
     const user = await getMeService(req.user._id);
     return sendSuccess(res, 'Lấy thông tin tài khoản thành công', user);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const updateProfile = async (req, res) => {
+  try {
+    const user = await updateProfileService(req.user._id, req.body);
+    return sendSuccess(res, 'Cập nhật hồ sơ cá nhân thành công', user);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

@@ -85,6 +85,15 @@ export const AuthProvider = ({ children }) => {
     return Boolean(user.role_id?.permissions && user.role_id.permissions.includes(permissionCode));
   };
 
+  // Cập nhật thông tin người dùng hiện tại
+  const updateCurrentUser = (updatedUser) => {
+    setUser((prev) => {
+      const merged = { ...prev, ...updatedUser };
+      localStorage.setItem('ai_sales_user', JSON.stringify(merged));
+      return merged;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -95,6 +104,7 @@ export const AuthProvider = ({ children }) => {
         login,
         register,
         logout,
+        updateCurrentUser,
         hasPermission,
         isAdmin: user?.role_id?.name === 'ADMIN'
       }}
