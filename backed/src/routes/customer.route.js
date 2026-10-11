@@ -4,7 +4,9 @@ import {
   getCustomerById,
   createCustomer,
   updateCustomer,
-  deleteCustomer
+  deleteCustomer,
+  getCustomerStats,
+  getCustomerOrders
 } from '../controllers/customer.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 
@@ -12,7 +14,9 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get('/stats', getCustomerStats);
 router.get('/', getCustomers);
+router.get('/:id/orders', getCustomerOrders);
 router.get('/:id', getCustomerById);
 router.post('/', createCustomer);
 router.put('/:id', updateCustomer);

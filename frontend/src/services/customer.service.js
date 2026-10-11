@@ -24,5 +24,15 @@ export const customerService = {
   deleteCustomer: async (id, business_id) => {
     const res = await apiClient.delete(`/customers/${id}`, { params: { business_id } });
     return res.data;
+  },
+
+  getCustomerStats: async (business_id) => {
+    const res = await apiClient.get('/customers/stats', { params: { business_id } });
+    return res.data;
+  },
+
+  getCustomerOrders: async (id, business_id) => {
+    const res = await apiClient.get(`/customers/${id}/orders`, { params: { business_id } });
+    return res.data;
   }
 };

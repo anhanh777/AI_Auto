@@ -1,7 +1,17 @@
-import { Customer } from '../models/index.js';
+import mongoose from 'mongoose';
+import { Customer, Order } from '../models/index.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 
-export const getCustomersService = async ({ business_id, page = 1, limit = 10, search = '', tag = '' }) => {
+export const getCustomersService = async ({
+  business_id,
+  page = 1,
+  limit = 10,
+  search = '',
+  tag = '',
+  source = '',
+  sortBy = 'updated_at',
+  order = 'desc'
+}) => {
   if (!business_id) {
     throw new Error('business_id là bắt buộc');
   }
@@ -13,20 +23,40 @@ export const getCustomersService = async ({ business_id, page = 1, limit = 10, s
     filter.$or = [
       { full_name: searchRegex },
       { phone: searchRegex },
+      { phone_number: searchRegex },
       { email: searchRegex },
-      { psid: searchRegex }
+      { psid: searchRegex },
+      { shipping_address: searchRegex },
+      { address: searchRegex }
     ];
   }
 
   if (tag && tag.trim() !== '') {
-    filter.tags = tag;
+    filter.$or = [
+      { tags: tag.trim() },
+      { customer_tags: tag.trim() }
+    ];
   }
+
+  if (source && source.trim() !== '') {
+    if (source === 'facebook') {
+      filter.$or = [
+        { source: 'facebook' },
+        { psid: { $exists: true, $ne: null, $ne: '' } }
+      ];
+    } else {
+      filter.source = source.trim();
+    }
+  }
+
+  const sortOptions = {};
+  sortOptions[sortBy] = order === 'asc' ? 1 : -1;
 
   const totalItems = await Customer.countDocuments(filter);
   const pagination = getPagination(page, limit, totalItems);
 
   const customers = await Customer.find(filter)
-    .sort({ updated_at: -1 })
+    .sort(sortOptions)
     .skip(pagination.skip)
     .limit(pagination.limit);
 
@@ -41,6 +71,71 @@ export const getCustomersService = async ({ business_id, page = 1, limit = 10, s
       hasPrev: pagination.hasPrev
     }
   };
+};
+
+export const getCustomerStatsService = async (business_id) => {
+  if (!business_id) throw new Error('business_id là bắt buộc');
+
+  let bId;
+  try {
+    bId = new mongoose.Types.ObjectId(business_id);
+  } catch (err) {
+    bId = business_id;
+  }
+
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [totalCustomers, vipCustomers, fbCustomers, newThisMonth, spendAgg] = await Promise.all([
+    Customer.countDocuments({ business_id }),
+    Customer.countDocuments({
+      business_id,
+      $or: [
+        { tags: { $in: ['VIP', 'Khách VIP', 'vip', 'VIP Customer'] } },
+        { customer_tags: { $in: ['VIP', 'Khách VIP', 'vip', 'VIP Customer'] } }
+      ]
+    }),
+    Customer.countDocuments({
+      business_id,
+      $or: [
+        { source: 'facebook' },
+        { psid: { $exists: true, $ne: null, $ne: '' } }
+      ]
+    }),
+    Customer.countDocuments({
+      business_id,
+      created_at: { $gte: startOfMonth }
+    }),
+    Customer.aggregate([
+      { $match: { business_id: bId } },
+      { $group: { _id: null, totalSpend: { $sum: '$total_spend_amount' }, totalOrders: { $sum: '$total_orders_count' } } }
+    ])
+  ]);
+
+  const totalSpend = spendAgg.length > 0 ? spendAgg[0].totalSpend : 0;
+  const totalOrders = spendAgg.length > 0 ? spendAgg[0].totalOrders : 0;
+
+  return {
+    total_customers: totalCustomers,
+    vip_customers: vipCustomers,
+    facebook_customers: fbCustomers,
+    new_customers_this_month: newThisMonth,
+    total_spend: totalSpend,
+    total_orders: totalOrders
+  };
+};
+
+export const getCustomerOrdersService = async (customerId, business_id) => {
+  if (!customerId) throw new Error('customerId là bắt buộc');
+  const filter = { customer_id: customerId };
+  if (business_id) filter.business_id = business_id;
+
+  const orders = await Order.find(filter)
+    .sort({ created_at: -1 })
+    .limit(50)
+    .lean();
+
+  return orders;
 };
 
 export const getCustomerByIdService = async (id, business_id) => {

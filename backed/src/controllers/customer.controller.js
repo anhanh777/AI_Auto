@@ -3,9 +3,31 @@ import {
   getCustomerByIdService,
   createCustomerService,
   updateCustomerService,
-  deleteCustomerService
+  deleteCustomerService,
+  getCustomerStatsService,
+  getCustomerOrdersService
 } from '../services/customer.service.js';
 import { sendSuccess, sendError } from '../utils/response.util.js';
+
+export const getCustomerStats = async (req, res) => {
+  try {
+    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const stats = await getCustomerStatsService(business_id);
+    return sendSuccess(res, 'Lấy thống kê khách hàng thành công', stats);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const getCustomerOrders = async (req, res) => {
+  try {
+    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const orders = await getCustomerOrdersService(req.params.id, business_id);
+    return sendSuccess(res, 'Lấy lịch sử đơn hàng của khách thành công', orders);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
 
 export const getCustomers = async (req, res) => {
   try {
