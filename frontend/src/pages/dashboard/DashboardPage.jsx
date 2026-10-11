@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 
 const DashboardPage = () => {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { businesses, activeBusiness, switchBusiness, loading, fetchBusinesses } = useBusiness();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -199,6 +199,13 @@ const DashboardPage = () => {
               user?.avatar ||
               'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
 
+            const isBizOwner = Boolean(
+              (biz.owner_user_id?._id && biz.owner_user_id._id.toString() === user?._id?.toString()) ||
+              (biz.owner_user_id && biz.owner_user_id.toString() === user?._id?.toString()) ||
+              (biz.created_by && biz.created_by.toString() === user?._id?.toString())
+            );
+            const canArchive = isAdmin || isBizOwner;
+
             return (
               <div
                 key={biz._id}
@@ -272,16 +279,18 @@ const DashboardPage = () => {
                         <span>Nhắn tin</span>
                       </button>
 
-                      {/* Nút Lưu trữ (Archive) */}
-                      <button
-                        type="button"
-                        onClick={(e) => openArchiveConfirm(biz, true, e)}
-                        disabled={actionLoading}
-                        className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer shrink-0"
-                        title="Lưu trữ Business"
-                      >
-                        <Archive size={15} />
-                      </button>
+                      {/* Nút Lưu trữ (Archive) - Chỉ hiển thị cho Owner hoặc Admin */}
+                      {canArchive && (
+                        <button
+                          type="button"
+                          onClick={(e) => openArchiveConfirm(biz, true, e)}
+                          disabled={actionLoading}
+                          className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-xl border border-slate-200 dark:border-slate-700 transition cursor-pointer shrink-0"
+                          title="Lưu trữ Business"
+                        >
+                          <Archive size={15} />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -324,6 +333,12 @@ const DashboardPage = () => {
               archivedList.map((biz) => {
                 const bizName = biz.business_name || biz.name;
                 const bizCode = biz.code || 'BM';
+                const isBizOwner = Boolean(
+                  (biz.owner_user_id?._id && biz.owner_user_id._id.toString() === user?._id?.toString()) ||
+                  (biz.owner_user_id && biz.owner_user_id.toString() === user?._id?.toString()) ||
+                  (biz.created_by && biz.created_by.toString() === user?._id?.toString())
+                );
+                const canArchive = isAdmin || isBizOwner;
 
                 return (
                   <div
@@ -350,15 +365,17 @@ const DashboardPage = () => {
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={(e) => openArchiveConfirm(biz, false, e)}
-                      disabled={actionLoading}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition flex items-center space-x-1.5 shrink-0 cursor-pointer"
-                    >
-                      <RotateCcw size={13} />
-                      <span>Khôi phục hoạt động</span>
-                    </button>
+                    {canArchive && (
+                      <button
+                        type="button"
+                        onClick={(e) => openArchiveConfirm(biz, false, e)}
+                        disabled={actionLoading}
+                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow transition flex items-center space-x-1.5 shrink-0 cursor-pointer"
+                      >
+                        <RotateCcw size={13} />
+                        <span>Khôi phục hoạt động</span>
+                      </button>
+                    )}
                   </div>
                 );
               })

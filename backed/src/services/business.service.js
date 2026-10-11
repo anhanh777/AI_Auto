@@ -72,11 +72,24 @@ export const getBusinessByIdService = async (businessId) => {
 
 /**
  * Chuyển trạng thái Lưu trữ / Khôi phục Business (Đóng băng hoạt động)
+ * Chỉ Chủ sở hữu (Owner) hoặc Quản trị viên hệ thống (ADMIN) mới có quyền thực hiện
  */
-export const toggleArchiveBusinessService = async (businessId, userId) => {
+export const toggleArchiveBusinessService = async (businessId, currentUser) => {
   const business = await Business.findById(businessId);
   if (!business) {
     throw new Error('Không tìm thấy doanh nghiệp');
+  }
+
+  // 1. Kiểm tra phân quyền: Chỉ Owner của business hoặc Admin hệ thống mới được phép
+  const userId = currentUser?._id ? currentUser._id.toString() : currentUser?.toString();
+  const isGlobalAdmin = currentUser?.role_id?.name === 'ADMIN' || currentUser?.role === 'ADMIN';
+  const isOwner = Boolean(
+    (business.owner_user_id && business.owner_user_id.toString() === userId) ||
+    (business.created_by && business.created_by.toString() === userId)
+  );
+
+  if (!isGlobalAdmin && !isOwner) {
+    throw new Error('Bạn không có quyền thực hiện thao tác này. Chỉ Chủ sở hữu (Owner) hoặc Quản trị viên mới được phép Lưu trữ / Khôi phục doanh nghiệp.');
   }
 
   const newActiveState = !business.is_active;

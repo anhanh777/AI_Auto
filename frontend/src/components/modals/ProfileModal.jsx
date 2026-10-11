@@ -309,7 +309,7 @@ const ProfileModal = ({ isOpen, onClose, defaultTab = 'profile' }) => {
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                  Tên đăng nhập: <strong className="text-slate-800 dark:text-slate-200">@{user?.username}</strong>
+                  Tên đăng nhập: <strong className="text-slate-800 dark:text-slate-200">{user?.username}</strong>
                 </p>
                 <button
                   type="button"

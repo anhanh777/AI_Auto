@@ -96,10 +96,10 @@ export const updateBusiness = async (req, res) => {
 
 export const toggleArchiveBusiness = async (req, res) => {
   try {
-    const result = await toggleArchiveBusinessService(req.params.id, req.user?._id);
+    const result = await toggleArchiveBusinessService(req.params.id, req.user);
     return sendSuccess(res, result.message, result.business);
   } catch (error) {
-    return sendError(res, error.message, null, 400);
+    return sendError(res, error.message, null, 403);
   }
 };
 
