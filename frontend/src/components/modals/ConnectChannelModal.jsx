@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Facebook,
@@ -6,15 +6,42 @@ import {
   Sparkles,
   ShieldCheck,
   CheckCircle2,
-  KeyRound
+  KeyRound,
+  RefreshCw,
+  ExternalLink,
+  Layers,
+  ChevronRight,
+  Info,
+  Radio,
+  Settings,
+  AlertCircle
 } from 'lucide-react';
 import { channelService } from '../../services/channel.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import { loginWithFacebook } from '../../utils/facebookSdk.js';
 
 const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) => {
   const { showToast } = useToast();
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({
+
+  // Tab: 'oauth' (Đăng nhập Facebook) | 'manual' (Thủ công)
+  const [activeTab, setActiveTab] = useState('oauth');
+
+  // App ID State
+  const defaultAppId = import.meta.env.VITE_FACEBOOK_APP_ID || '';
+  const [appId, setAppId] = useState(defaultAppId);
+  const [showAppIdInput, setShowAppIdInput] = useState(!defaultAppId);
+
+  // OAuth States
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [fbUser, setFbUser] = useState(null);
+  const [pages, setPages] = useState([]);
+  const [loadingPages, setLoadingPages] = useState(false);
+  const [connectingPageId, setConnectingPageId] = useState(null);
+  const [operatingModes, setOperatingModes] = useState({});
+
+  // Manual Form State
+  const [manualLoading, setManualLoading] = useState(false);
+  const [manualForm, setManualForm] = useState({
     page_name: '',
     page_id: '',
     platform: 'facebook',
@@ -23,27 +50,119 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
     avatar_url: ''
   });
 
+  useEffect(() => {
+    if (defaultAppId) {
+      setAppId(defaultAppId);
+    }
+  }, [defaultAppId]);
+
   if (!isOpen) return null;
 
-  const handleSubmit = async (e) => {
+  // 1. Xử lý Đăng nhập Facebook OAuth
+  const handleFacebookLogin = async () => {
+    const targetAppId = appId.trim();
+    if (!targetAppId) {
+      showToast('warning', 'Vui lòng nhập Facebook App ID để kết nối');
+      setShowAppIdInput(true);
+      return;
+    }
+
+    try {
+      setLoggingIn(true);
+      const authResult = await loginWithFacebook(targetAppId);
+      if (authResult.success && authResult.accessToken) {
+        showToast('success', 'Đăng nhập Facebook thành công! Đang tải danh sách Fanpage...');
+        setFbUser({
+          userID: authResult.userID,
+          accessToken: authResult.accessToken
+        });
+        await loadFacebookPages(authResult.accessToken);
+      }
+    } catch (err) {
+      console.error('Facebook login error:', err);
+      showToast('error', err.message || 'Lỗi đăng nhập Facebook');
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  // 2. Lấy danh sách Fanpage từ Meta Graph API
+  const loadFacebookPages = async (userAccessToken) => {
+    try {
+      setLoadingPages(true);
+      const res = await channelService.getFacebookPages(userAccessToken);
+      if (res.success && Array.isArray(res.data)) {
+        setPages(res.data);
+        // Khởi tạo operating_mode mặc định cho từng page
+        const initialModes = {};
+        res.data.forEach((p) => {
+          initialModes[p.page_id] = 'AI_AUTO';
+        });
+        setOperatingModes(initialModes);
+
+        if (res.data.length === 0) {
+          showToast('info', 'Tài khoản Facebook của bạn hiện chưa sở hữu hoặc quản lý Fanpage nào.');
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi tải Fanpage:', err);
+      const msg = err.response?.data?.message || err.message || 'Không thể lấy danh sách Fanpage từ Meta';
+      showToast('error', msg);
+    } finally {
+      setLoadingPages(false);
+    }
+  };
+
+  // 3. Kết nối 1 Fanpage cụ thể vào Business
+  const handleConnectPage = async (page) => {
+    try {
+      setConnectingPageId(page.page_id);
+      const mode = operatingModes[page.page_id] || 'AI_AUTO';
+
+      const payload = {
+        business_id: businessId,
+        page_id: page.page_id,
+        page_name: page.page_name,
+        access_token: page.access_token,
+        avatar_url: page.avatar_url,
+        operating_mode: mode
+      };
+
+      const res = await channelService.connectFacebookPage(payload);
+      if (res.success) {
+        showToast('success', `Đã kết nối Fanpage "${page.page_name}" vào cửa hàng thành công!`);
+        if (onChannelCreated) onChannelCreated(res.data);
+        onClose();
+      }
+    } catch (err) {
+      console.error('Lỗi khi kết nối Fanpage:', err);
+      const msg = err.response?.data?.message || err.message || 'Kết nối Fanpage thất bại';
+      showToast('error', msg);
+    } finally {
+      setConnectingPageId(null);
+    }
+  };
+
+  // 4. Kết nối Thủ công
+  const handleManualSubmit = async (e) => {
     e.preventDefault();
-    if (!form.page_name || !form.page_id) {
+    if (!manualForm.page_name || !manualForm.page_id) {
       showToast('warning', 'Vui lòng điền đầy đủ Tên Fanpage và Page ID Facebook');
       return;
     }
 
     try {
-      setLoading(true);
+      setManualLoading(true);
       const res = await channelService.createChannel({
-        ...form,
+        ...manualForm,
         platform: 'facebook',
         business_id: businessId
       });
       if (res.success) {
-        showToast('success', 'Kết nối Fanpage Facebook mới thành công!');
+        showToast('success', 'Kết nối Fanpage mới thành công!');
         if (onChannelCreated) onChannelCreated(res.data);
         onClose();
-        setForm({
+        setManualForm({
           page_name: '',
           page_id: '',
           platform: 'facebook',
@@ -52,121 +171,331 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
           avatar_url: ''
         });
       }
-    } catch (error) {
-      const msg = error.response?.data?.message || error.message || 'Lỗi khi kết nối Fanpage';
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Lỗi khi kết nối Fanpage';
       showToast('error', msg);
     } finally {
-      setLoading(false);
+      setManualLoading(false);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-700 relative text-slate-800 dark:text-slate-100">
+      <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-700 relative text-slate-800 dark:text-slate-100 max-h-[90vh] flex flex-col">
         {/* Nút đóng */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+          className="absolute top-5 right-5 p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
         >
           <X size={20} />
         </button>
 
-        <div className="mb-5">
-          <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 rounded-full text-xs font-bold mb-2">
+        {/* Header Modal */}
+        <div className="mb-4">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 bg-blue-50 dark:bg-blue-950/60 text-[#1877F2] rounded-full text-xs font-bold mb-2">
             <Facebook size={14} />
-            <span>Kênh Fanpage Facebook</span>
+            <span>Kênh Bán Hàng Fanpage</span>
           </div>
-          <h2 className="text-xl font-extrabold text-slate-900 dark:text-white">
-            Kết Nối Fanpage Facebook Mới
+          <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Kết Nối Fanpage Facebook
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Tích hợp Fanpage Facebook để AI Bot tiếp nhận tin nhắn Messenger và chốt đơn tự động
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Tích hợp Fanpage để AI Bot tự động trả lời Messenger, tư vấn khách và chốt đơn 24/7
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Tên Fanpage */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Tên Fanpage Facebook *
-            </label>
-            <input
-              type="text"
-              required
-              placeholder="Ví dụ: Soulmade Official - Thời trang cao cấp"
-              value={form.page_name}
-              onChange={(e) => setForm({ ...form, page_name: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-            />
-          </div>
+        {/* Tabs chọn phương thức kết nối */}
+        <div className="flex items-center space-x-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl mb-5 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setActiveTab('oauth')}
+            className={`flex-1 py-2 px-3 rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer ${
+              activeTab === 'oauth'
+                ? 'bg-white dark:bg-slate-800 text-[#1877F2] shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+            }`}
+          >
+            <Facebook size={14} />
+            <span>Đăng nhập Meta Facebook (Tự động)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('manual')}
+            className={`py-2 px-3 rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer ${
+              activeTab === 'manual'
+                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+            }`}
+          >
+            <KeyRound size={14} />
+            <span>Nhập thủ công</span>
+          </button>
+        </div>
 
-          {/* ID Kênh / Page ID */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Facebook Page ID *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="VD: 1048291048 hoặc soulmade.page"
-                value={form.page_id}
-                onChange={(e) => setForm({ ...form, page_id: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
+        {/* Nội dung Tab */}
+        <div className="overflow-y-auto flex-1 pr-1">
+          {activeTab === 'oauth' ? (
+            <div className="space-y-4">
+              {/* Cấu hình Facebook App ID */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-[#1877F2]" />
+                    <span>Meta App ID (Facebook Developers):</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAppIdInput(!showAppIdInput)}
+                    className="text-[11px] text-[#1877F2] hover:underline font-semibold"
+                  >
+                    {showAppIdInput ? 'Thu gọn' : 'Đổi App ID'}
+                  </button>
+                </div>
+
+                {showAppIdInput ? (
+                  <div className="mt-2.5 space-y-1.5">
+                    <input
+                      type="text"
+                      placeholder="Nhập Facebook App ID (VD: 1048291048...)"
+                      value={appId}
+                      onChange={(e) => setAppId(e.target.value)}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1877F2]"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Tạo hoặc lấy App ID tại{' '}
+                      <a
+                        href="https://developers.facebook.com/apps"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#1877F2] underline inline-flex items-center gap-0.5"
+                      >
+                        developers.facebook.com <ExternalLink size={10} />
+                      </a>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-xs font-mono text-slate-500 dark:text-slate-400">
+                    {appId ? `Đang sử dụng App ID: ${appId}` : 'Chưa cấu hình App ID'}
+                  </p>
+                )}
+              </div>
+
+              {/* TRƯỜNG HỢP 1: Chưa đăng nhập Facebook hoặc chưa lấy được pages */}
+              {!fbUser || pages.length === 0 ? (
+                <div className="p-6 bg-blue-50/50 dark:bg-blue-950/20 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-center space-y-4">
+                  <div className="w-14 h-14 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center mx-auto shadow-lg shadow-[#1877F2]/25">
+                    <Facebook size={32} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
+                      Xác thực quyền với Meta Facebook
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1 leading-relaxed">
+                      Đăng nhập tài khoản Facebook của bạn để hệ thống tự động tải về danh sách toàn bộ các Fanpage bạn đang quản trị.
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      disabled={loggingIn || loadingPages}
+                      onClick={handleFacebookLogin}
+                      className="w-full sm:w-auto px-6 py-3 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl text-xs font-bold shadow-md shadow-[#1877F2]/25 transition flex items-center justify-center space-x-2 mx-auto cursor-pointer disabled:opacity-60"
+                    >
+                      {loggingIn || loadingPages ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" />
+                          <span>Đang kết nối Facebook...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Facebook size={18} />
+                          <span>Tiếp tục với Facebook</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="pt-2 border-t border-blue-100/80 dark:border-blue-900/30 flex items-center justify-center gap-4 text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 size={12} className="text-emerald-500" /> Quản lý tin nhắn
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 size={12} className="text-emerald-500" /> Tự động Webhook
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 size={12} className="text-emerald-500" /> Bảo mật OAuth 2.0
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* TRƯỜNG HỢP 2: Đã đăng nhập -> Hiển thị danh sách Fanpages */
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Chọn Fanpage để kết nối ({pages.length} trang tìm thấy):
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleFacebookLogin}
+                      className="text-[11px] text-[#1877F2] hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <RefreshCw size={11} />
+                      <span>Tải lại</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                    {pages.map((p) => {
+                      const isConnecting = connectingPageId === p.page_id;
+
+                      return (
+                        <div
+                          key={p.page_id}
+                          className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-[#1877F2]/50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                        >
+                          {/* Info Page */}
+                          <div className="flex items-center space-x-3">
+                            <img
+                              src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                              alt={p.page_name}
+                              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
+                            />
+                            <div>
+                              <p className="font-extrabold text-xs text-slate-900 dark:text-white">
+                                {p.page_name}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                Page ID: {p.page_id} {p.category && `• ${p.category}`}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Mode & Action */}
+                          <div className="flex items-center space-x-2 self-end sm:self-center">
+                            <select
+                              value={operatingModes[p.page_id] || 'AI_AUTO'}
+                              onChange={(e) =>
+                                setOperatingModes({
+                                  ...operatingModes,
+                                  [p.page_id]: e.target.value
+                                })
+                              }
+                              className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+                            >
+                              <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
+                              <option value="HYBRID">⚡ Lai (Hybrid)</option>
+                              <option value="MANUAL">👤 Thủ công</option>
+                            </select>
+
+                            <button
+                              type="button"
+                              disabled={isConnecting}
+                              onClick={() => handleConnectPage(p)}
+                              className="px-3.5 py-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                            >
+                              {isConnecting ? (
+                                <>
+                                  <RefreshCw size={12} className="animate-spin" />
+                                  <span>Đang kết nối...</span>
+                                </>
+                              ) : (
+                                <span>Kết nối</span>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
+          ) : (
+            /* TAB THỦ CÔNG */
+            <form onSubmit={handleManualSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tên Fanpage Facebook *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ví dụ: Cửa hàng Thời Trang Nam"
+                  value={manualForm.page_name}
+                  onChange={(e) => setManualForm({ ...manualForm, page_name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-[#1877F2] focus:outline-none"
+                />
+              </div>
 
-            {/* Chế độ vận hành */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Chế độ vận hành AI
-              </label>
-              <select
-                value={form.operating_mode}
-                onChange={(e) => setForm({ ...form, operating_mode: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              >
-                <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
-                <option value="HYBRID">⚡ Chế độ Lai (Hybrid)</option>
-                <option value="MANUAL">👤 Thủ công (Nhân viên)</option>
-              </select>
-            </div>
-          </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Facebook Page ID *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: 1048291048"
+                    value={manualForm.page_id}
+                    onChange={(e) => setManualForm({ ...manualForm, page_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-[#1877F2] focus:outline-none"
+                  />
+                </div>
 
-          {/* Access Token (Tùy chọn) */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-              Page Access Token (Tùy chọn)
-            </label>
-            <div className="relative">
-              <KeyRound size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="password"
-                placeholder="EAAG... (Nhập token xác thực Webhook Graph API)"
-                value={form.access_token}
-                onChange={(e) => setForm({ ...form, access_token: e.target.value })}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
-              />
-            </div>
-          </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Chế độ vận hành AI
+                  </label>
+                  <select
+                    value={manualForm.operating_mode}
+                    onChange={(e) => setManualForm({ ...manualForm, operating_mode: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-[#1877F2] focus:outline-none"
+                  >
+                    <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
+                    <option value="HYBRID">⚡ Lai (Hybrid)</option>
+                    <option value="MANUAL">👤 Thủ công (Nhân viên)</option>
+                  </select>
+                </div>
+              </div>
 
-          <div className="flex justify-end space-x-2.5 pt-3 border-t border-slate-100 dark:border-slate-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !form.page_name || !form.page_id}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow transition disabled:opacity-50 flex items-center space-x-1.5"
-            >
-              {loading ? <span>Đang kết nối...</span> : <span>Xác nhận kết nối</span>}
-            </button>
-          </div>
-        </form>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Page Access Token (Tùy chọn)
+                </label>
+                <div className="relative">
+                  <KeyRound size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    placeholder="EAAG... (Nhập token xác thực Webhook)"
+                    value={manualForm.access_token}
+                    onChange={(e) => setManualForm({ ...manualForm, access_token: e.target.value })}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:ring-2 focus:ring-[#1877F2] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualLoading || !manualForm.page_name || !manualForm.page_id}
+                  className="px-5 py-2 bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold rounded-xl shadow transition disabled:opacity-50 cursor-pointer"
+                >
+                  {manualLoading ? 'Đang kết nối...' : 'Xác nhận kết nối'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );

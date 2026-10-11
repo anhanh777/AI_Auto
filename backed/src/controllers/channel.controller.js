@@ -2,7 +2,9 @@ import {
   getChannelsService,
   createChannelService,
   updateChannelService,
-  deleteChannelService
+  deleteChannelService,
+  getFacebookPagesFromTokenService,
+  connectFacebookPageService
 } from '../services/channel.service.js';
 
 export const getChannels = async (req, res, next) => {
@@ -51,6 +53,34 @@ export const deleteChannel = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: 'Xóa kênh thành công'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getFacebookPages = async (req, res, next) => {
+  try {
+    const userAccessToken = req.body.user_access_token || req.query.user_access_token;
+    const pages = await getFacebookPagesFromTokenService(userAccessToken);
+    return res.status(200).json({
+      success: true,
+      message: 'Lấy danh sách Fanpage từ Meta thành công',
+      data: pages
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const connectFacebookPage = async (req, res, next) => {
+  try {
+    const businessId = req.headers['x-business-id'] || req.body.business_id;
+    const channel = await connectFacebookPageService({ ...req.body, business_id: businessId }, req.user?._id);
+    return res.status(201).json({
+      success: true,
+      message: 'Kết nối Fanpage vào hệ thống thành công',
+      data: channel
     });
   } catch (error) {
     next(error);

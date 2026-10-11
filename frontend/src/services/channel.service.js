@@ -20,5 +20,17 @@ export const channelService = {
   // Xóa / Hủy kết nối kênh
   deleteChannel: async (id) => {
     return await apiClient.delete(`/channels/${id}`);
+  },
+
+  // Lấy danh sách Fanpage từ Meta bằng User Access Token
+  getFacebookPages: async (userAccessToken) => {
+    const res = await apiClient.post('/channels/facebook/pages', { user_access_token: userAccessToken });
+    return res.data;
+  },
+
+  // Kết nối 1 Fanpage vào Business
+  connectFacebookPage: async (pageData) => {
+    const res = await apiClient.post('/channels/facebook/connect', pageData);
+    return res.data;
   }
 };
