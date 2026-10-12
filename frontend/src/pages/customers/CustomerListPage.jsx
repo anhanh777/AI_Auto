@@ -174,16 +174,17 @@ const CustomerListPage = () => {
     };
   }, [fetchCustomers, fetchStats]);
 
-  // Format ngày tạo / đăng ký
-  const formatDateTime = (dateStr) => {
+  // Format ngày giờ đầy đủ chuẩn: hh:mm dd/mm/yyyy
+  const formatFullDateTime = (dateStr) => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '—';
-    return d.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${hours}:${minutes} ${day}/${month}/${year}`;
   };
 
   // Format thời gian tương tác cuối (tương đối)
@@ -959,18 +960,18 @@ const CustomerListPage = () => {
                       </td>
 
                       {/* Ngày đăng ký (Created At) */}
-                      <td className="py-3.5 px-4 text-center text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 font-medium text-[11px]">
-                          <Calendar size={11} className="text-slate-400" />
-                          <span>{formatDateTime(c.created_at || c.createdAt)}</span>
+                      <td className="py-3.5 px-4 text-center text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1.5 font-medium text-[11px] font-mono">
+                          <Calendar size={12} className="text-slate-400 shrink-0" />
+                          <span>{formatFullDateTime(c.created_at || c.createdAt)}</span>
                         </span>
                       </td>
 
                       {/* Tương tác lần cuối (Last Interaction) */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700/80 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
-                          <Clock size={11} className="text-sky-500" />
-                          <span>{formatRelativeTime(c.last_interaction_at || c.updated_at || c.updatedAt)}</span>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-700/80 text-[11px] font-semibold text-slate-700 dark:text-slate-200 font-mono">
+                          <Clock size={12} className="text-sky-500 shrink-0" />
+                          <span>{formatFullDateTime(c.last_interaction_at || c.updated_at || c.updatedAt)}</span>
                         </span>
                       </td>
 
