@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   getOrders,
+  getOrderStats,
   getOrderById,
   createOrder,
   updateOrderStatus,
@@ -12,6 +13,7 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get('/stats', getOrderStats);
 router.get('/', getOrders);
 router.get('/:id', getOrderById);
 router.post('/', createOrder);

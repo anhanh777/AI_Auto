@@ -2,27 +2,31 @@ import apiClient from '../config/axios.config.js';
 
 export const orderService = {
   getOrders: async (params = {}) => {
-    const res = await apiClient.get('/orders', { params });
-    return res.data;
+    return await apiClient.get('/orders', { params });
+  },
+
+  getOrderStats: async (business_id) => {
+    return await apiClient.get('/orders/stats', { params: { business_id } });
   },
 
   getOrderById: async (id, business_id) => {
-    const res = await apiClient.get(`/orders/${id}`, { params: { business_id } });
-    return res.data;
+    return await apiClient.get(`/orders/${id}`, { params: { business_id } });
   },
 
   createOrder: async (data) => {
-    const res = await apiClient.post('/orders', data);
-    return res.data;
+    return await apiClient.post('/orders', data);
   },
 
-  updateOrderStatus: async (id, status, business_id) => {
-    const res = await apiClient.put(`/orders/${id}/status`, { status, business_id });
-    return res.data;
+  updateOrderStatus: async (id, status, business_id, note = '', cancellationReason = '') => {
+    return await apiClient.put(`/orders/${id}/status`, {
+      status,
+      business_id,
+      note,
+      cancellation_reason: cancellationReason
+    });
   },
 
   deleteOrder: async (id, business_id) => {
-    const res = await apiClient.delete(`/orders/${id}`, { params: { business_id } });
-    return res.data;
+    return await apiClient.delete(`/orders/${id}`, { params: { business_id } });
   }
 };

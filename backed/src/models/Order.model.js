@@ -35,6 +35,13 @@ const orderSchema = new mongoose.Schema(
       default: null,
       index: true
     },
+    // Kênh bán phát sinh đơn hàng (channels._id - Fanpage/Web)
+    channel_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Channel',
+      default: null,
+      index: true
+    },
     // 6. Danh sách sản phẩm gồm product_id, sku, name, quantity, price
     order_items: [
       {
@@ -137,6 +144,20 @@ const orderSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    // Lý do hủy đơn hàng (nếu có)
+    cancellation_reason: {
+      type: String,
+      default: ''
+    },
+    // Lịch sử chuyển đổi trạng thái đơn hàng (Audit Trail)
+    status_history: [
+      {
+        status: { type: String, required: true },
+        updated_at: { type: Date, default: Date.now },
+        updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        note: { type: String, default: '' }
+      }
+    ],
     source: {
       type: String,
       default: 'ai_chat'
