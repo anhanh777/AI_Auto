@@ -37,7 +37,9 @@ import {
   Send,
   Save,
   MessageCircle,
-  Building2
+  Building2,
+  Globe,
+  Store
 } from 'lucide-react';
 
 const CustomerListPage = () => {
@@ -205,6 +207,53 @@ const CustomerListPage = () => {
       month: '2-digit',
       year: 'numeric'
     });
+  };
+
+  // Render Badge Kênh tiếp cận của khách hàng
+  const renderChannelBadge = (c) => {
+    const isFacebook = c.source === 'facebook' || !!c.psid || !!c.channel_name;
+    if (isFacebook) {
+      return (
+        <div className="inline-flex flex-col items-start gap-1">
+          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200/80 dark:border-sky-800/60">
+            <Facebook size={12} className="text-[#1877F2] shrink-0" />
+            <span className="font-bold truncate max-w-[130px]" title={c.channel_name ? `Fanpage: ${c.channel_name}` : 'Facebook Messenger'}>
+              {c.channel_name || 'Facebook'}
+            </span>
+          </span>
+          {c.psid && (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono pl-0.5">
+              ID: {c.psid.slice(0, 8)}...
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (c.source === 'zalo') {
+      return (
+        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
+          <MessageCircle size={12} className="text-blue-500 shrink-0" />
+          <span>Zalo OA</span>
+        </span>
+      );
+    }
+
+    if (c.source === 'web' || c.source === 'website') {
+      return (
+        <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60">
+          <Globe size={12} className="text-indigo-500 shrink-0" />
+          <span>Website</span>
+        </span>
+      );
+    }
+
+    return (
+      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+        <Store size={12} className="text-slate-500 shrink-0" />
+        <span>Tại quầy</span>
+      </span>
+    );
   };
 
   // Copy helper
@@ -741,6 +790,7 @@ const CustomerListPage = () => {
               <thead>
                 <tr className="bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-slate-700/80 uppercase tracking-wider text-[11px]">
                   <th className="py-3.5 px-4 font-bold">Khách hàng</th>
+                  <th className="py-3.5 px-4 font-bold">Kênh tiếp cận</th>
                   <th className="py-3.5 px-4 font-bold">Liên hệ</th>
                   <th className="py-3.5 px-4 font-bold">Địa chỉ giao hàng</th>
                   <th className="py-3.5 px-4 font-bold">Thẻ phân loại</th>
@@ -753,7 +803,6 @@ const CustomerListPage = () => {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
                 {customers.map((c) => {
-                  const isFacebook = c.source === 'facebook' || !!c.psid;
                   const isVip = (c.tags || []).some((t) => t.toUpperCase().includes('VIP'));
 
                   return (
@@ -783,21 +832,16 @@ const CustomerListPage = () => {
                                 {c.full_name}
                               </p>
                             </div>
-                            <div className="flex items-center space-x-1.5 mt-0.5">
-                              {isFacebook ? (
-                                <span className="text-[10px] text-sky-600 dark:text-sky-400 flex items-center space-x-0.5 font-medium">
-                                  <Facebook size={11} />
-                                  <span>Facebook</span>
-                                  {c.psid && <span className="text-slate-400 text-[9px] font-mono">({c.psid.slice(0, 6)}...)</span>}
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                                  {c.source === 'web' ? 'Website' : 'Thủ công'}
-                                </span>
-                              )}
-                            </div>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              KH-{c._id.slice(-6).toUpperCase()}
+                            </span>
                           </div>
                         </div>
+                      </td>
+
+                      {/* Kênh khách hàng */}
+                      <td className="py-3.5 px-4">
+                        {renderChannelBadge(c)}
                       </td>
 
                       {/* Contact */}

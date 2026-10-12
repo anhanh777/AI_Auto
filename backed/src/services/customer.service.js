@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Customer, Order, Conversation } from '../models/index.js';
+import { Customer, Order, Conversation, Channel } from '../models/index.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 
 export const getCustomersService = async ({
@@ -79,21 +79,39 @@ export const getCustomersService = async ({
     .skip(pagination.skip)
     .limit(pagination.limit);
 
-  // Gắn thêm conversation_id và channel_id nếu khách có phiên chat
+  // Gắn thêm conversation_id và chi tiết Kênh (Channel) nếu khách có phiên chat
   const customerIds = rawCustomers.map((c) => c._id);
   const conversations = await Conversation.find({
     customer_id: { $in: customerIds }
-  }).select('_id customer_id channel_id').lean();
+  })
+    .sort({ last_message_at: -1, updated_at: -1 })
+    .populate('channel_id', 'page_name page_id platform avatar_url')
+    .lean();
 
   const convMap = new Map();
-  conversations.forEach((cv) => convMap.set(cv.customer_id.toString(), cv));
+  // Ưu tiên hội thoại mới nhất của khách
+  conversations.forEach((cv) => {
+    const custKey = cv.customer_id.toString();
+    if (!convMap.has(custKey)) {
+      convMap.set(custKey, cv);
+    }
+  });
 
   const customers = rawCustomers.map((c) => {
     const obj = c.toObject();
     const cv = convMap.get(c._id.toString());
     if (cv) {
       obj.conversation_id = cv._id;
-      obj.channel_id = cv.channel_id;
+      const ch = cv.channel_id;
+      if (ch && typeof ch === 'object') {
+        obj.channel_id = ch._id;
+        obj.channel_name = ch.page_name || ch.name || '';
+        obj.channel_platform = ch.platform || 'facebook';
+        obj.channel_page_id = ch.page_id || '';
+        obj.channel_avatar = ch.avatar_url || '';
+      } else {
+        obj.channel_id = cv.channel_id;
+      }
     }
     return obj;
   });
