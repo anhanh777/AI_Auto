@@ -23,6 +23,76 @@ export const verifyWebhookService = async ({ mode, token, challenge }) => {
 };
 
 /**
+ * Lấy thông tin họ tên & avatar khách hàng từ Meta Graph API
+ * Hỗ trợ 2 cơ chế:
+ * 1. Gọi trực tiếp endpoint PSID /{senderPsid}
+ * 2. Fallback gọi Page Conversations /{pageId}/conversations (luôn lấy được tên khách hàng của Page!)
+ */
+async function resolveCustomerInfo(senderPsid, pageId, pageToken) {
+  let name = '';
+  let avatar = '';
+
+  if (pageToken) {
+    // Cách 1: Gọi trực tiếp PSID
+    try {
+      const fbUserRes = await axios.get(`https://graph.facebook.com/v19.0/${senderPsid}`, {
+        params: {
+          fields: 'name,first_name,last_name,profile_pic',
+          access_token: pageToken
+        },
+        timeout: 4000
+      });
+      if (fbUserRes.data?.name) {
+        name = fbUserRes.data.name;
+      } else if (fbUserRes.data?.first_name || fbUserRes.data?.last_name) {
+        name = `${fbUserRes.data.first_name || ''} ${fbUserRes.data.last_name || ''}`.trim();
+      }
+      if (fbUserRes.data?.profile_pic) {
+        avatar = fbUserRes.data.profile_pic;
+      }
+    } catch (err) {
+      // Bị chặn do chính sách quyền riêng tư của Meta đối với người dùng ngoài App
+    }
+
+    // Cách 2: Fallback lấy qua Page Conversations (hoạt động 100% cho mọi khách nhắn tin vào Fanpage)
+    if ((!name || name === 'Khách hàng Facebook') && pageId) {
+      try {
+        const convRes = await axios.get(`https://graph.facebook.com/v19.0/${pageId}/conversations`, {
+          params: {
+            fields: 'participants',
+            limit: 15,
+            access_token: pageToken
+          },
+          timeout: 4000
+        });
+        const convs = convRes.data?.data || [];
+        for (const c of convs) {
+          const parts = c.participants?.data || [];
+          const found = parts.find((p) => p.id === senderPsid);
+          if (found && found.name && found.name !== 'Người dùng Facebook') {
+            name = found.name;
+            break;
+          }
+        }
+      } catch (err) {
+        // bỏ qua
+      }
+    }
+  }
+
+  if (!name) {
+    name = 'Khách hàng Facebook';
+  }
+  if (!avatar) {
+    avatar = name !== 'Khách hàng Facebook'
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff&size=200&bold=true`
+      : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+  }
+
+  return { name, avatar };
+}
+
+/**
  * 2. Tiếp nhận và xử lý payload sự kiện từ Meta Facebook (HTTP POST)
  */
 export const handleWebhookPayloadService = async (body) => {
@@ -69,73 +139,26 @@ export const handleWebhookPayloadService = async (body) => {
         });
 
         if (!customer) {
-          let customerName = 'Khách hàng Facebook';
-          let customerAvatar = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
-
-          // Gọi Facebook Graph API để lấy thông tin khách hàng thật
-          if (pageToken) {
-            try {
-              const fbUserRes = await axios.get(
-                `https://graph.facebook.com/v19.0/${senderPsid}`,
-                {
-                  params: {
-                    fields: 'name,first_name,last_name,profile_pic',
-                    access_token: pageToken
-                  },
-                  timeout: 5000
-                }
-              );
-              if (fbUserRes.data) {
-                if (fbUserRes.data.name) {
-                  customerName = fbUserRes.data.name;
-                } else if (fbUserRes.data.first_name || fbUserRes.data.last_name) {
-                  customerName = `${fbUserRes.data.first_name || ''} ${fbUserRes.data.last_name || ''}`.trim();
-                }
-                if (fbUserRes.data.profile_pic) {
-                  customerAvatar = fbUserRes.data.profile_pic;
-                }
-              }
-            } catch (err) {
-              console.warn(`[Facebook Webhook] Không thể lấy profile PSID ${senderPsid}:`, err.message);
-            }
-          }
-
+          const info = await resolveCustomerInfo(senderPsid, pageId, pageToken);
           customer = await Customer.create({
             business_id: channel.business_id,
             psid: senderPsid,
-            full_name: customerName,
-            avatar: customerAvatar,
-            profile_pic_url: customerAvatar,
+            full_name: info.name,
+            avatar: info.avatar,
+            profile_pic_url: info.avatar,
             customer_tags: ['Khách mới'],
             tags: ['Khách mới']
           });
-        } else if ((customer.full_name === 'Khách hàng Facebook' || !customer.full_name) && pageToken) {
-          // Thử lấy lại tên thật nếu trước đó token bị lỗi
-          try {
-            const fbUserRes = await axios.get(
-              `https://graph.facebook.com/v19.0/${senderPsid}`,
-              {
-                params: {
-                  fields: 'name,first_name,last_name,profile_pic',
-                  access_token: pageToken
-                },
-                timeout: 5000
-              }
-            );
-            if (fbUserRes.data) {
-              const realName = fbUserRes.data.name || `${fbUserRes.data.first_name || ''} ${fbUserRes.data.last_name || ''}`.trim();
-              if (realName) {
-                customer.full_name = realName;
-                if (fbUserRes.data.profile_pic) {
-                  customer.avatar = fbUserRes.data.profile_pic;
-                  customer.profile_pic_url = fbUserRes.data.profile_pic;
-                }
-                await customer.save();
-                console.log(`[Facebook Webhook] Đã cập nhật tên thật cho khách hàng: ${realName}`);
-              }
+        } else if (customer.full_name === 'Khách hàng Facebook' || !customer.full_name) {
+          const info = await resolveCustomerInfo(senderPsid, pageId, pageToken);
+          if (info.name && info.name !== 'Khách hàng Facebook') {
+            customer.full_name = info.name;
+            if (info.avatar && !info.avatar.includes('unsplash')) {
+              customer.avatar = info.avatar;
+              customer.profile_pic_url = info.avatar;
             }
-          } catch (err) {
-            // bỏ qua
+            await customer.save();
+            console.log(`[Facebook Webhook] Đã cập nhật tên thật cho khách hàng: ${info.name}`);
           }
         }
 
