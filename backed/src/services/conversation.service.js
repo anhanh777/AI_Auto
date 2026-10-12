@@ -13,16 +13,6 @@ export const getConversationsService = async ({ business_id, channel_id, search,
     .populate('channel_id')
     .sort({ last_message_at: -1 });
 
-  // Nếu lọc theo channel_id mà chưa có hội thoại nào, lấy các hội thoại của business đó
-  if (conversations.length === 0 && channel_id && business_id) {
-    const fallbackQuery = { business_id };
-    if (tag) fallbackQuery.tags = tag;
-    conversations = await Conversation.find(fallbackQuery)
-      .populate('customer_id')
-      .populate('channel_id')
-      .sort({ last_message_at: -1 });
-  }
-
   if (search) {
     const q = search.toLowerCase();
     conversations = conversations.filter(c =>

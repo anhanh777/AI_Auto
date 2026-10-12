@@ -116,6 +116,8 @@ const LiveChatPage = () => {
   const handleSelectChannel = (channel) => {
     setActiveChannel(channel);
     setSelectedConv(null);
+    setConversations([]);
+    setMessages([]);
     setSearchParams({ channel_id: channel._id });
   };
 
@@ -123,6 +125,8 @@ const LiveChatPage = () => {
   const handleBackToChannelList = () => {
     setActiveChannel(null);
     setSelectedConv(null);
+    setConversations([]);
+    setMessages([]);
     setSearchParams({});
   };
 
@@ -218,6 +222,13 @@ const LiveChatPage = () => {
 
     const handleConversationUpdated = (updatedConv) => {
       if (!updatedConv?._id) return;
+
+      // Chỉ cập nhật nếu hội thoại thuộc đúng kênh Fanpage đang mở
+      const convChanId = updatedConv.channel_id?._id || updatedConv.channel_id;
+      if (activeChannel?._id && convChanId && convChanId.toString() !== activeChannel._id.toString()) {
+        return;
+      }
+
       setConversations((prev) => {
         const index = prev.findIndex((c) => c._id === updatedConv._id);
         if (index > -1) {
@@ -241,7 +252,7 @@ const LiveChatPage = () => {
       socket.off('conversation_updated', handleConversationUpdated);
       socket.off('new_incoming_message');
     };
-  }, [selectedConv?._id]);
+  }, [selectedConv?._id, activeChannel?._id]);
 
   // 4. Gửi tin nhắn
   const handleSendMessage = async (e) => {
