@@ -109,6 +109,34 @@ export const handleWebhookPayloadService = async (body) => {
             customer_tags: ['Khách mới'],
             tags: ['Khách mới']
           });
+        } else if ((customer.full_name === 'Khách hàng Facebook' || !customer.full_name) && pageToken) {
+          // Thử lấy lại tên thật nếu trước đó token bị lỗi
+          try {
+            const fbUserRes = await axios.get(
+              `https://graph.facebook.com/v19.0/${senderPsid}`,
+              {
+                params: {
+                  fields: 'name,first_name,last_name,profile_pic',
+                  access_token: pageToken
+                },
+                timeout: 5000
+              }
+            );
+            if (fbUserRes.data) {
+              const realName = fbUserRes.data.name || `${fbUserRes.data.first_name || ''} ${fbUserRes.data.last_name || ''}`.trim();
+              if (realName) {
+                customer.full_name = realName;
+                if (fbUserRes.data.profile_pic) {
+                  customer.avatar = fbUserRes.data.profile_pic;
+                  customer.profile_pic_url = fbUserRes.data.profile_pic;
+                }
+                await customer.save();
+                console.log(`[Facebook Webhook] Đã cập nhật tên thật cho khách hàng: ${realName}`);
+              }
+            }
+          } catch (err) {
+            // bỏ qua
+          }
         }
 
         // B. Tìm hoặc tạo Phiên hội thoại (Conversation)
