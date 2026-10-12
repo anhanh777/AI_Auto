@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Facebook,
   Bot,
   Sparkles,
-  ShieldCheck,
   CheckCircle2,
   KeyRound,
   RefreshCw,
@@ -14,11 +13,18 @@ import {
   Info,
   Radio,
   Settings,
-  AlertCircle
+  AlertCircle,
+  UserCheck,
+  PlusCircle,
+  LogOut
 } from 'lucide-react';
 import { channelService } from '../../services/channel.service.js';
 import { useToast } from '../../contexts/ToastContext.jsx';
-import { loginWithFacebook } from '../../utils/facebookSdk.js';
+import {
+  loginWithFacebook,
+  getDirectFacebookPages,
+  getFacebookUserProfile
+} from '../../utils/facebookSdk.js';
 
 const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) => {
   const { showToast } = useToast();
@@ -53,11 +59,11 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
       setLoggingIn(true);
       const authResult = await loginWithFacebook();
       if (authResult.success && authResult.accessToken) {
-        showToast('success', 'Đăng nhập Facebook thành công! Đang tải danh sách Fanpage...');
         setFbUser({
           userID: authResult.userID,
           accessToken: authResult.accessToken
         });
+        showToast('success', 'Đăng nhập Facebook thành công! Đang tải danh sách Fanpage...');
         await loadFacebookPages(authResult.accessToken);
       }
     } catch (err) {
@@ -68,28 +74,54 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
     }
   };
 
-  // 2. Lấy danh sách Fanpage từ Meta Graph API
+  // 2. Lấy danh sách Fanpage từ Meta (kết hợp cả backend và trực tiếp SDK)
   const loadFacebookPages = async (userAccessToken) => {
     try {
       setLoadingPages(true);
-      const res = await channelService.getFacebookPages(userAccessToken);
-      if (res.success && Array.isArray(res.data)) {
-        setPages(res.data);
-        // Khởi tạo operating_mode mặc định cho từng page
-        const initialModes = {};
-        res.data.forEach((p) => {
-          initialModes[p.page_id] = 'AI_AUTO';
-        });
-        setOperatingModes(initialModes);
 
-        if (res.data.length === 0) {
-          showToast('info', 'Tài khoản Facebook của bạn hiện chưa sở hữu hoặc quản lý Fanpage nào.');
+      // Lấy thông tin tài khoản Facebook người dùng
+      const userProfile = await getFacebookUserProfile();
+      if (userProfile) {
+        setFbUser((prev) => ({ ...prev, ...userProfile }));
+      }
+
+      let loadedPages = [];
+
+      // Bước 1: Thử lấy qua backend API
+      try {
+        const res = await channelService.getFacebookPages(userAccessToken);
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+          loadedPages = res.data;
         }
+      } catch (backendErr) {
+        console.warn('Backend page query warning, trying direct SDK:', backendErr.message);
+      }
+
+      // Bước 2: Dự phòng gọi trực tiếp qua Facebook JavaScript SDK
+      if (loadedPages.length === 0) {
+        const directPages = await getDirectFacebookPages();
+        if (directPages && directPages.length > 0) {
+          loadedPages = directPages;
+        }
+      }
+
+      setPages(loadedPages);
+
+      // Khởi tạo operating_mode mặc định
+      const initialModes = {};
+      loadedPages.forEach((p) => {
+        initialModes[p.page_id] = 'AI_AUTO';
+      });
+      setOperatingModes(initialModes);
+
+      if (loadedPages.length > 0) {
+        showToast('success', `Đã tìm thấy ${loadedPages.length} Fanpage từ tài khoản của bạn.`);
+      } else {
+        showToast('info', 'Chưa có Fanpage nào được cấp quyền. Vui lòng bấm chọn lại quyền Fanpage.');
       }
     } catch (err) {
       console.error('Lỗi khi tải Fanpage:', err);
-      const msg = err.response?.data?.message || err.message || 'Không thể lấy danh sách Fanpage từ Meta';
-      showToast('error', msg);
+      showToast('error', err.message || 'Không thể lấy danh sách Fanpage từ Meta');
     } finally {
       setLoadingPages(false);
     }
@@ -161,6 +193,11 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
     }
   };
 
+  const handleLogoutFb = () => {
+    setFbUser(null);
+    setPages([]);
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white dark:bg-slate-800 rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-200 dark:border-slate-700 relative text-slate-800 dark:text-slate-100 max-h-[90vh] flex flex-col">
@@ -218,8 +255,8 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
         <div className="overflow-y-auto flex-1 pr-1">
           {activeTab === 'oauth' ? (
             <div className="space-y-4">
-              {/* TRƯỜNG HỢP 1: Chưa đăng nhập Facebook hoặc chưa lấy được pages */}
-              {!fbUser || pages.length === 0 ? (
+              {/* TRƯỜNG HỢP 1: Chưa đăng nhập Facebook */}
+              {!fbUser ? (
                 <div className="p-6 bg-blue-50/50 dark:bg-blue-950/20 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-center space-y-4">
                   <div className="w-14 h-14 rounded-2xl bg-[#1877F2] text-white flex items-center justify-center mx-auto shadow-lg shadow-[#1877F2]/25">
                     <Facebook size={32} />
@@ -267,87 +304,183 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
                   </div>
                 </div>
               ) : (
-                /* TRƯỜNG HỢP 2: Đã đăng nhập -> Hiển thị danh sách Fanpages */
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                        Chọn Fanpage để kết nối ({pages.length} trang tìm thấy):
-                      </span>
+                /* TRƯỜNG HỢP 2: ĐÃ ĐĂNG NHẬP FACEBOOK */
+                <div className="space-y-4">
+                  {/* Thanh thông tin tài khoản Facebook đã đăng nhập */}
+                  <div className="p-3 bg-blue-50/60 dark:bg-blue-950/40 rounded-2xl border border-blue-100 dark:border-blue-900/50 flex items-center justify-between">
+                    <div className="flex items-center space-x-2.5">
+                      {fbUser.avatar ? (
+                        <img
+                          src={fbUser.avatar}
+                          alt={fbUser.name || 'Facebook User'}
+                          className="w-8 h-8 rounded-full border border-blue-200 object-cover"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-[#1877F2] text-white flex items-center justify-center font-bold text-xs">
+                          f
+                        </div>
+                      )}
+                      <div>
+                        <p className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1">
+                          <span>{fbUser.name || 'Tài khoản Facebook'}</span>
+                          <span className="text-[10px] text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded font-semibold">
+                            Đã xác thực
+                          </span>
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          ID: {fbUser.id || fbUser.userID || 'N/A'}
+                        </p>
+                      </div>
                     </div>
+
                     <button
                       type="button"
-                      onClick={handleFacebookLogin}
-                      className="text-[11px] text-[#1877F2] hover:underline flex items-center gap-1 font-semibold"
+                      onClick={handleLogoutFb}
+                      className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                      title="Đăng xuất tài khoản Facebook"
                     >
-                      <RefreshCw size={11} />
-                      <span>Tải lại</span>
+                      <LogOut size={13} />
+                      <span>Đổi tài khoản</span>
                     </button>
                   </div>
 
-                  <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                    {pages.map((p) => {
-                      const isConnecting = connectingPageId === p.page_id;
+                  {/* Vùng hiển thị trạng thái danh sách Fanpages */}
+                  {loadingPages ? (
+                    <div className="p-10 text-center text-slate-400 space-y-2 flex flex-col items-center justify-center">
+                      <RefreshCw size={24} className="animate-spin text-[#1877F2]" />
+                      <p className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                        Đang lấy danh sách Fanpage từ Meta Graph API...
+                      </p>
+                      <p className="text-[11px]">Vui lòng đợi trong giây lát</p>
+                    </div>
+                  ) : pages.length === 0 ? (
+                    /* Khi đã đăng nhập nhưng chưa có/chưa cấp quyền Fanpage */
+                    <div className="p-6 bg-amber-50/60 dark:bg-amber-950/20 rounded-2xl border border-amber-200 dark:border-amber-900/40 text-center space-y-3">
+                      <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-600 flex items-center justify-center mx-auto">
+                        <AlertCircle size={24} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                          Chưa tìm thấy Fanpage nào được cấp quyền
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1 leading-relaxed">
+                          Facebook chưa chia sẻ danh sách Fanpage. Điều này xảy ra khi bạn chưa tích chọn Fanpage trong cửa sổ phân quyền của Facebook hoặc tài khoản chưa có Fanpage.
+                        </p>
+                      </div>
 
-                      return (
-                        <div
-                          key={p.page_id}
-                          className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-[#1877F2]/50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={handleFacebookLogin}
+                          className="px-4 py-2 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm w-full sm:w-auto"
                         >
-                          {/* Info Page */}
-                          <div className="flex items-center space-x-3">
-                            <img
-                              src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                              alt={p.page_name}
-                              className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
-                            />
-                            <div>
-                              <p className="font-extrabold text-xs text-slate-900 dark:text-white">
-                                {p.page_name}
-                              </p>
-                              <p className="text-[10px] text-slate-400 font-mono mt-0.5">
-                                Page ID: {p.page_id} {p.category && `• ${p.category}`}
-                              </p>
+                          <RefreshCw size={13} />
+                          <span>Cấp lại quyền & Tích chọn Fanpage</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => loadFacebookPages(fbUser.accessToken)}
+                          className="px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer w-full sm:w-auto"
+                        >
+                          <RefreshCw size={13} />
+                          <span>Tải lại</span>
+                        </button>
+                      </div>
+
+                      <div className="pt-2 border-t border-amber-200/60 dark:border-amber-900/30 text-[11px] text-slate-400">
+                        <span>Chưa có Fanpage? </span>
+                        <a
+                          href="https://www.facebook.com/pages/create/"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#1877F2] underline font-semibold inline-flex items-center gap-0.5"
+                        >
+                          Tạo Fanpage mới trên Facebook <ExternalLink size={10} />
+                        </a>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Khi đã có danh sách Fanpages */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                          Chọn Fanpage để kết nối ({pages.length} trang tìm thấy):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => loadFacebookPages(fbUser.accessToken)}
+                          className="text-[11px] text-[#1877F2] hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                        >
+                          <RefreshCw size={11} />
+                          <span>Làm mới</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                        {pages.map((p) => {
+                          const isConnecting = connectingPageId === p.page_id;
+
+                          return (
+                            <div
+                              key={p.page_id}
+                              className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700 hover:border-[#1877F2]/50 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                            >
+                              {/* Info Page */}
+                              <div className="flex items-center space-x-3">
+                                <img
+                                  src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                                  alt={p.page_name}
+                                  className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
+                                />
+                                <div>
+                                  <p className="font-extrabold text-xs text-slate-900 dark:text-white">
+                                    {p.page_name}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                    Page ID: {p.page_id} {p.category && `• ${p.category}`}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Mode & Action */}
+                              <div className="flex items-center space-x-2 self-end sm:self-center">
+                                <select
+                                  value={operatingModes[p.page_id] || 'AI_AUTO'}
+                                  onChange={(e) =>
+                                    setOperatingModes({
+                                      ...operatingModes,
+                                      [p.page_id]: e.target.value
+                                    })
+                                  }
+                                  className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+                                >
+                                  <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
+                                  <option value="HYBRID">⚡ Lai (Hybrid)</option>
+                                  <option value="MANUAL">👤 Thủ công</option>
+                                </select>
+
+                                <button
+                                  type="button"
+                                  disabled={isConnecting}
+                                  onClick={() => handleConnectPage(p)}
+                                  className="px-3.5 py-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  {isConnecting ? (
+                                    <>
+                                      <RefreshCw size={12} className="animate-spin" />
+                                      <span>Đang kết nối...</span>
+                                    </>
+                                  ) : (
+                                    <span>Kết nối</span>
+                                  )}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-
-                          {/* Mode & Action */}
-                          <div className="flex items-center space-x-2 self-end sm:self-center">
-                            <select
-                              value={operatingModes[p.page_id] || 'AI_AUTO'}
-                              onChange={(e) =>
-                                setOperatingModes({
-                                  ...operatingModes,
-                                  [p.page_id]: e.target.value
-                                })
-                              }
-                              className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
-                            >
-                              <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
-                              <option value="HYBRID">⚡ Lai (Hybrid)</option>
-                              <option value="MANUAL">👤 Thủ công</option>
-                            </select>
-
-                            <button
-                              type="button"
-                              disabled={isConnecting}
-                              onClick={() => handleConnectPage(p)}
-                              className="px-3.5 py-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-                            >
-                              {isConnecting ? (
-                                <>
-                                  <RefreshCw size={12} className="animate-spin" />
-                                  <span>Đang kết nối...</span>
-                                </>
-                              ) : (
-                                <span>Kết nối</span>
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

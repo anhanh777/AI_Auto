@@ -56,19 +56,22 @@ export const initFacebookSdk = (appId = DEFAULT_APP_ID) => {
 /**
  * Mở cửa sổ Facebook Login để xin quyền quản lý Fanpage
  */
-export const loginWithFacebook = async (appId = DEFAULT_APP_ID, scopes = 'pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement') => {
+export const loginWithFacebook = async (
+  appId = DEFAULT_APP_ID,
+  scopes = 'pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement'
+) => {
   const resolvedAppId = appId || DEFAULT_APP_ID;
   if (!resolvedAppId) {
     throw new Error('Vui lòng cung cấp Facebook App ID để thực hiện đăng nhập');
   }
 
   // Khởi tạo SDK nếu chưa có
-  await initFacebookSdk(appId);
+  await initFacebookSdk(resolvedAppId);
 
   // Đảm bảo window.FB được cấu hình lại với đúng appId mới nhất
   if (window.FB) {
     window.FB.init({
-      appId,
+      appId: resolvedAppId,
       cookie: true,
       xfbml: true,
       version: 'v21.0'
@@ -91,13 +94,68 @@ export const loginWithFacebook = async (appId = DEFAULT_APP_ID, scopes = 'pages_
           });
         } else {
           // Người dùng hủy hoặc đóng popup
-          reject(new Error(response.status === 'not_authorized' ? 'Tài khoản chưa cấp quyền truy cập' : 'Đăng nhập Facebook bị hủy bỏ'));
+          reject(
+            new Error(
+              response.status === 'not_authorized'
+                ? 'Tài khoản chưa cấp quyền truy cập'
+                : 'Đăng nhập Facebook bị hủy bỏ'
+            )
+          );
         }
       },
       {
         scope: scopes,
-        return_scopes: true
+        return_scopes: true,
+        auth_type: 'rerequest'
       }
     );
+  });
+};
+
+/**
+ * Lấy danh sách Fanpage trực tiếp qua Facebook SDK trên trình duyệt
+ */
+export const getDirectFacebookPages = async () => {
+  return new Promise((resolve) => {
+    if (!window.FB) return resolve([]);
+    window.FB.api(
+      '/me/accounts',
+      { fields: 'id,name,access_token,category,picture{url},tasks' },
+      (response) => {
+        if (response && response.data && Array.isArray(response.data)) {
+          const pages = response.data.map((p) => ({
+            page_id: p.id,
+            page_name: p.name,
+            access_token: p.access_token,
+            category: p.category,
+            avatar_url: p.picture?.data?.url || '',
+            tasks: p.tasks || []
+          }));
+          resolve(pages);
+        } else {
+          resolve([]);
+        }
+      }
+    );
+  });
+};
+
+/**
+ * Lấy thông tin cơ bản của User Facebook đã đăng nhập
+ */
+export const getFacebookUserProfile = async () => {
+  return new Promise((resolve) => {
+    if (!window.FB) return resolve(null);
+    window.FB.api('/me', { fields: 'id,name,picture' }, (res) => {
+      if (res && res.id) {
+        resolve({
+          id: res.id,
+          name: res.name,
+          avatar: res.picture?.data?.url || ''
+        });
+      } else {
+        resolve(null);
+      }
+    });
   });
 };
