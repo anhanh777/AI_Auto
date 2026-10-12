@@ -313,6 +313,20 @@ const LiveChatPage = () => {
       const res = await conversationService.getConversations(params);
       if (res.success && Array.isArray(res.data)) {
         setConversations(res.data);
+
+        // Tự động chọn cuộc hội thoại nếu có tham số từ trang Khách hàng
+        const targetConvId = searchParams.get('conversation_id');
+        const targetCustId = searchParams.get('customer_id');
+        if (targetConvId) {
+          const found = res.data.find((c) => c._id === targetConvId);
+          if (found) setSelectedConv(found);
+        } else if (targetCustId) {
+          const found = res.data.find((c) => {
+            const cId = c.customer_id?._id ? c.customer_id._id.toString() : (c.customer_id ? c.customer_id.toString() : '');
+            return cId === targetCustId;
+          });
+          if (found) setSelectedConv(found);
+        }
       }
     } catch (err) {
       console.error('Lỗi khi tải cuộc trò chuyện:', err);

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { Customer, Order } from '../models/index.js';
+import { Customer, Order, Conversation } from '../models/index.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 
 export const getCustomersService = async ({
@@ -9,6 +9,7 @@ export const getCustomersService = async ({
   search = '',
   tag = '',
   source = '',
+  has_phone = '',
   sortBy = 'updated_at',
   order = 'desc'
 }) => {
@@ -49,16 +50,53 @@ export const getCustomersService = async ({
     }
   }
 
+  if (has_phone === 'yes') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      $or: [
+        { phone: { $exists: true, $ne: '' } },
+        { phone_number: { $exists: true, $ne: '' } }
+      ]
+    });
+  } else if (has_phone === 'no') {
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      $or: [
+        { phone: { $in: ['', null] } },
+        { phone_number: { $in: ['', null] } }
+      ]
+    });
+  }
+
   const sortOptions = {};
   sortOptions[sortBy] = order === 'asc' ? 1 : -1;
 
   const totalItems = await Customer.countDocuments(filter);
   const pagination = getPagination(page, limit, totalItems);
 
-  const customers = await Customer.find(filter)
+  const rawCustomers = await Customer.find(filter)
     .sort(sortOptions)
     .skip(pagination.skip)
     .limit(pagination.limit);
+
+  // Gắn thêm conversation_id và channel_id nếu khách có phiên chat
+  const customerIds = rawCustomers.map((c) => c._id);
+  const conversations = await Conversation.find({
+    customer_id: { $in: customerIds }
+  }).select('_id customer_id channel_id').lean();
+
+  const convMap = new Map();
+  conversations.forEach((cv) => convMap.set(cv.customer_id.toString(), cv));
+
+  const customers = rawCustomers.map((c) => {
+    const obj = c.toObject();
+    const cv = convMap.get(c._id.toString());
+    if (cv) {
+      obj.conversation_id = cv._id;
+      obj.channel_id = cv.channel_id;
+    }
+    return obj;
+  });
 
   return {
     customers,
@@ -86,7 +124,7 @@ export const getCustomerStatsService = async (business_id) => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [totalCustomers, vipCustomers, fbCustomers, newThisMonth, spendAgg] = await Promise.all([
+  const [totalCustomers, vipCustomers, fbCustomers, withPhoneCount, newThisMonth, spendAgg] = await Promise.all([
     Customer.countDocuments({ business_id }),
     Customer.countDocuments({
       business_id,
@@ -100,6 +138,13 @@ export const getCustomerStatsService = async (business_id) => {
       $or: [
         { source: 'facebook' },
         { psid: { $exists: true, $ne: null, $ne: '' } }
+      ]
+    }),
+    Customer.countDocuments({
+      business_id,
+      $or: [
+        { phone: { $exists: true, $ne: '' } },
+        { phone_number: { $exists: true, $ne: '' } }
       ]
     }),
     Customer.countDocuments({
@@ -119,6 +164,7 @@ export const getCustomerStatsService = async (business_id) => {
     total_customers: totalCustomers,
     vip_customers: vipCustomers,
     facebook_customers: fbCustomers,
+    with_phone_count: withPhoneCount,
     new_customers_this_month: newThisMonth,
     total_spend: totalSpend,
     total_orders: totalOrders
@@ -200,6 +246,17 @@ export const updateCustomerService = async (id, data, business_id) => {
   }
 
   const customer = await Customer.findOneAndUpdate(filter, data, { new: true });
+  if (customer && (data.full_name || data.avatar || data.profile_pic_url)) {
+    await Conversation.updateMany(
+      { customer_id: customer._id },
+      {
+        $set: {
+          customer_name: customer.full_name,
+          customer_avatar: customer.avatar
+        }
+      }
+    );
+  }
   return customer;
 };
 

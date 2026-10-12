@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { customerService } from '../../services/customer.service.js';
@@ -29,12 +30,18 @@ import {
   CheckCircle2,
   Clock,
   AlertTriangle,
-  UserCheck
+  UserCheck,
+  Copy,
+  Check,
+  Send,
+  Save,
+  MessageCircle
 } from 'lucide-react';
 
 const CustomerListPage = () => {
   const { activeBusiness } = useBusiness();
   const { showToast } = useToast();
+  const navigate = useNavigate();
 
   // State
   const [customers, setCustomers] = useState([]);
@@ -48,6 +55,7 @@ const CustomerListPage = () => {
     total_customers: 0,
     vip_customers: 0,
     facebook_customers: 0,
+    with_phone_count: 0,
     new_customers_this_month: 0,
     total_spend: 0,
     total_orders: 0
@@ -58,8 +66,10 @@ const CustomerListPage = () => {
   const [search, setSearch] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedSource, setSelectedSource] = useState('');
+  const [hasPhoneFilter, setHasPhoneFilter] = useState(''); // '' | 'yes' | 'no'
   const [sortBy, setSortBy] = useState('updated_at');
   const [page, setPage] = useState(1);
+  const [copiedId, setCopiedId] = useState(null);
 
   // Modals
   const [showAddEditModal, setShowAddEditModal] = useState(false);
@@ -71,6 +81,8 @@ const CustomerListPage = () => {
   const [detailTab, setDetailTab] = useState('info'); // 'info' | 'orders'
   const [customerOrders, setCustomerOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   // Form State
   const initialForm = {
@@ -112,6 +124,7 @@ const CustomerListPage = () => {
         search: search.trim() || undefined,
         tag: selectedTag || undefined,
         source: selectedSource || undefined,
+        has_phone: hasPhoneFilter || undefined,
         sortBy,
         order: 'desc'
       });
@@ -126,7 +139,7 @@ const CustomerListPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeBusiness?._id, page, search, selectedTag, selectedSource, sortBy]);
+  }, [activeBusiness?._id, page, search, selectedTag, selectedSource, hasPhoneFilter, sortBy]);
 
   useEffect(() => {
     fetchStats();
@@ -136,10 +149,77 @@ const CustomerListPage = () => {
     fetchCustomers();
   }, [fetchCustomers]);
 
+  // Copy helper
+  const handleCopy = (text, label, e) => {
+    e?.stopPropagation();
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(text);
+    showToast('success', `Đã sao chép ${label}: ${text}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Chuyển thẳng sang LiveChat với khách
+  const handleGoToChat = (customer, e) => {
+    e?.stopPropagation();
+    if (customer.channel_id) {
+      navigate(`/livechat?channel_id=${customer.channel_id}&customer_id=${customer._id}`);
+    } else {
+      navigate(`/livechat?customer_id=${customer._id}`);
+    }
+  };
+
+  // Gắn / Gỡ nhãn nhanh (1-click)
+  const handleToggleTag = async (customer, tagToToggle, e) => {
+    e?.stopPropagation();
+    const currentTags = customer.tags || [];
+    const hasTag = currentTags.includes(tagToToggle);
+    const newTags = hasTag
+      ? currentTags.filter((t) => t !== tagToToggle)
+      : [...currentTags, tagToToggle];
+
+    try {
+      const res = await customerService.updateCustomer(customer._id, { tags: newTags });
+      if (res.success) {
+        showToast('success', hasTag ? `Đã gỡ nhãn "${tagToToggle}"` : `Đã gắn nhãn "${tagToToggle}"`);
+        setCustomers((prev) =>
+          prev.map((c) => (c._id === customer._id ? { ...c, tags: newTags } : c))
+        );
+        if (detailCustomer?._id === customer._id) {
+          setDetailCustomer((prev) => ({ ...prev, tags: newTags }));
+        }
+        fetchStats();
+      }
+    } catch (err) {
+      showToast('error', 'Lỗi khi cập nhật nhãn');
+    }
+  };
+
+  // Lưu ghi chú nội bộ
+  const handleSaveNote = async () => {
+    if (!detailCustomer?._id) return;
+    try {
+      setSavingNote(true);
+      const res = await customerService.updateCustomer(detailCustomer._id, { notes: noteText });
+      if (res.success) {
+        showToast('success', 'Đã lưu ghi chú khách hàng thành công!');
+        setDetailCustomer((prev) => ({ ...prev, notes: noteText }));
+        setCustomers((prev) =>
+          prev.map((c) => (c._id === detailCustomer._id ? { ...c, notes: noteText } : c))
+        );
+      }
+    } catch (err) {
+      showToast('error', 'Lỗi khi lưu ghi chú');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   // Load orders when customer detail modal opens orders tab
   const handleOpenDetail = async (customer, tab = 'info') => {
     setDetailCustomer(customer);
     setDetailTab(tab);
+    setNoteText(customer.notes || '');
     if (tab === 'orders') {
       loadCustomerOrders(customer._id);
     }
@@ -354,10 +434,10 @@ const CustomerListPage = () => {
           </p>
         </div>
 
-        {/* Card 3: Khách từ Facebook / AI */}
+        {/* Card 3: Khách từ Facebook / Fanpage */}
         <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm relative overflow-hidden group hover:border-sky-500/30 transition">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Fanpage / Chatbot</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Fanpage / Messenger</span>
             <div className="w-8 h-8 rounded-lg bg-sky-50 dark:bg-sky-950/60 text-sky-500 flex items-center justify-center">
               <Facebook size={18} />
             </div>
@@ -367,24 +447,28 @@ const CustomerListPage = () => {
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
             <MessageSquare size={12} className="text-sky-500" />
-            <span>Tự động trích xuất qua tin nhắn</span>
+            <span>Đồng bộ từ tin nhắn Facebook</span>
           </p>
         </div>
 
-        {/* Card 4: Khách mới tháng này */}
+        {/* Card 4: Đã có Số điện thoại */}
         <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm relative overflow-hidden group hover:border-emerald-500/30 transition">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Mới tháng này</span>
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Đã có SĐT</span>
             <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-500 flex items-center justify-center">
-              <Calendar size={18} />
+              <Phone size={18} />
             </div>
           </div>
           <p className="text-2xl font-black text-slate-900 dark:text-white mt-2">
-            {statsLoading ? '...' : (stats.new_customers_this_month || 0).toLocaleString('vi-VN')}
+            {statsLoading ? '...' : (stats.with_phone_count || 0).toLocaleString('vi-VN')}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
-            <DollarSign size={12} className="text-emerald-500" />
-            <span>{(stats.total_spend || 0).toLocaleString('vi-VN')} đ tích lũy</span>
+            <CheckCircle2 size={12} className="text-emerald-500" />
+            <span>
+              {stats.total_customers > 0
+                ? `${Math.round(((stats.with_phone_count || 0) / stats.total_customers) * 100)}% tệp khách có SĐT`
+                : 'Sẵn sàng chốt đơn'}
+            </span>
           </p>
         </div>
       </div>
@@ -409,6 +493,20 @@ const CustomerListPage = () => {
 
           {/* Quick Filters */}
           <div className="flex items-center space-x-2">
+            {/* Lọc theo SĐT */}
+            <select
+              value={hasPhoneFilter}
+              onChange={(e) => {
+                setHasPhoneFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[#f05a28]"
+            >
+              <option value="">Tất cả liên hệ</option>
+              <option value="yes">🟢 Đã có SĐT</option>
+              <option value="no">⚪ Chưa có SĐT</option>
+            </select>
+
             {/* Source select */}
             <select
               value={selectedSource}
@@ -624,15 +722,37 @@ const CustomerListPage = () => {
                       {/* Contact */}
                       <td className="py-3.5 px-4 text-slate-700 dark:text-slate-300">
                         <div className="space-y-1">
-                          <p className="flex items-center space-x-1.5 font-medium">
+                          <div className="flex items-center space-x-1.5 font-medium group/phone">
                             <Phone size={12} className="text-slate-400 shrink-0" />
-                            <span>{c.phone || c.phone_number || <span className="text-slate-400 italic">Chưa có SĐT</span>}</span>
-                          </p>
+                            {c.phone || c.phone_number ? (
+                              <div className="flex items-center space-x-1">
+                                <span className="font-semibold">{c.phone || c.phone_number}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleCopy(c.phone || c.phone_number, 'số điện thoại', e)}
+                                  className="p-1 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/phone:opacity-100 transition"
+                                  title="Sao chép SĐT"
+                                >
+                                  {copiedId === (c.phone || c.phone_number) ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 italic">Chưa có SĐT</span>
+                            )}
+                          </div>
                           {c.email && (
-                            <p className="flex items-center space-x-1.5 text-slate-500 dark:text-slate-400 text-[11px]">
+                            <div className="flex items-center space-x-1.5 text-slate-500 dark:text-slate-400 text-[11px] group/email">
                               <Mail size={12} className="shrink-0" />
-                              <span className="truncate max-w-[160px]">{c.email}</span>
-                            </p>
+                              <span className="truncate max-w-[140px]">{c.email}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleCopy(c.email, 'email', e)}
+                                className="p-0.5 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/email:opacity-100 transition"
+                                title="Sao chép email"
+                              >
+                                <Copy size={10} />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </td>
@@ -640,11 +760,21 @@ const CustomerListPage = () => {
                       {/* Address */}
                       <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300 max-w-[220px]">
                         {c.address || c.shipping_address ? (
-                          <div className="flex items-start space-x-1">
-                            <MapPin size={13} className="text-slate-400 shrink-0 mt-0.5" />
-                            <span className="truncate" title={c.address || c.shipping_address}>
-                              {c.address || c.shipping_address}
-                            </span>
+                          <div className="flex items-start justify-between group/addr">
+                            <div className="flex items-start space-x-1 truncate">
+                              <MapPin size={13} className="text-slate-400 shrink-0 mt-0.5" />
+                              <span className="truncate" title={c.address || c.shipping_address}>
+                                {c.address || c.shipping_address}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleCopy(c.address || c.shipping_address, 'địa chỉ', e)}
+                              className="p-1 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/addr:opacity-100 transition shrink-0 ml-1"
+                              title="Sao chép địa chỉ"
+                            >
+                              {copiedId === (c.address || c.shipping_address) ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                            </button>
                           </div>
                         ) : (
                           <span className="text-slate-400 italic">Chưa cập nhật</span>
@@ -653,7 +783,7 @@ const CustomerListPage = () => {
 
                       {/* Tags */}
                       <td className="py-3.5 px-4">
-                        <div className="flex flex-wrap gap-1 max-w-[200px]">
+                        <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
                           {c.tags && c.tags.length > 0 ? (
                             c.tags.map((t, idx) => {
                               const isTagVip = t.toUpperCase().includes('VIP');
@@ -676,6 +806,16 @@ const CustomerListPage = () => {
                           ) : (
                             <span className="text-slate-400 text-[11px]">—</span>
                           )}
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleTag(c, 'VIP', e)}
+                            className={`p-1 rounded text-[10px] font-bold transition opacity-60 hover:opacity-100 ${
+                              isVip ? 'text-amber-500 hover:text-amber-600' : 'text-slate-400 hover:text-amber-500'
+                            }`}
+                            title={isVip ? 'Gỡ nhãn VIP' : 'Gắn nhãn VIP nhanh'}
+                          >
+                            <Crown size={12} className={isVip ? 'fill-amber-500' : ''} />
+                          </button>
                         </div>
                       </td>
 
@@ -698,8 +838,16 @@ const CustomerListPage = () => {
                         <div className="flex items-center justify-center space-x-1">
                           <button
                             type="button"
+                            onClick={(e) => handleGoToChat(c, e)}
+                            className="p-1.5 text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg transition cursor-pointer"
+                            title="Mở cuộc trò chuyện trên LiveChat"
+                          >
+                            <MessageSquare size={15} />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenDetail(c, 'info')}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition"
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg transition cursor-pointer"
                             title="Xem chi tiết & lịch sử đơn"
                           >
                             <Eye size={15} />
@@ -707,7 +855,7 @@ const CustomerListPage = () => {
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(c)}
-                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition"
+                            className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-lg transition cursor-pointer"
                             title="Sửa hồ sơ khách"
                           >
                             <Edit2 size={15} />
@@ -715,7 +863,7 @@ const CustomerListPage = () => {
                           <button
                             type="button"
                             onClick={() => handleDelete(c._id, c.full_name)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition cursor-pointer"
                             title="Xóa khách hàng"
                           >
                             <Trash2 size={15} />
@@ -771,33 +919,45 @@ const CustomerListPage = () => {
             </button>
 
             {/* Modal Header Profile */}
-            <div className="flex items-center space-x-4 pb-5 border-b border-slate-100 dark:border-slate-700">
-              <img
-                src={detailCustomer.avatar || detailCustomer.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                alt={detailCustomer.full_name}
-                className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-md"
-              />
-              <div className="flex-1">
-                <div className="flex items-center space-x-2">
-                  <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
-                    {detailCustomer.full_name}
-                  </h3>
-                  {detailCustomer.tags?.some((t) => t.toUpperCase().includes('VIP')) && (
-                    <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded-full text-[10px] font-extrabold flex items-center gap-1">
-                      <Crown size={11} />
-                      VIP
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center space-x-3 text-xs text-slate-500 mt-1">
-                  <span>Nguồn: <strong>{detailCustomer.source === 'facebook' ? 'Facebook Fanpage' : 'Trực tiếp'}</strong></span>
-                  {detailCustomer.psid && (
-                    <span className="font-mono text-[11px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
-                      PSID: {detailCustomer.psid}
-                    </span>
-                  )}
+            <div className="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-700">
+              <div className="flex items-center space-x-4">
+                <img
+                  src={detailCustomer.avatar || detailCustomer.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                  alt={detailCustomer.full_name}
+                  className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-md"
+                />
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                      {detailCustomer.full_name}
+                    </h3>
+                    {detailCustomer.tags?.some((t) => t.toUpperCase().includes('VIP')) && (
+                      <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded-full text-[10px] font-extrabold flex items-center gap-1">
+                        <Crown size={11} />
+                        VIP
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-3 text-xs text-slate-500 mt-1">
+                    <span>Nguồn: <strong>{detailCustomer.source === 'facebook' ? 'Facebook Fanpage' : 'Trực tiếp'}</strong></span>
+                    {detailCustomer.psid && (
+                      <span className="font-mono text-[11px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                        PSID: {detailCustomer.psid}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Quick Chat Jump Button */}
+              <button
+                type="button"
+                onClick={(e) => handleGoToChat(detailCustomer, e)}
+                className="px-3.5 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-500/20 transition flex items-center space-x-1.5 mr-8 cursor-pointer"
+              >
+                <MessageSquare size={14} />
+                <span>Nhắn tin LiveChat</span>
+              </button>
             </div>
 
             {/* Modal Tabs */}
@@ -834,58 +994,125 @@ const CustomerListPage = () => {
             {/* Tab 1 Content: Info & AI Notes */}
             {detailTab === 'info' && (
               <div className="overflow-y-auto py-4 space-y-4 flex-1 pr-1 text-xs">
+                {/* Contact grid */}
                 <div className="grid grid-cols-2 gap-3.5">
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 group/p">
                     <span className="text-[11px] font-bold text-slate-400 block mb-1">Số điện thoại liên lạc:</span>
-                    <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                      <Phone size={13} className="text-[#f05a28]" />
-                      <span>{detailCustomer.phone || detailCustomer.phone_number || 'Chưa cung cấp'}</span>
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <Phone size={13} className="text-[#f05a28]" />
+                        <span>{detailCustomer.phone || detailCustomer.phone_number || 'Chưa cung cấp'}</span>
+                      </p>
+                      {(detailCustomer.phone || detailCustomer.phone_number) && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopy(detailCustomer.phone || detailCustomer.phone_number, 'SĐT', e)}
+                          className="p-1 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/p:opacity-100 transition"
+                          title="Sao chép"
+                        >
+                          {copiedId === (detailCustomer.phone || detailCustomer.phone_number) ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700">
+                  <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 group/e">
                     <span className="text-[11px] font-bold text-slate-400 block mb-1">Email:</span>
-                    <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                      <Mail size={13} className="text-[#f05a28]" />
-                      <span>{detailCustomer.email || 'Chưa cung cấp'}</span>
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <Mail size={13} className="text-[#f05a28]" />
+                        <span className="truncate max-w-[150px]">{detailCustomer.email || 'Chưa cung cấp'}</span>
+                      </p>
+                      {detailCustomer.email && (
+                        <button
+                          type="button"
+                          onClick={(e) => handleCopy(detailCustomer.email, 'email', e)}
+                          className="p-1 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/e:opacity-100 transition"
+                          title="Sao chép"
+                        >
+                          <Copy size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700">
-                  <span className="text-[11px] font-bold text-slate-400 block mb-1">Địa chỉ giao hàng mặc định:</span>
+                {/* Shipping address */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 group/a">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] font-bold text-slate-400">Địa chỉ giao hàng mặc định:</span>
+                    {(detailCustomer.address || detailCustomer.shipping_address) && (
+                      <button
+                        type="button"
+                        onClick={(e) => handleCopy(detailCustomer.address || detailCustomer.shipping_address, 'địa chỉ', e)}
+                        className="text-[11px] text-[#f05a28] hover:underline flex items-center gap-1"
+                      >
+                        <Copy size={11} />
+                        <span>Sao chép</span>
+                      </button>
+                    )}
+                  </div>
                   <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                     <MapPin size={13} className="text-[#f05a28] shrink-0" />
                     <span>{detailCustomer.address || detailCustomer.shipping_address || 'Chưa cập nhật'}</span>
                   </p>
                 </div>
 
+                {/* Quick Tag Manager */}
                 <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700">
-                  <span className="text-[11px] font-bold text-slate-400 block mb-1">Thẻ phân loại khách hàng:</span>
-                  <div className="flex flex-wrap gap-1.5 mt-1">
-                    {detailCustomer.tags && detailCustomer.tags.length > 0 ? (
-                      detailCustomer.tags.map((t, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#f05a28]/10 text-[#f05a28] dark:bg-[#f05a28]/20"
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[11px] font-bold text-slate-400">Gắn / Gỡ nhãn khách hàng:</span>
+                    <span className="text-[10px] text-slate-400 italic">Bấm để gắn / bỏ gắn nhanh</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {['VIP', 'Tiềm năng', 'Khách mới', 'Đã mua hàng', 'Bom hàng'].map((tagItem) => {
+                      const active = (detailCustomer.tags || []).includes(tagItem);
+                      return (
+                        <button
+                          key={tagItem}
+                          type="button"
+                          onClick={(e) => handleToggleTag(detailCustomer, tagItem, e)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                            active
+                              ? tagItem === 'VIP'
+                                ? 'bg-amber-500 text-white shadow-sm'
+                                : tagItem === 'Bom hàng'
+                                ? 'bg-rose-500 text-white shadow-sm'
+                                : 'bg-[#f05a28] text-white shadow-sm'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-[#f05a28]'
+                          }`}
                         >
-                          #{t}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-slate-400 italic">Chưa gắn thẻ nào</span>
-                    )}
+                          {active && <Check size={11} />}
+                          <span>#{tagItem}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* AI / Chatbot Notes */}
-                <div className="p-3.5 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200/60 dark:border-amber-800/40">
-                  <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1 mb-1">
-                    <Sparkles size={13} />
-                    Ghi chú tư vấn & Lịch sử nhận diện AI:
-                  </span>
-                  <p className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed mt-1">
-                    {detailCustomer.notes || 'Chưa có ghi chú đặc biệt từ AI hoặc nhân viên tư vấn.'}
-                  </p>
+                {/* Staff / AI Notes with Save button */}
+                <div className="p-3.5 bg-amber-50/60 dark:bg-amber-950/30 rounded-2xl border border-amber-200/60 dark:border-amber-800/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                      <Sparkles size={13} />
+                      Ghi chú tư vấn & Lịch sử nhận diện AI:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSaveNote}
+                      disabled={savingNote}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold shadow-sm transition disabled:opacity-50 cursor-pointer"
+                    >
+                      <Save size={11} />
+                      <span>{savingNote ? 'Đang lưu...' : 'Lưu ghi chú'}</span>
+                    </button>
+                  </div>
+                  <textarea
+                    rows={3}
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Nhập ghi chú quan trọng về khách hàng (thói quen, size, địa chỉ cụ thể, hẹn lịch...)..."
+                    className="w-full p-2.5 bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-800/60 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                  />
                 </div>
 
                 {/* Lifetime spend & orders summary */}
