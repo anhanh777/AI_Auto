@@ -88,10 +88,41 @@ export const connectFacebookPageService = async (data, userId) => {
     throw new Error('business_id, page_id và page_name là bắt buộc');
   }
 
-  // Thử đăng ký webhook subscribed_apps nếu có access_token
-  if (access_token) {
+  let finalPageToken = access_token;
+  const appId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
+  const appSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+
+  // Tự động kiểm tra và nâng cấp lên Token vĩnh viễn (Never Expires) cho mọi Page mới thêm vào
+  if (access_token && appId && appSecret) {
     try {
-      const subUrl = `https://graph.facebook.com/v21.0/${page_id}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reads&access_token=${access_token}`;
+      const debugRes = await fetch(`https://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${appId}|${appSecret}`);
+      const debugData = await debugRes.json();
+      const tokenType = debugData?.data?.type;
+
+      if (tokenType === 'USER') {
+        // Đổi sang Long-lived User Token
+        const exRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${access_token}`);
+        const exData = await exRes.json();
+        if (exData.access_token) {
+          // Lấy Page Token vĩnh viễn từ /me/accounts
+          const accRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${exData.access_token}`);
+          const accData = await accRes.json();
+          const targetPage = (accData.data || []).find((p) => p.id === page_id);
+          if (targetPage?.access_token) {
+            finalPageToken = targetPage.access_token;
+            console.log(`[Facebook Channel] Đã tự động nâng cấp sang Token Vĩnh Viễn cho Page: ${page_name} (${page_id})`);
+          }
+        }
+      }
+    } catch (tokenErr) {
+      console.warn('[Facebook Token Auto-Exchange Warn]', tokenErr.message);
+    }
+  }
+
+  // Thử đăng ký webhook subscribed_apps nếu có token
+  if (finalPageToken) {
+    try {
+      const subUrl = `https://graph.facebook.com/v21.0/${page_id}/subscribed_apps?subscribed_fields=messages,messaging_postbacks,message_reads&access_token=${finalPageToken}`;
       const subRes = await fetch(subUrl, { method: 'POST' });
       const subData = await subRes.json();
       console.log(`[Facebook Webhook] Subscribed page ${page_id}:`, subData);
@@ -105,9 +136,9 @@ export const connectFacebookPageService = async (data, userId) => {
 
   if (channel) {
     channel.page_name = page_name;
-    if (access_token) {
-      channel.page_access_token = access_token;
-      channel.access_token = access_token;
+    if (finalPageToken) {
+      channel.page_access_token = finalPageToken;
+      channel.access_token = finalPageToken;
     }
     if (avatar_url) channel.avatar_url = avatar_url;
     if (operating_mode) channel.operating_mode = operating_mode;
