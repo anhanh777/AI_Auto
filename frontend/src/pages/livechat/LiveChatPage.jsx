@@ -1296,18 +1296,6 @@ const LiveChatPage = () => {
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
                         {selectedConv.customer_id?.full_name}
                       </h3>
-                      {selectedConv.customer_id?.full_name === 'Khách hàng Facebook' && (
-                        <button
-                          type="button"
-                          onClick={handleSyncCustomerProfile}
-                          disabled={syncingCustomer}
-                          className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1877F2] text-[10px] font-semibold flex items-center space-x-1 shrink-0 transition cursor-pointer"
-                          title="Đồng bộ lại họ tên thật và avatar của khách hàng từ Meta Graph API"
-                        >
-                          <RefreshCw size={10} className={syncingCustomer ? 'animate-spin' : ''} />
-                          <span>{syncingCustomer ? 'Đang lấy...' : 'Lấy tên thật'}</span>
-                        </button>
-                      )}
                       <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-[#1877F2] text-[10px] font-bold flex items-center space-x-1 shrink-0">
                         <Facebook size={10} fill="#1877F2" />
                         <span>{activeChannel?.page_name}</span>
