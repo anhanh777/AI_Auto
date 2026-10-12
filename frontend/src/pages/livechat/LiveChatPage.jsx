@@ -239,9 +239,16 @@ const LiveChatPage = () => {
     }
 
     const handleNewMessage = (msg) => {
-      if (msg?.conversation_id === selectedConv?._id) {
+      if (!msg) return;
+      const msgConvId = (msg.conversation_id?._id || msg.conversation_id)?.toString();
+      const currentConvId = (selectedConv?._id || selectedConv?.id)?.toString();
+
+      if (msgConvId && currentConvId && msgConvId === currentConvId) {
         setMessages((prev) => {
-          if (prev.some((m) => m._id === msg._id)) return prev;
+          const msgId = (msg._id || msg.id)?.toString();
+          if (msgId && prev.some((m) => (m._id || m.id)?.toString() === msgId)) {
+            return prev;
+          }
           return [...prev, msg];
         });
       }
@@ -251,13 +258,15 @@ const LiveChatPage = () => {
       if (!updatedConv?._id) return;
 
       // Chỉ cập nhật nếu hội thoại thuộc đúng kênh Fanpage đang mở
-      const convChanId = updatedConv.channel_id?._id || updatedConv.channel_id;
-      if (activeChannel?._id && convChanId && convChanId.toString() !== activeChannel._id.toString()) {
+      const convChanId = (updatedConv.channel_id?._id || updatedConv.channel_id)?.toString();
+      const curChanId = (activeChannel?._id || activeChannel?.id)?.toString();
+      if (curChanId && convChanId && convChanId !== curChanId) {
         return;
       }
 
       setConversations((prev) => {
-        const index = prev.findIndex((c) => c._id === updatedConv._id);
+        const targetId = (updatedConv._id || updatedConv.id)?.toString();
+        const index = prev.findIndex((c) => (c._id || c.id)?.toString() === targetId);
         if (index > -1) {
           const newList = [...prev];
           newList[index] = { ...newList[index], ...updatedConv };
@@ -281,10 +290,10 @@ const LiveChatPage = () => {
     };
   }, [selectedConv?._id, activeChannel?._id]);
 
-  // 4. Gửi tin nhắn
+  // 4. Gửi tin nhắn (có cơ chế ngăn chặn gửi lặp và deduplicate message)
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !selectedConv?._id) return;
+    if (!inputMessage.trim() || !selectedConv?._id || sending) return;
 
     const textToSend = inputMessage.trim();
     setInputMessage('');
@@ -296,7 +305,13 @@ const LiveChatPage = () => {
         sender_type: 'STAFF'
       });
       if (res.success && res.data) {
-        setMessages((prev) => [...prev, res.data]);
+        setMessages((prev) => {
+          const newMsgId = (res.data._id || res.data.id)?.toString();
+          if (newMsgId && prev.some((m) => (m._id || m.id)?.toString() === newMsgId)) {
+            return prev;
+          }
+          return [...prev, res.data];
+        });
         fetchConversations();
       }
     } catch (err) {
@@ -1153,13 +1168,14 @@ const LiveChatPage = () => {
                     </p>
                   </div>
                 ) : (
-                  messages.map((msg) => {
+                  messages.map((msg, idx) => {
                     const isStaff = msg.sender_type === 'STAFF';
                     const isBot = msg.sender_type === 'AI_BOT' || msg.sender_type === 'BOT';
+                    const msgKey = (msg._id || msg.id)?.toString() || `msg-${idx}`;
 
                     return (
                       <div
-                        key={msg._id}
+                        key={msgKey}
                         className={`flex items-end space-x-2 ${
                           isStaff || isBot ? 'justify-end' : 'justify-start'
                         }`}
