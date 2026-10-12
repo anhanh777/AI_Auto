@@ -32,5 +32,10 @@ export const channelService = {
   connectFacebookPage: async (pageData) => {
     const res = await apiClient.post('/channels/facebook/connect', pageData);
     return res.data;
+  },
+
+  // Đồng bộ lại danh tính khách hàng bằng Page Access Token
+  syncCustomers: async (id) => {
+    return await apiClient.post(`/channels/${id}/sync-customers`);
   }
 };

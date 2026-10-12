@@ -82,6 +82,7 @@ const LiveChatPage = () => {
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [pickerTab, setPickerTab] = useState('emoji'); // 'emoji' | 'sticker'
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [syncingCustomer, setSyncingCustomer] = useState(false);
 
   const imageInputRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -347,6 +348,34 @@ const LiveChatPage = () => {
     };
     fetchMessages();
   }, [selectedConv?._id]);
+
+  // Đồng bộ lại tên thật & avatar của khách hàng từ Meta Graph API
+  const handleSyncCustomerProfile = async () => {
+    if (!activeChannel?._id) return;
+    try {
+      setSyncingCustomer(true);
+      const res = await channelService.syncCustomers(activeChannel._id);
+      if (res.data?.success || res.success) {
+        showToast('success', res.data?.message || res.message || 'Đã đồng bộ thông tin khách hàng thành công!');
+        fetchConversations();
+        // Cập nhật selectedConv
+        if (selectedConv?._id) {
+          const convRes = await conversationService.getConversations({
+            business_id: activeBusiness._id,
+            channel_id: activeChannel._id
+          });
+          if (convRes.success && Array.isArray(convRes.data)) {
+            const found = convRes.data.find((c) => c._id === selectedConv._id);
+            if (found) setSelectedConv(found);
+          }
+        }
+      }
+    } catch (err) {
+      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi đồng bộ khách hàng');
+    } finally {
+      setSyncingCustomer(false);
+    }
+  };
 
   // Cuộn xuống tin nhắn cuối cùng
   useEffect(() => {
@@ -1267,6 +1296,18 @@ const LiveChatPage = () => {
                       <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
                         {selectedConv.customer_id?.full_name}
                       </h3>
+                      {selectedConv.customer_id?.full_name === 'Khách hàng Facebook' && (
+                        <button
+                          type="button"
+                          onClick={handleSyncCustomerProfile}
+                          disabled={syncingCustomer}
+                          className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 text-[#1877F2] text-[10px] font-semibold flex items-center space-x-1 shrink-0 transition cursor-pointer"
+                          title="Đồng bộ lại họ tên thật và avatar của khách hàng từ Meta Graph API"
+                        >
+                          <RefreshCw size={10} className={syncingCustomer ? 'animate-spin' : ''} />
+                          <span>{syncingCustomer ? 'Đang lấy...' : 'Lấy tên thật'}</span>
+                        </button>
+                      )}
                       <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-[#1877F2] text-[10px] font-bold flex items-center space-x-1 shrink-0">
                         <Facebook size={10} fill="#1877F2" />
                         <span>{activeChannel?.page_name}</span>

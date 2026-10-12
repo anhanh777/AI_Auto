@@ -133,3 +133,58 @@ export const connectFacebookPageService = async (data, userId) => {
 
   return channel;
 };
+
+export const syncChannelCustomersService = async (channelId) => {
+  const channel = await Channel.findById(channelId);
+  if (!channel) throw new Error('Không tìm thấy kênh Fanpage');
+
+  const pageToken = channel.page_access_token || channel.access_token;
+  if (!pageToken) {
+    throw new Error('Kênh chưa có Page Access Token');
+  }
+
+  const { Conversation, Customer } = await import('../models/index.js');
+  const conversations = await Conversation.find({ channel_id: channel._id }).populate('customer_id');
+
+  let updatedCount = 0;
+  const axios = (await import('axios')).default;
+
+  for (const conv of conversations) {
+    const customer = conv.customer_id;
+    if (!customer?.psid) continue;
+
+    try {
+      const fbUserRes = await axios.get(
+        `https://graph.facebook.com/v19.0/${customer.psid}`,
+        {
+          params: {
+            fields: 'name,first_name,last_name,profile_pic',
+            access_token: pageToken
+          },
+          timeout: 7000
+        }
+      );
+
+      if (fbUserRes.data) {
+        const realName = fbUserRes.data.name || `${fbUserRes.data.first_name || ''} ${fbUserRes.data.last_name || ''}`.trim();
+        if (realName) {
+          customer.full_name = realName;
+          if (fbUserRes.data.profile_pic) {
+            customer.avatar = fbUserRes.data.profile_pic;
+            customer.profile_pic_url = fbUserRes.data.profile_pic;
+          }
+          await customer.save();
+          updatedCount++;
+          console.log(`[Sync Customer] Đã cập nhật tên thật: ${realName} (PSID: ${customer.psid})`);
+        }
+      }
+    } catch (err) {
+      if (err.response?.data?.error?.code === 190) {
+        throw new Error(`Token của Fanpage "${channel.page_name}" đã hết hạn. Vui lòng cấp lại Page Access Token.`);
+      }
+      console.warn(`[Sync Customer] Lỗi PSID ${customer.psid}:`, err.response?.data?.error?.message || err.message);
+    }
+  }
+
+  return { success: true, updatedCount };
+};
