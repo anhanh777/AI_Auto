@@ -769,7 +769,7 @@ const CustomerListPage = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-slate-700/80 uppercase tracking-wider text-[11px]">
-                  <th className="py-3.5 px-4 font-bold">Khách hàng</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[200px]">Khách hàng</th>
                   <th className="py-3.5 px-4 font-bold">Kênh tiếp cận</th>
                   <th className="py-3.5 px-4 font-bold">Liên hệ</th>
                   <th className="py-3.5 px-4 font-bold">Địa chỉ giao hàng</th>
@@ -792,13 +792,13 @@ const CustomerListPage = () => {
                       onClick={() => handleOpenDetail(c, 'info')}
                     >
                       {/* Customer Info */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3.5 px-4 min-w-[200px]">
                         <div className="flex items-center space-x-3">
-                          <div className="relative">
+                          <div className="relative w-11 h-11 shrink-0 aspect-square">
                             <img
                               src={c.avatar || c.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                               alt={c.full_name}
-                              className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
+                              className="w-11 h-11 shrink-0 aspect-square rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
                             />
                             {isVip && (
                               <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] shadow">
@@ -806,13 +806,13 @@ const CustomerListPage = () => {
                               </div>
                             )}
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <div className="flex items-center space-x-1.5">
-                              <p className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-[#f05a28] transition">
+                              <p className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-[#f05a28] transition truncate" title={c.full_name}>
                                 {c.full_name}
                               </p>
                             </div>
-                            <span className="text-[10px] text-slate-400 font-mono">
+                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
                               KH-{c._id.slice(-6).toUpperCase()}
                             </span>
                           </div>
