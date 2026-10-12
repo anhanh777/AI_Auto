@@ -2,37 +2,30 @@ import apiClient from '../config/axios.config.js';
 
 export const customerService = {
   getCustomers: async (params = {}) => {
-    const res = await apiClient.get('/customers', { params });
-    return res.data;
+    return await apiClient.get('/customers', { params });
   },
 
   getCustomerById: async (id, business_id) => {
-    const res = await apiClient.get(`/customers/${id}`, { params: { business_id } });
-    return res.data;
+    return await apiClient.get(`/customers/${id}`, { params: { business_id } });
   },
 
   createCustomer: async (data) => {
-    const res = await apiClient.post('/customers', data);
-    return res.data;
+    return await apiClient.post('/customers', data);
   },
 
   updateCustomer: async (id, data) => {
-    const res = await apiClient.put(`/customers/${id}`, data);
-    return res.data;
+    return await apiClient.put(`/customers/${id}`, data);
   },
 
   deleteCustomer: async (id, business_id) => {
-    const res = await apiClient.delete(`/customers/${id}`, { params: { business_id } });
-    return res.data;
+    return await apiClient.delete(`/customers/${id}`, { params: { business_id } });
   },
 
   getCustomerStats: async (business_id) => {
-    const res = await apiClient.get('/customers/stats', { params: { business_id } });
-    return res.data;
+    return await apiClient.get('/customers/stats', { params: { business_id } });
   },
 
   getCustomerOrders: async (id, business_id) => {
-    const res = await apiClient.get(`/customers/${id}/orders`, { params: { business_id } });
-    return res.data;
+    return await apiClient.get(`/customers/${id}/orders`, { params: { business_id } });
   }
 };

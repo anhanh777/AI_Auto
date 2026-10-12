@@ -104,8 +104,9 @@ const CustomerListPage = () => {
     try {
       setStatsLoading(true);
       const res = await customerService.getCustomerStats(activeBusiness._id);
-      if (res.success && res.data) {
-        setStats(res.data);
+      const data = res?.data || res;
+      if (data && typeof data === 'object') {
+        setStats(data);
       }
     } catch (err) {
       console.error('Lỗi khi tải thống kê khách hàng:', err);
@@ -130,10 +131,12 @@ const CustomerListPage = () => {
         sortBy,
         order: 'desc'
       });
-      if (res.success && Array.isArray(res.data)) {
-        setCustomers(res.data);
-        if (res.meta?.pagination) {
-          setPagination(res.meta.pagination);
+      const list = res?.data || (Array.isArray(res) ? res : []);
+      if (Array.isArray(list)) {
+        setCustomers(list);
+        const pag = res?.pagination || res?.meta?.pagination;
+        if (pag) {
+          setPagination(pag);
         }
       }
     } catch (err) {

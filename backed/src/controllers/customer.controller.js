@@ -11,7 +11,7 @@ import { sendSuccess, sendError } from '../utils/response.util.js';
 
 export const getCustomerStats = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const business_id = req.query.business_id || req.headers['x-business-id'];
     const stats = await getCustomerStatsService(business_id);
     return sendSuccess(res, 'Lấy thống kê khách hàng thành công', stats);
   } catch (error) {
@@ -21,7 +21,7 @@ export const getCustomerStats = async (req, res) => {
 
 export const getCustomerOrders = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const business_id = req.query.business_id || req.headers['x-business-id'];
     const orders = await getCustomerOrdersService(req.params.id, business_id);
     return sendSuccess(res, 'Lấy lịch sử đơn hàng của khách thành công', orders);
   } catch (error) {
@@ -31,7 +31,7 @@ export const getCustomerOrders = async (req, res) => {
 
 export const getCustomers = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const business_id = req.query.business_id || req.headers['x-business-id'];
     const result = await getCustomersService({ ...req.query, business_id });
     return sendSuccess(res, 'Lấy danh sách khách hàng thành công', result.customers, 200, {
       pagination: result.pagination
@@ -43,7 +43,7 @@ export const getCustomers = async (req, res) => {
 
 export const getCustomerById = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const business_id = req.query.business_id || req.headers['x-business-id'];
     const customer = await getCustomerByIdService(req.params.id, business_id);
     return sendSuccess(res, 'Lấy chi tiết khách hàng thành công', customer);
   } catch (error) {
@@ -53,7 +53,7 @@ export const getCustomerById = async (req, res) => {
 
 export const createCustomer = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.body.business_id;
+    const business_id = req.body.business_id || req.headers['x-business-id'];
     const customer = await createCustomerService({ ...req.body, business_id }, req.user?._id);
     return sendSuccess(res, 'Thêm khách hàng thành công', customer, 201);
   } catch (error) {
@@ -63,7 +63,7 @@ export const createCustomer = async (req, res) => {
 
 export const updateCustomer = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.body.business_id;
+    const business_id = req.body.business_id || req.headers['x-business-id'];
     const customer = await updateCustomerService(req.params.id, req.body, business_id);
     return sendSuccess(res, 'Cập nhật thông tin khách hàng thành công', customer);
   } catch (error) {
@@ -73,7 +73,7 @@ export const updateCustomer = async (req, res) => {
 
 export const deleteCustomer = async (req, res) => {
   try {
-    const business_id = req.headers['x-business-id'] || req.query.business_id;
+    const business_id = req.query.business_id || req.headers['x-business-id'];
     const result = await deleteCustomerService(req.params.id, business_id);
     return sendSuccess(res, result.message);
   } catch (error) {
