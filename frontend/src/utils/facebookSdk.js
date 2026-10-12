@@ -3,7 +3,7 @@
  * Hỗ trợ xác thực Meta OAuth 2.0 và quản lý kết nối Fanpage
  */
 
-const DEFAULT_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID || '361260004211097';
+const DEFAULT_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID || '1553312296825910';
 
 let fbInitPromise = null;
 
