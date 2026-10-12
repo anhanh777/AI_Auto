@@ -22,6 +22,11 @@ app.use(express.urlencoded({ extended: true }));
 // Phục vụ file tĩnh (Ảnh upload)
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
 
+// Health check / root route
+app.get('/', (req, res) => {
+  res.status(200).send('AI Sales System Backend OK');
+});
+
 // Root API routes
 app.use('/api/v1', rootRouter);
 
