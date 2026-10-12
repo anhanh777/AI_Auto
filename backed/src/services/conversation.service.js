@@ -50,21 +50,47 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
   ).populate('channel_id').populate('customer_id');
 
   // Gửi tin nhắn sang Messenger của khách nếu khách có PSID và Fanpage có Page Access Token
-  if ((sender_type === 'STAFF' || sender_type === 'AI_BOT') && content && updatedConv) {
+  if ((sender_type === 'STAFF' || sender_type === 'AI_BOT') && (content || attachments.length > 0) && updatedConv) {
     try {
       const pageToken = updatedConv.channel_id?.page_access_token || updatedConv.channel_id?.access_token;
       const recipientPsid = updatedConv.customer_id?.psid;
 
       if (pageToken && recipientPsid) {
-        await axios.post(
-          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-          {
-            recipient: { id: recipientPsid },
-            message: { text: content }
-          },
-          { timeout: 7000 }
-        );
-        console.log(`[Facebook Send API] Đã gửi tin nhắn đến khách hàng (PSID: ${recipientPsid})`);
+        if (content) {
+          await axios.post(
+            `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+            {
+              recipient: { id: recipientPsid },
+              message: { text: content }
+            },
+            { timeout: 7000 }
+          );
+          console.log(`[Facebook Send API] Đã gửi tin nhắn đến khách hàng (PSID: ${recipientPsid})`);
+        }
+
+        // Gửi tệp đính kèm (ảnh/file) nếu có
+        for (const att of attachments) {
+          if (att?.url && att.url.startsWith('http')) {
+            try {
+              await axios.post(
+                `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+                {
+                  recipient: { id: recipientPsid },
+                  message: {
+                    attachment: {
+                      type: att.type === 'image' ? 'image' : 'file',
+                      payload: { url: att.url, is_reusable: true }
+                    }
+                  }
+                },
+                { timeout: 7000 }
+              );
+              console.log(`[Facebook Send API] Đã gửi file đính kèm (${att.type}) đến PSID: ${recipientPsid}`);
+            } catch (attErr) {
+              console.warn('[Facebook Send Attachment Warn]', attErr.response?.data?.error?.message || attErr.message);
+            }
+          }
+        }
       }
     } catch (fbErr) {
       console.warn('[Facebook Send API Warn]', fbErr.response?.data?.error?.message || fbErr.message);

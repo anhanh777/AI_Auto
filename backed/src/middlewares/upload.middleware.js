@@ -35,21 +35,35 @@ const storage = multer.diskStorage({
   }
 });
 
-// 2. Bộ lọc định dạng file (Chỉ cho phép ảnh)
+// 2. Bộ lọc định dạng file (Hỗ trợ ảnh và tài liệu thông dụng)
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif'];
-  if (allowedMimeTypes.includes(file.mimetype)) {
+  const allowedMimeTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain',
+    'application/zip',
+    'application/x-zip-compressed'
+  ];
+  if (allowedMimeTypes.includes(file.mimetype) || file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
-    cb(new Error('Chỉ chấp nhận các định dạng ảnh: JPG, JPEG, PNG, WEBP, GIF'), false);
+    cb(new Error('Chỉ chấp nhận các file ảnh hoặc tài liệu: PDF, Word, Excel, Text, Zip'), false);
   }
 };
 
-// 3. Khởi tạo Multer instance (Giới hạn 5MB)
+// 3. Khởi tạo Multer instance (Giới hạn 10MB)
 export const upload = multer({
   storage,
   fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
+    fileSize: 10 * 1024 * 1024 // 10MB
   }
 });

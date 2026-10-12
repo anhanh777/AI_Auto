@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { channelService } from '../../services/channel.service.js';
 import { conversationService } from '../../services/conversation.service.js';
 import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx';
+import { uploadService } from '../../services/upload.service.js';
 import { socket } from '../../utils/socket.js';
 import {
   Search,
@@ -76,6 +77,84 @@ const LiveChatPage = () => {
   const [sending, setSending] = useState(false);
   const [showCustomerCrm, setShowCustomerCrm] = useState(false);
 
+  // Attachment & Emoji states
+  const [selectedAttachment, setSelectedAttachment] = useState(null); // { file, previewUrl, type, name, size }
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+
+  const imageInputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const messagesEndRef = useRef(null);
+
+  // Danh sách emoji thông dụng
+  const COMMON_EMOJIS = [
+    '😊', '😂', '🥰', '😍', '👍', '🔥', '❤️', '👋',
+    '🙏', '✨', '🛍️', '📦', '💯', '📞', '📍', '🎉',
+    '💐', '💬', '🤩', '👏', '⚡', '⭐', '🤝', '😉',
+    '🆗', '🛒', '💰', '🏷️', '🚚', '✅', '❌', '👀'
+  ];
+
+  // Đóng emoji picker khi click ra ngoài
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
+    if (showEmojiPicker) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmojiPicker]);
+
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('error', 'Kích thước ảnh không được vượt quá 10MB');
+      return;
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setSelectedAttachment({
+      file,
+      previewUrl,
+      type: 'image',
+      name: file.name,
+      size: (file.size / 1024).toFixed(1) + ' KB'
+    });
+    e.target.value = '';
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('error', 'Kích thước tệp không được vượt quá 10MB');
+      return;
+    }
+    setSelectedAttachment({
+      file,
+      type: 'file',
+      name: file.name,
+      size: (file.size / 1024).toFixed(1) + ' KB'
+    });
+    e.target.value = '';
+  };
+
+  const handleRemoveAttachment = () => {
+    if (selectedAttachment?.previewUrl) {
+      URL.revokeObjectURL(selectedAttachment.previewUrl);
+    }
+    setSelectedAttachment(null);
+  };
+
+  const handleSelectEmoji = (emoji) => {
+    setInputMessage((prev) => prev + emoji);
+  };
+
   // 9 TIỆN ÍCH LỌC HỘI THOẠI TRÊN THANH CÔNG CỤ BÊN TRÁI
   const [filterInbox, setFilterInbox] = useState(false); // 1. Lọc theo inbox
   const [filterComment, setFilterComment] = useState(false); // 2. Lọc theo comment
@@ -98,8 +177,6 @@ const LiveChatPage = () => {
     setFilterNoPhone(false);
     setFilterCustomerSeen(false);
   };
-
-  const messagesEndRef = useRef(null);
 
   // 1. Tải danh sách Channels của Business
   const fetchChannels = async () => {
@@ -290,18 +367,51 @@ const LiveChatPage = () => {
     };
   }, [selectedConv?._id, activeChannel?._id]);
 
-  // 4. Gửi tin nhắn (có cơ chế ngăn chặn gửi lặp và deduplicate message)
+  // 4. Gửi tin nhắn (hỗ trợ văn bản, hình ảnh, tài liệu đính kèm và deduplicate message)
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!inputMessage.trim() || !selectedConv?._id || sending) return;
+    if ((!inputMessage.trim() && !selectedAttachment) || !selectedConv?._id || sending) return;
 
-    const textToSend = inputMessage.trim();
+    let textToSend = inputMessage.trim();
+    const currentAttachment = selectedAttachment;
     setInputMessage('');
+    setSelectedAttachment(null);
+    setShowEmojiPicker(false);
     setSending(true);
 
     try {
+      let attachmentsPayload = [];
+
+      // Xử lý upload tệp đính kèm (ảnh hoặc tài liệu) nếu có
+      if (currentAttachment?.file) {
+        setUploadingAttachment(true);
+        const folder = currentAttachment.type === 'image' ? 'chat-images' : 'chat-files';
+        try {
+          const uploadRes = await uploadService.uploadSingle(currentAttachment.file, folder);
+          if (uploadRes.success && (uploadRes.data?.url || uploadRes.data?.path)) {
+            attachmentsPayload.push({
+              type: currentAttachment.type,
+              url: uploadRes.data.url || uploadRes.data.path,
+              name: currentAttachment.name
+            });
+            if (!textToSend) {
+              textToSend = currentAttachment.type === 'image'
+                ? '[Hình ảnh]'
+                : `[Tệp: ${currentAttachment.name}]`;
+            }
+          }
+        } catch (uploadErr) {
+          console.error('Lỗi khi tải tệp đính kèm:', uploadErr);
+          showToast('error', 'Không thể tải lên tệp đính kèm: ' + (uploadErr.message || 'Lỗi mạng'));
+          setSending(false);
+          setUploadingAttachment(false);
+          return;
+        }
+      }
+
       const res = await conversationService.sendMessage(selectedConv._id, {
         content: textToSend,
+        attachments: attachmentsPayload,
         sender_type: 'STAFF'
       });
       if (res.success && res.data) {
@@ -318,6 +428,7 @@ const LiveChatPage = () => {
       showToast('error', 'Lỗi khi gửi tin nhắn');
     } finally {
       setSending(false);
+      setUploadingAttachment(false);
     }
   };
 
@@ -1090,67 +1201,68 @@ const LiveChatPage = () => {
           </div>
         ) : (
           /* TRƯỜNG HỢP B: ĐÃ CHỌN CUỘC HỘI THOẠI -> KHUNG NHẮN TIN CHI TIẾT */
-          <div className="flex-1 flex flex-col h-full bg-white dark:bg-slate-900 animate-fadeIn">
-            {/* Top Bar of Active Conversation */}
-            <div className="h-14 px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs z-10">
-              <div className="flex items-center space-x-3">
-                <div className="relative">
-                  <img
-                    src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                    alt="Customer"
-                    className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-                  />
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 absolute bottom-0 right-0"></span>
-                </div>
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white">
-                      {selectedConv.customer_id?.full_name}
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-[#1877F2] text-[10px] font-bold flex items-center space-x-1">
-                      <Facebook size={10} fill="#1877F2" />
-                      <span>{activeChannel?.page_name}</span>
-                    </span>
+          <div className="flex-1 flex h-full overflow-hidden animate-fadeIn">
+            {/* CỘT CHAT CHÍNH (Bao gồm Header, Tin nhắn và Thanh nhập liệu - Tự co giãn linh động khi mở CRM) */}
+            <div className="flex-1 flex flex-col h-full min-w-0 bg-[#f8fafc] dark:bg-[#0b1120]">
+              {/* Top Bar of Active Conversation */}
+              <div className="h-14 px-4 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs z-10">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="relative shrink-0">
+                    <img
+                      src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                      alt="Customer"
+                      className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                    />
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 absolute bottom-0 right-0"></span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    SĐT: {selectedConv.customer_id?.phone || 'Chưa cập nhật'}
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <h3 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                        {selectedConv.customer_id?.full_name}
+                      </h3>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-[#1877F2] text-[10px] font-bold flex items-center space-x-1 shrink-0">
+                        <Facebook size={10} fill="#1877F2" />
+                        <span>{activeChannel?.page_name}</span>
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      SĐT: {selectedConv.customer_id?.phone || 'Chưa cập nhật'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bot AI Status Toggle & CRM toggle */}
+                <div className="flex items-center space-x-2.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleToggleBot}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 border cursor-pointer ${
+                      selectedConv.is_bot_active
+                        ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
+                    }`}
+                    title="Bật/Tắt Bot AI tự động trả lời cho hội thoại này"
+                  >
+                    <Sparkles size={13} className={selectedConv.is_bot_active ? 'animate-pulse text-emerald-500' : ''} />
+                    <span>{selectedConv.is_bot_active ? '🤖 Bot AI Đang Bật' : '👤 Nhân Viên Tiếp Quản'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerCrm(!showCustomerCrm)}
+                    className={`p-2 rounded-xl border transition cursor-pointer ${
+                      showCustomerCrm
+                        ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 text-[#1877F2]'
+                        : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700'
+                    }`}
+                    title="Thông tin chi tiết khách hàng"
+                  >
+                    <User size={16} />
+                  </button>
                 </div>
               </div>
 
-              {/* Bot AI Status Toggle & CRM toggle */}
-              <div className="flex items-center space-x-2.5">
-                <button
-                  type="button"
-                  onClick={handleToggleBot}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 border cursor-pointer ${
-                    selectedConv.is_bot_active
-                      ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-300 dark:border-emerald-700 text-emerald-600 dark:text-emerald-400'
-                      : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500'
-                  }`}
-                  title="Bật/Tắt Bot AI tự động trả lời cho hội thoại này"
-                >
-                  <Sparkles size={13} className={selectedConv.is_bot_active ? 'animate-pulse text-emerald-500' : ''} />
-                  <span>{selectedConv.is_bot_active ? '🤖 Bot AI Đang Bật' : '👤 Nhân Viên Tiếp Quản'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setShowCustomerCrm(!showCustomerCrm)}
-                  className={`p-2 rounded-xl border transition cursor-pointer ${
-                    showCustomerCrm
-                      ? 'bg-blue-50 dark:bg-blue-950 border-blue-200 text-[#1877F2]'
-                      : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-700'
-                  }`}
-                  title="Thông tin chi tiết khách hàng"
-                >
-                  <User size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Khung Tin Nhắn (Messages Stream) */}
-            <div className="flex-1 flex overflow-hidden">
+              {/* Khung Tin Nhắn (Messages Stream) */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#f8fafc] dark:bg-[#0b1120] no-scrollbar flex flex-col">
                 {loadingMessages ? (
                   <div className="py-12 text-center text-slate-400 text-xs font-medium flex items-center justify-center space-x-2">
@@ -1209,7 +1321,44 @@ const LiveChatPage = () => {
                             </div>
                           )}
 
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
+                          {/* Hiển thị tệp đính kèm (ảnh / file) nếu có */}
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="space-y-1.5 my-1">
+                              {msg.attachments.map((att, attIdx) => {
+                                const isImg = att.type === 'image' || att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                                if (isImg) {
+                                  return (
+                                    <img
+                                      key={attIdx}
+                                      src={att.url}
+                                      alt="Attachment"
+                                      onClick={() => window.open(att.url, '_blank')}
+                                      className="max-w-[240px] max-h-[220px] rounded-xl object-cover cursor-pointer hover:opacity-90 shadow-xs border border-black/10 dark:border-white/10"
+                                      title="Bấm để mở ảnh kích thước gốc"
+                                    />
+                                  );
+                                }
+                                return (
+                                  <a
+                                    key={attIdx}
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[11px] transition ${
+                                      isStaff || isBot
+                                        ? 'bg-white/20 hover:bg-white/30 text-white'
+                                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                                    }`}
+                                  >
+                                    <FileText size={15} className="shrink-0" />
+                                    <span className="truncate max-w-[160px] font-medium">{att.name || 'Tệp đính kèm'}</span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
 
                           <div
                             className={`text-[9px] mt-1 text-right ${
@@ -1226,103 +1375,212 @@ const LiveChatPage = () => {
                 <div ref={messagesEndRef} />
               </div>
 
-              {/* CRM Drawer (Bên phải khung chat nếu mở) */}
-              {showCustomerCrm && (
-                <aside className="w-72 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 overflow-y-auto text-xs space-y-4 animate-fadeIn">
-                  <div className="text-center pb-3 border-b border-slate-100 dark:border-slate-800">
-                    <img
-                      src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                      alt="Avatar"
-                      className="w-16 h-16 rounded-2xl object-cover mx-auto mb-2 border shadow-sm"
-                    />
-                    <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
-                      {selectedConv.customer_id?.full_name}
-                    </h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Kênh: {activeChannel?.page_name}
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">Thông tin liên hệ</span>
-                    <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-1.5">
-                      <p className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300">
-                        <Phone size={13} className="text-[#1877F2]" />
-                        <span>{selectedConv.customer_id?.phone || 'Chưa có SĐT'}</span>
-                      </p>
-                      <p className="text-slate-500 text-[11px]">
-                        Địa chỉ: {selectedConv.customer_id?.address || 'Chưa cập nhật'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase">Thẻ khách hàng</span>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedConv.customer_id?.tags?.length > 0 ? (
-                        selectedConv.customer_id.tags.map((t, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-[#1877F2] rounded-md text-[10px] font-bold"
-                          >
-                            #{t}
-                          </span>
-                        ))
+              {/* Bottom Input Message Bar (NẰM GỌN TRONG CỘT CHAT, CO GIÃN LINH ĐỘNG THEO CỘT CHAT) */}
+              <div className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 shrink-0 relative">
+                {/* 1. Preview Tệp / Hình ảnh đính kèm trước khi gửi */}
+                {selectedAttachment && (
+                  <div className="mb-2 p-2 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200/90 dark:border-slate-700 flex items-center justify-between animate-fadeIn">
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      {selectedAttachment.type === 'image' ? (
+                        <img
+                          src={selectedAttachment.previewUrl}
+                          alt="Preview"
+                          className="w-10 h-10 rounded-lg object-cover border border-slate-200 shadow-xs shrink-0"
+                        />
                       ) : (
-                        <span className="text-slate-400 italic text-[11px]">Chưa gắn thẻ</span>
+                        <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/60 text-[#1877F2] flex items-center justify-center shrink-0">
+                          <FileText size={20} />
+                        </div>
                       )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[200px] sm:max-w-xs">
+                          {selectedAttachment.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400">
+                          {selectedAttachment.size} • {selectedAttachment.type === 'image' ? 'Hình ảnh' : 'Tài liệu'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveAttachment}
+                      className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition cursor-pointer"
+                      title="Hủy đính kèm"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {/* 2. Popover Bộ chọn Biểu tượng cảm xúc (Emoji Picker) */}
+                {showEmojiPicker && (
+                  <div
+                    ref={emojiPickerRef}
+                    className="absolute bottom-16 left-3 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 z-50 animate-fadeIn"
+                  >
+                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-700">
+                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Biểu tượng cảm xúc</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowEmojiPicker(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer"
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-8 gap-1.5 max-h-48 overflow-y-auto no-scrollbar">
+                      {COMMON_EMOJIS.map((emoji, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => handleSelectEmoji(emoji)}
+                          className="text-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer text-center flex items-center justify-center hover:scale-125 transform"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </aside>
-              )}
+                )}
+
+                {/* Hidden File Inputs cho Ảnh và Tệp đính kèm */}
+                <input
+                  type="file"
+                  ref={imageInputRef}
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="*/*"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                />
+
+                {/* 3. Form nhập liệu tin nhắn */}
+                <form
+                  onSubmit={handleSendMessage}
+                  className="flex items-center space-x-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() => imageInputRef.current?.click()}
+                    className={`p-2 rounded-xl transition cursor-pointer ${
+                      selectedAttachment?.type === 'image'
+                        ? 'bg-blue-50 text-[#1877F2]'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    title="Đính kèm hình ảnh"
+                  >
+                    <Image size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`p-2 rounded-xl transition cursor-pointer ${
+                      selectedAttachment?.type === 'file'
+                        ? 'bg-blue-50 text-[#1877F2]'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    title="Đính kèm tệp / tài liệu"
+                  >
+                    <Paperclip size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowEmojiPicker((prev) => !prev)}
+                    className={`p-2 rounded-xl transition cursor-pointer ${
+                      showEmojiPicker
+                        ? 'bg-blue-50 text-[#1877F2]'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    title="Biểu tượng cảm xúc (Emoji)"
+                  >
+                    <Smile size={18} />
+                  </button>
+
+                  <input
+                    type="text"
+                    placeholder={
+                      uploadingAttachment
+                        ? 'Đang tải tệp đính kèm lên...'
+                        : 'Nhập tin nhắn tư vấn khách hàng...'
+                    }
+                    value={inputMessage}
+                    onChange={(e) => setInputMessage(e.target.value)}
+                    disabled={sending}
+                    className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1877F2] transition"
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={sending || (!inputMessage.trim() && !selectedAttachment)}
+                    className="p-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl shadow-md transition disabled:opacity-40 cursor-pointer flex items-center justify-center shrink-0"
+                    title="Gửi tin nhắn"
+                  >
+                    {sending ? (
+                      <RefreshCw size={16} className="animate-spin" />
+                    ) : (
+                      <Send size={16} />
+                    )}
+                  </button>
+                </form>
+              </div>
             </div>
 
-            {/* Bottom Input Message Bar */}
-            <form
-              onSubmit={handleSendMessage}
-              className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex items-center space-x-2"
-            >
-              <button
-                type="button"
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="Đính kèm hình ảnh"
-              >
-                <Image size={18} />
-              </button>
+            {/* CỘT CRM KHÁCH HÀNG BÊN PHẢI (NẾU MỞ) - CHIỀU CAO 100% CỦA CỘT, ĐỘC LẬP */}
+            {showCustomerCrm && (
+              <aside className="w-72 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 p-4 overflow-y-auto text-xs space-y-4 shrink-0 animate-fadeIn">
+                <div className="text-center pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <img
+                    src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                    alt="Avatar"
+                    className="w-16 h-16 rounded-2xl object-cover mx-auto mb-2 border shadow-sm"
+                  />
+                  <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">
+                    {selectedConv.customer_id?.full_name}
+                  </h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Kênh: {activeChannel?.page_name}
+                  </p>
+                </div>
 
-              <button
-                type="button"
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="Đính kèm tệp"
-              >
-                <Paperclip size={18} />
-              </button>
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">Thông tin liên hệ</span>
+                  <div className="p-2.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl space-y-1.5">
+                    <p className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300">
+                      <Phone size={13} className="text-[#1877F2]" />
+                      <span>{selectedConv.customer_id?.phone || 'Chưa có SĐT'}</span>
+                    </p>
+                    <p className="text-slate-500 text-[11px]">
+                      Địa chỉ: {selectedConv.customer_id?.address || 'Chưa cập nhật'}
+                    </p>
+                  </div>
+                </div>
 
-              <button
-                type="button"
-                className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-                title="Biểu tượng cảm xúc"
-              >
-                <Smile size={18} />
-              </button>
-
-              <input
-                type="text"
-                placeholder="Nhập tin nhắn tư vấn khách hàng..."
-                value={inputMessage}
-                onChange={(e) => setInputMessage(e.target.value)}
-                className="flex-1 px-4 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-[#1877F2]"
-              />
-
-              <button
-                type="submit"
-                disabled={sending || !inputMessage.trim()}
-                className="p-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl shadow-md transition disabled:opacity-40 cursor-pointer"
-                title="Gửi tin nhắn"
-              >
-                <Send size={16} />
-              </button>
-            </form>
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-slate-400 uppercase">Thẻ khách hàng</span>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedConv.customer_id?.tags?.length > 0 ? (
+                      selectedConv.customer_id.tags.map((t, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-[#1877F2] rounded-md text-[10px] font-bold"
+                        >
+                          #{t}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="text-slate-400 italic text-[11px]">Chưa gắn thẻ</span>
+                    )}
+                  </div>
+                </div>
+              </aside>
+            )}
           </div>
         )}
       </main>
