@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
@@ -24,6 +24,7 @@ import {
   Users,
   Star,
   Phone,
+  PhoneOff,
   Eye,
   Settings,
   RefreshCw,
@@ -43,7 +44,10 @@ import {
   Check,
   CheckCheck,
   ShoppingBag,
-  Clock
+  Clock,
+  Mail,
+  RotateCcw,
+  Filter
 } from 'lucide-react';
 
 const LiveChatPage = () => {
@@ -71,6 +75,29 @@ const LiveChatPage = () => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showCustomerCrm, setShowCustomerCrm] = useState(false);
+
+  // 9 TIỆN ÍCH LỌC HỘI THOẠI TRÊN THANH CÔNG CỤ BÊN TRÁI
+  const [filterInbox, setFilterInbox] = useState(false); // 1. Lọc theo inbox
+  const [filterComment, setFilterComment] = useState(false); // 2. Lọc theo comment
+  const [sortUnreadFirst, setSortUnreadFirst] = useState(false); // 3. Chưa đọc lên trên
+  const [sortTimeDesc, setSortTimeDesc] = useState(true); // 4. Lọc theo thời gian (mới nhất/cũ nhất)
+  const [filterUnreadOnly, setFilterUnreadOnly] = useState(false); // 5. Lọc hội thoại chưa đọc
+  const [filterUnansweredOnly, setFilterUnansweredOnly] = useState(false); // 6. Lọc hội thoại chưa trả lời
+  const [filterHasPhone, setFilterHasPhone] = useState(false); // 7. Lọc hội thoại có số điện thoại
+  const [filterNoPhone, setFilterNoPhone] = useState(false); // 8. Lọc hội thoại không có số điện thoại
+  const [filterCustomerSeen, setFilterCustomerSeen] = useState(false); // 9. Lọc hội thoại khách đã xem tin nhắn
+
+  const handleResetFilters = () => {
+    setFilterInbox(false);
+    setFilterComment(false);
+    setSortUnreadFirst(false);
+    setSortTimeDesc(true);
+    setFilterUnreadOnly(false);
+    setFilterUnansweredOnly(false);
+    setFilterHasPhone(false);
+    setFilterNoPhone(false);
+    setFilterCustomerSeen(false);
+  };
 
   const messagesEndRef = useRef(null);
 
@@ -301,6 +328,109 @@ const LiveChatPage = () => {
     const m = String(d.getMinutes()).padStart(2, '0');
     return `${h}:${m}`;
   };
+
+  // Danh sách cuộc trò chuyện đã áp dụng 9 bộ lọc
+  const filteredConversations = useMemo(() => {
+    let result = [...conversations];
+
+    // 1. Tìm kiếm (searchQuery)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter((c) =>
+        c.customer_id?.full_name?.toLowerCase().includes(q) ||
+        c.last_message_text?.toLowerCase().includes(q) ||
+        c.last_message_content?.toLowerCase().includes(q) ||
+        c.customer_id?.phone?.includes(q)
+      );
+    }
+
+    // 2. Lọc theo Nhãn (selectedTag)
+    if (selectedTag) {
+      result = result.filter((c) =>
+        c.tags?.includes(selectedTag) ||
+        c.customer_id?.tags?.includes(selectedTag)
+      );
+    }
+
+    // 3. Lọc theo Inbox
+    if (filterInbox) {
+      result = result.filter((c) =>
+        !c.channel_type || c.channel_type === 'INBOX' || c.channel === 'facebook_messenger' || !c.channel?.includes('comment')
+      );
+    }
+
+    // 4. Lọc theo Comment
+    if (filterComment) {
+      result = result.filter((c) =>
+        c.channel_type === 'COMMENT' || c.channel?.includes('comment') || c.source_type === 'comment'
+      );
+    }
+
+    // 5. Lọc hội thoại chưa đọc (Chỉ hiện chưa đọc)
+    if (filterUnreadOnly) {
+      result = result.filter((c) => (c.unread_count || 0) > 0);
+    }
+
+    // 6. Lọc hội thoại chưa trả lời (tin nhắn cuối cùng là từ khách)
+    if (filterUnansweredOnly) {
+      result = result.filter((c) => {
+        const isStaffLast = c.last_message_sender === 'STAFF' || c.last_message_sender === 'AI_BOT' || c.is_replied === true;
+        return !isStaffLast;
+      });
+    }
+
+    // 7. Lọc hội thoại có số điện thoại
+    if (filterHasPhone) {
+      result = result.filter((c) => {
+        const phone = c.customer_id?.phone || c.customer_id?.phone_number;
+        return !!phone && phone.trim().length >= 8;
+      });
+    }
+
+    // 8. Lọc hội thoại không có số điện thoại
+    if (filterNoPhone) {
+      result = result.filter((c) => {
+        const phone = c.customer_id?.phone || c.customer_id?.phone_number;
+        return !phone || phone.trim().length < 8;
+      });
+    }
+
+    // 9. Lọc hội thoại khách đã xem tin nhắn
+    if (filterCustomerSeen) {
+      result = result.filter((c) => c.is_seen_by_customer || c.seen_at || (c.unread_count === 0 && c.last_message_text));
+    }
+
+    // 10. Sắp xếp theo thời gian (Mới nhất trước / Cũ nhất trước)
+    result.sort((a, b) => {
+      const timeA = new Date(a.last_message_at || a.updated_at || 0).getTime();
+      const timeB = new Date(b.last_message_at || b.updated_at || 0).getTime();
+      return sortTimeDesc ? (timeB - timeA) : (timeA - timeB);
+    });
+
+    // 11. Chưa đọc lên trên (Đưa hội thoại có unread_count > 0 lên đầu tiên)
+    if (sortUnreadFirst) {
+      result.sort((a, b) => {
+        const unreadA = (a.unread_count || 0) > 0 ? 1 : 0;
+        const unreadB = (b.unread_count || 0) > 0 ? 1 : 0;
+        return unreadB - unreadA;
+      });
+    }
+
+    return result;
+  }, [
+    conversations,
+    searchQuery,
+    selectedTag,
+    filterInbox,
+    filterComment,
+    filterUnreadOnly,
+    filterUnansweredOnly,
+    filterHasPhone,
+    filterNoPhone,
+    filterCustomerSeen,
+    sortTimeDesc,
+    sortUnreadFirst
+  ]);
 
   // Danh sách thẻ phân loại chuẩn của dự án AI_Auto
   const tagOptions = [
@@ -548,137 +678,198 @@ const LiveChatPage = () => {
           CỘT 1: NARROW ICON NAVIGATION BAR (BÊN TRÁI CÙNG - 56PX)
           ========================================================================= */}
       <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800 flex flex-col items-center justify-between py-3 shrink-0 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.03)]">
-        {/* Nhóm Icon trên cùng */}
-        <div className="flex flex-col items-center space-y-2.5">
-          {/* Nút Quay lại danh sách Fanpage */}
-          <button
-            type="button"
-            onClick={handleBackToChannelList}
-            className="p-2 text-slate-400 hover:text-[#1877F2] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer mb-0.5"
-            title="← Quay lại danh sách Fanpage"
-          >
-            <ArrowLeft size={18} />
-          </button>
-
-          {/* Logo Shop / Avatar Channel */}
+        {/* Nhóm Icon trên cùng: Avatar Kênh + 9 Bộ lọc tiện ích */}
+        <div className="flex flex-col items-center space-y-1.5 w-full px-1">
+          {/* Logo Shop / Avatar Channel (Bấm vào để đổi kênh Fanpage) */}
           <div
+            onClick={handleBackToChannelList}
             className="relative group cursor-pointer mb-1"
-            title={`${activeBusiness?.business_name || 'Cửa hàng'} • Kênh: ${activeChannel?.page_name || ''}`}
+            title={`${activeBusiness?.business_name || 'Cửa hàng'} • Kênh: ${activeChannel?.page_name || ''} (Bấm để đổi kênh)`}
           >
             {activeChannel?.avatar_url || activeBusiness?.logo_url ? (
               <img
                 src={activeChannel?.avatar_url || activeBusiness?.logo_url}
                 alt="Logo"
-                className="w-9 h-9 rounded-xl object-cover ring-1 ring-slate-200 dark:ring-slate-700 shadow-sm"
+                className="w-10 h-10 rounded-2xl object-cover ring-2 ring-transparent group-hover:ring-[#1877F2] shadow-sm transition-all"
               />
             ) : (
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#f05a28] to-[#ff7e54] text-white font-black text-xs flex items-center justify-center shadow-sm">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#f05a28] to-[#ff7e54] text-white font-black text-xs flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
                 AI
               </div>
             )}
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900"></span>
           </div>
 
           {/* Dấu phân cách nhỏ */}
           <div className="w-6 h-px bg-slate-200 dark:bg-slate-800 my-0.5"></div>
 
-          {/* Icon 1: Tin nhắn Messenger (Active) */}
+          {/* 1. Tiện ích: Lọc theo Inbox */}
           <button
             type="button"
-            className="p-2 text-[#1877F2] bg-blue-50 dark:bg-blue-950/60 rounded-xl transition cursor-pointer shadow-xs"
-            title="Hộp thư Messenger Fanpage"
+            onClick={() => setFilterInbox((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterInbox
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc theo Inbox (Tin nhắn Messenger)"
           >
-            <Facebook size={18} fill="#1877F2" />
+            <MessageSquare size={17} />
+            {filterInbox && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 2: Khách hàng / CRM */}
+          {/* 2. Tiện ích: Lọc theo Comment */}
           <button
             type="button"
-            onClick={() => navigate('/customers')}
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Quản lý khách hàng (CRM)"
+            onClick={() => setFilterComment((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterComment
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc theo Comment (Bình luận bài viết)"
           >
-            <Users size={18} />
+            <Facebook size={17} />
+            {filterComment && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 3: Sản phẩm & Kho */}
+          {/* 3. Tiện ích: Chưa đọc lên trên */}
           <button
             type="button"
-            onClick={() => navigate('/products')}
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Sản phẩm & Kho hàng"
+            onClick={() => setSortUnreadFirst((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              sortUnreadFirst
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Ưu tiên tin chưa đọc lên trên cùng"
           >
-            <ShoppingBag size={18} />
+            <ArrowUpDown size={17} />
+            {sortUnreadFirst && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 4: Video / Media */}
+          {/* 4. Tiện ích: Lọc theo thời gian */}
           <button
             type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Quản lý Media & Video"
+            onClick={() => setSortTimeDesc((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              !sortTimeDesc
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title={sortTimeDesc ? "Thời gian: Mới nhất trước (Bấm để xem cũ nhất)" : "Thời gian: Cũ nhất trước (Bấm để xem mới nhất)"}
           >
-            <Video size={18} />
+            <Clock size={17} />
+            {!sortTimeDesc && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 5: AI Bot Auto */}
+          {/* 5. Tiện ích: Lọc hội thoại chưa đọc */}
           <button
             type="button"
-            onClick={() => navigate('/bot-auto')}
-            className="p-2 text-slate-400 hover:text-[#f05a28] hover:bg-orange-50 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Cấu hình AI Bot Trực Page"
+            onClick={() => setFilterUnreadOnly((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterUnreadOnly
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc hội thoại chưa đọc"
           >
-            <Bot size={18} />
+            <Mail size={17} />
+            {filterUnreadOnly && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 6: Đánh dấu / Ưa thích */}
+          {/* 6. Tiện ích: Lọc hội thoại chưa trả lời */}
           <button
             type="button"
-            className="p-2 text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Hội thoại quan trọng"
+            onClick={() => setFilterUnansweredOnly((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterUnansweredOnly
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc hội thoại chưa trả lời"
           >
-            <Star size={18} />
+            <CornerDownLeft size={17} />
+            {filterUnansweredOnly && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 7: Báo cáo / Đơn hàng */}
+          {/* 7. Tiện ích: Lọc hội thoại có số điện thoại */}
           <button
             type="button"
-            onClick={() => navigate('/orders')}
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Quản lý đơn hàng"
+            onClick={() => {
+              setFilterHasPhone((prev) => !prev);
+              if (!filterHasPhone) setFilterNoPhone(false);
+            }}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterHasPhone
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc hội thoại có số điện thoại"
           >
-            <FileText size={18} />
+            <Phone size={17} />
+            {filterHasPhone && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 8: Lịch hẹn */}
+          {/* 8. Tiện ích: Lọc hội thoại không có số điện thoại */}
           <button
             type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Lịch hẹn tư vấn"
+            onClick={() => {
+              setFilterNoPhone((prev) => !prev);
+              if (!filterNoPhone) setFilterHasPhone(false);
+            }}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterNoPhone
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc hội thoại không có số điện thoại"
           >
-            <Calendar size={18} />
+            <PhoneOff size={17} />
+            {filterNoPhone && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
 
-          {/* Icon 9: Chiến dịch Marketing */}
+          {/* 9. Tiện ích: Lọc hội thoại khách đã xem tin nhắn */}
           <button
             type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Chiến dịch tiếp thị"
+            onClick={() => setFilterCustomerSeen((prev) => !prev)}
+            className={`relative p-2.5 rounded-xl transition cursor-pointer ${
+              filterCustomerSeen
+                ? 'bg-[#1877F2] text-white shadow-sm ring-2 ring-blue-300'
+                : 'text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
+            }`}
+            title="Lọc hội thoại khách đã xem tin nhắn"
           >
-            <Megaphone size={18} />
-          </button>
-
-          {/* Icon 10: Hỗ trợ kỹ thuật */}
-          <button
-            type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Trợ giúp"
-          >
-            <Headphones size={18} />
+            <Eye size={17} />
+            {filterCustomerSeen && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-white"></span>}
           </button>
         </div>
 
         {/* Nhóm Icon dưới cùng */}
-        <div className="flex flex-col items-center space-y-2">
-          {/* Nút Thêm Fanpage mới */}
+        <div className="flex flex-col items-center space-y-2 w-full px-1">
+          {/* Nút Đặt lại toàn bộ bộ lọc nếu có lọc active */}
+          {(filterInbox || filterComment || sortUnreadFirst || !sortTimeDesc || filterUnreadOnly || filterUnansweredOnly || filterHasPhone || filterNoPhone || filterCustomerSeen) && (
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition cursor-pointer animate-pulse"
+              title="Đặt lại toàn bộ bộ lọc"
+            >
+              <RotateCcw size={16} />
+            </button>
+          )}
+
+          {/* Nút Đổi kênh Fanpage */}
+          <button
+            type="button"
+            onClick={handleBackToChannelList}
+            className="p-2 text-slate-400 hover:text-[#1877F2] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
+            title="← Đổi sang Fanpage khác"
+          >
+            <ArrowLeft size={18} />
+          </button>
+
+          {/* Nút Kết nối Fanpage mới */}
           <button
             type="button"
             onClick={() => setShowConnectModal(true)}
@@ -687,15 +878,6 @@ const LiveChatPage = () => {
           >
             <Plus size={18} />
           </button>
-
-          {/* Nút Thu nhỏ / Cài đặt */}
-          <button
-            type="button"
-            className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
-            title="Thu gọn menu"
-          >
-            <PanelLeftClose size={18} />
-          </button>
         </div>
       </aside>
 
@@ -703,27 +885,7 @@ const LiveChatPage = () => {
           CỘT 2: CONVERSATION LIST (DANH SÁCH CUỘC TRÒ CHUYỆN - ~340PX)
           ========================================================================= */}
       <section className="w-80 sm:w-[350px] bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800 flex flex-col shrink-0 z-10 shadow-xs">
-        {/* Header kênh đang chat & Nút đổi kênh */}
-        <div className="px-3 pt-2.5 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
-          <button
-            type="button"
-            onClick={handleBackToChannelList}
-            className="flex items-center space-x-1.5 text-slate-500 hover:text-[#1877F2] dark:hover:text-blue-400 transition text-xs font-semibold cursor-pointer group"
-            title="Quay lại danh sách Fanpage của Cửa hàng"
-          >
-            <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
-            <span>Đổi kênh</span>
-          </button>
-
-          <div className="flex items-center space-x-1.5 min-w-0">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={activeChannel?.page_name}>
-              {activeChannel?.page_name}
-            </span>
-          </div>
-        </div>
-
-        {/* Top Search & Filter Bar */}
+        {/* Top Search & Filter Bar (Nằm ngay trên cùng giống mockup) */}
         <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center space-x-2">
           {/* Input Tìm kiếm với icon kính lúp bên phải */}
           <div className="relative flex-1">
@@ -800,16 +962,35 @@ const LiveChatPage = () => {
                 Khi khách hàng nhắn tin vào Fanpage {activeChannel?.page_name}, cuộc trò chuyện sẽ tự động xuất hiện ở đây.
               </p>
             </div>
+          ) : filteredConversations.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-xs space-y-3">
+              <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-400">
+                <Filter size={18} />
+              </div>
+              <div>
+                <p className="font-bold text-slate-700 dark:text-slate-300">Không có hội thoại phù hợp</p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Không tìm thấy cuộc trò chuyện nào khớp với các bộ lọc đang chọn.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 text-[#1877F2] rounded-xl text-xs font-semibold transition"
+              >
+                Đặt lại bộ lọc
+              </button>
+            </div>
           ) : (
-            conversations.map((conv, index) => {
+            filteredConversations.map((conv) => {
               const isSelected = selectedConv?._id === conv._id;
               const customerName = conv.customer_id?.full_name || 'Khách hàng Facebook';
               const customerAvatar =
                 conv.customer_id?.avatar ||
                 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
 
-              // Tin nhắn mẫu unread mềm mại ở dòng cuối giống hình
-              const isUnread = index === conversations.length - 1 && !isSelected;
+              const unreadCount = Number(conv.unread_count || 0);
+              const isUnread = unreadCount > 0 && !isSelected;
 
               return (
                 <div
@@ -852,12 +1033,12 @@ const LiveChatPage = () => {
                         {customerName}
                         {isUnread && (
                           <span className="ml-1.5 px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-bold">
-                            1
+                            {unreadCount}
                           </span>
                         )}
                       </h4>
                       <span className="text-[11px] text-slate-400 font-normal shrink-0 ml-1">
-                        {formatMsgTime(conv.last_message_at) || '16:22'}
+                        {formatMsgTime(conv.last_message_at) || 'Vừa xong'}
                       </span>
                     </div>
 
@@ -870,7 +1051,7 @@ const LiveChatPage = () => {
                         className="w-3.5 h-3.5 rounded-full object-cover border border-slate-200 shrink-0"
                       />
                       <span className="truncate">
-                        - {conv.last_message_text || 'Xin chào bạn! Cảm ơn bạn đã quan tâm đến sản phẩm...'}
+                        - {conv.last_message_text || 'Chưa có nội dung tin nhắn'}
                       </span>
                     </div>
                   </div>
