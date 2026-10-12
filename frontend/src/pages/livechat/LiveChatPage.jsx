@@ -80,6 +80,7 @@ const LiveChatPage = () => {
   // Attachment & Emoji states
   const [selectedAttachment, setSelectedAttachment] = useState(null); // { file, previewUrl, type, name, size }
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pickerTab, setPickerTab] = useState('emoji'); // 'emoji' | 'sticker'
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
 
   const imageInputRef = useRef(null);
@@ -94,6 +95,52 @@ const LiveChatPage = () => {
     '💐', '💬', '🤩', '👏', '⚡', '⭐', '🤝', '😉',
     '🆗', '🛒', '💰', '🏷️', '🚚', '✅', '❌', '👀'
   ];
+
+  // Danh sách nhãn dán Facebook phổ biến (Stickers)
+  const STICKERS_LIST = [
+    { id: 'like', name: 'Thích', url: '/stickers/like.png' },
+    { id: 'heart', name: 'Thả tim', url: '/stickers/heart.png' },
+    { id: 'hello', name: 'Xin chào', url: '/stickers/hello.png' },
+    { id: 'thank_you', name: 'Cảm ơn', url: '/stickers/thank_you.png' },
+    { id: 'order_ok', name: 'Chốt đơn', url: '/stickers/order_ok.png' },
+    { id: 'cute_cat', name: 'Mèo cưng', url: '/stickers/cute_cat.png' },
+    { id: 'happy', name: 'Vui vẻ', url: '/stickers/happy.png' },
+    { id: 'wow', name: 'Ngạc nhiên', url: '/stickers/wow.png' }
+  ];
+
+  const handleSendSticker = async (sticker) => {
+    if (!selectedConv?._id || sending) return;
+    setShowEmojiPicker(false);
+    setSending(true);
+
+    try {
+      const res = await conversationService.sendMessage(selectedConv._id, {
+        content: '[Nhãn dán]',
+        attachments: [
+          {
+            type: 'sticker',
+            url: sticker.url,
+            name: sticker.name
+          }
+        ],
+        sender_type: 'STAFF'
+      });
+      if (res.success && res.data) {
+        setMessages((prev) => {
+          const newMsgId = (res.data._id || res.data.id)?.toString();
+          if (newMsgId && prev.some((m) => (m._id || m.id)?.toString() === newMsgId)) {
+            return prev;
+          }
+          return [...prev, res.data];
+        });
+        fetchConversations();
+      }
+    } catch (err) {
+      showToast('error', 'Lỗi khi gửi nhãn dán');
+    } finally {
+      setSending(false);
+    }
+  };
 
   // Đóng emoji picker khi click ra ngoài
   useEffect(() => {
@@ -1321,11 +1368,25 @@ const LiveChatPage = () => {
                             </div>
                           )}
 
-                          {/* Hiển thị tệp đính kèm (ảnh / file) nếu có */}
+                          {/* Hiển thị tệp đính kèm (ảnh / file / nhãn dán) nếu có */}
                           {msg.attachments && msg.attachments.length > 0 && (
                             <div className="space-y-1.5 my-1">
                               {msg.attachments.map((att, attIdx) => {
+                                const isSticker = att.type === 'sticker';
                                 const isImg = att.type === 'image' || att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+
+                                if (isSticker) {
+                                  return (
+                                    <div key={attIdx} className="my-1">
+                                      <img
+                                        src={att.url}
+                                        alt={att.name || 'Nhãn dán'}
+                                        className="w-24 h-24 sm:w-28 sm:h-28 object-contain hover:scale-105 transition-transform"
+                                        title={att.name || 'Nhãn dán'}
+                                      />
+                                    </div>
+                                  );
+                                }
                                 if (isImg) {
                                   return (
                                     <img
@@ -1358,7 +1419,10 @@ const LiveChatPage = () => {
                             </div>
                           )}
 
-                          {msg.content && <p className="whitespace-pre-wrap">{msg.content}</p>}
+                          {/* Ẩn text placeholder tự tạo [Hình ảnh] hoặc [Nhãn dán] khi tin nhắn đã có file đính kèm */}
+                          {msg.content && msg.content !== '[Hình ảnh]' && msg.content !== '[Nhãn dán]' && !msg.content.startsWith('[Tệp:') && (
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          )}
 
                           <div
                             className={`text-[9px] mt-1 text-right ${
@@ -1412,14 +1476,38 @@ const LiveChatPage = () => {
                   </div>
                 )}
 
-                {/* 2. Popover Bộ chọn Biểu tượng cảm xúc (Emoji Picker) */}
+                {/* 2. Popover Bộ chọn Biểu tượng cảm xúc (Emoji) & Nhãn dán (Sticker) */}
                 {showEmojiPicker && (
                   <div
                     ref={emojiPickerRef}
-                    className="absolute bottom-16 left-3 w-72 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 z-50 animate-fadeIn"
+                    className="absolute bottom-16 left-3 w-80 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-3 z-50 animate-fadeIn"
                   >
+                    {/* Header Tabs: Biểu tượng vs Nhãn dán */}
                     <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-700">
-                      <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300">Biểu tượng cảm xúc</span>
+                      <div className="flex items-center space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setPickerTab('emoji')}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            pickerTab === 'emoji'
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-[#1877F2]'
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                          }`}
+                        >
+                          Biểu tượng
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPickerTab('sticker')}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                            pickerTab === 'sticker'
+                              ? 'bg-blue-50 dark:bg-blue-950/60 text-[#1877F2]'
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                          }`}
+                        >
+                          Nhãn dán
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowEmojiPicker(false)}
@@ -1428,18 +1516,44 @@ const LiveChatPage = () => {
                         <X size={13} />
                       </button>
                     </div>
-                    <div className="grid grid-cols-8 gap-1.5 max-h-48 overflow-y-auto no-scrollbar">
-                      {COMMON_EMOJIS.map((emoji, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => handleSelectEmoji(emoji)}
-                          className="text-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer text-center flex items-center justify-center hover:scale-125 transform"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
+
+                    {pickerTab === 'emoji' ? (
+                      /* Tab 1: Emoji Grid */
+                      <div className="grid grid-cols-8 gap-1.5 max-h-52 overflow-y-auto no-scrollbar">
+                        {COMMON_EMOJIS.map((emoji, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => handleSelectEmoji(emoji)}
+                            className="text-lg p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer text-center flex items-center justify-center hover:scale-125 transform"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      /* Tab 2: Stickers Grid (Nhãn dán sinh động) */
+                      <div className="grid grid-cols-4 gap-2.5 max-h-52 overflow-y-auto p-1 no-scrollbar">
+                        {STICKERS_LIST.map((sticker) => (
+                          <button
+                            key={sticker.id}
+                            type="button"
+                            onClick={() => handleSendSticker(sticker)}
+                            className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700/60 rounded-xl transition cursor-pointer flex flex-col items-center group"
+                            title={sticker.name}
+                          >
+                            <img
+                              src={sticker.url}
+                              alt={sticker.name}
+                              className="w-12 h-12 object-contain group-hover:scale-110 transition-transform"
+                            />
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 truncate max-w-full font-medium">
+                              {sticker.name}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
