@@ -85,10 +85,6 @@ const LiveChatPage = () => {
         if (paramChanId) {
           const found = res.data.find((c) => c._id === paramChanId);
           if (found) setActiveChannel(found);
-        } else if (res.data.length > 0 && !activeChannel) {
-          // Tự động chọn kênh đầu tiên nếu chỉ có 1 kênh hoặc chưa chọn
-          setActiveChannel(res.data[0]);
-          setSearchParams({ channel_id: res.data[0]._id });
         }
       }
     } catch (err) {
@@ -110,17 +106,40 @@ const LiveChatPage = () => {
       if (found) {
         setActiveChannel(found);
       }
-    } else if (!paramChanId && channels.length > 0) {
-      setActiveChannel(channels[0]);
-      setSearchParams({ channel_id: channels[0]._id });
+    } else if (!paramChanId) {
+      setActiveChannel(null);
     }
   }, [searchParams, channels]);
 
-  // Chọn kênh
+  // Chọn kênh -> Chuyển sang giao diện nhắn tin của kênh đó
   const handleSelectChannel = (channel) => {
     setActiveChannel(channel);
     setSelectedConv(null);
     setSearchParams({ channel_id: channel._id });
+  };
+
+  // Quay lại danh sách kênh (Giao diện khi chưa chọn kênh)
+  const handleBackToChannelList = () => {
+    setActiveChannel(null);
+    setSelectedConv(null);
+    setSearchParams({});
+  };
+
+  // Xóa kênh Fanpage
+  const handleDeleteChannel = async (channelId, channelName) => {
+    if (!window.confirm(`Bạn có chắc muốn xóa Fanpage "${channelName}" khỏi hệ thống?`)) return;
+    try {
+      const res = await channelService.deleteChannel(channelId);
+      if (res.success) {
+        showToast('success', 'Đã xóa kênh Fanpage thành công');
+        if (activeChannel?._id === channelId) {
+          handleBackToChannelList();
+        }
+        fetchChannels();
+      }
+    } catch (error) {
+      showToast('error', error.message || 'Lỗi khi xóa kênh');
+    }
   };
 
   // 2. Tải danh sách Cuộc trò chuyện theo Business & Channel
@@ -252,33 +271,207 @@ const LiveChatPage = () => {
     );
   }
 
-  // Trường hợp chưa có kênh nào được kết nối
-  if (!loadingChannels && channels.length === 0) {
+  // =========================================================================
+  // TRƯỜNG HỢP 1: CHƯA CHỌN KÊNH -> GIAO DIỆN QUẢN LÝ & CHỌN KÊNH FANPAGE
+  // =========================================================================
+  if (!activeChannel) {
     return (
-      <div className="h-[calc(100vh-3.5rem)] -m-3 sm:-m-6 lg:-m-8 flex items-center justify-center bg-[#f0f2f5] dark:bg-[#0f172a] p-6">
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 max-w-md w-full shadow-xl border border-slate-200 dark:border-slate-700 text-center space-y-4 animate-fadeIn">
-          <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-[#1877F2] flex items-center justify-center mx-auto shadow-md">
-            <Facebook size={36} />
-          </div>
-          <div>
-            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
-              Chưa Có Kênh Fanpage Nào
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-              Hãy kết nối Fanpage Facebook để bắt đầu nhận tin nhắn thời gian thực và tự động chốt đơn bằng AI.
-            </p>
-          </div>
+      <div className="space-y-6 animate-fadeIn pb-16">
+        {/* 1. BUSINESS HERO BANNER */}
+        <div className="bg-gradient-to-r from-[#17234e] via-[#1e2f69] to-[#25397f] rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
+          {/* Background glow decoration */}
+          <div className="absolute top-0 right-0 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="absolute bottom-0 right-1/3 w-60 h-60 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none"></div>
 
-          <button
-            type="button"
-            onClick={() => setShowConnectModal(true)}
-            className="w-full py-3 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl text-xs font-bold shadow-md shadow-[#1877F2]/25 transition flex items-center justify-center space-x-2 cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>Kết Nối Fanpage Facebook Mới</span>
-          </button>
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+            <div className="flex items-start sm:items-center space-x-4">
+              {activeBusiness.logo_url ? (
+                <img
+                  src={activeBusiness.logo_url}
+                  alt={activeBusiness.business_name}
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover border-2 border-white/20 shadow-lg shrink-0"
+                />
+              ) : (
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 text-white font-black text-2xl flex items-center justify-center shadow-lg shrink-0">
+                  {activeBusiness.code?.substring(0, 2) || 'AO'}
+                </div>
+              )}
+
+              <div>
+                <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[11px] font-extrabold flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span>Đang hoạt động</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/10 text-slate-200 text-[11px] font-mono font-bold">
+                    Mã: {activeBusiness.code}
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[11px] font-semibold">
+                    {activeBusiness.industry || 'Bán lẻ - Thời trang & Phụ kiện'}
+                  </span>
+                </div>
+
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-white">
+                  {activeBusiness.business_name}
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                  Quản lý các kênh tương tác khách hàng thời gian thực, tự động hóa phản hồi tư vấn và chốt đơn bán hàng bằng Trí tuệ Nhân tạo.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3 self-end lg:self-center shrink-0">
+              <button
+                type="button"
+                onClick={() => fetchChannels()}
+                className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold backdrop-blur-sm transition flex items-center space-x-1.5 border border-white/10"
+                title="Làm mới danh sách kênh"
+              >
+                <RefreshCw size={15} />
+                <span className="hidden sm:inline">Làm mới</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowConnectModal(true)}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center space-x-2 cursor-pointer"
+              >
+                <Plus size={16} />
+                <span>+ Kết nối Fanpage mới</span>
+              </button>
+            </div>
+          </div>
         </div>
 
+        {/* 2. SECTION: CÁC KÊNH FANPAGE FACEBOOK CỦA BUSINESS */}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <Facebook className="text-[#1877F2]" size={22} />
+                  <span>Kênh Fanpage Facebook của Cửa Hàng</span>
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950 text-[#1877F2] dark:text-blue-300 text-xs font-extrabold">
+                  {channels.length} Fanpage
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Chọn một kênh Fanpage dưới đây để vào phòng chat trực tiếp, tiếp nhận tin nhắn Messenger và quản lý khách hàng
+              </p>
+            </div>
+          </div>
+
+          {/* Danh sách Facebook Channels Grid hoặc Trạng thái trống */}
+          {loadingChannels ? (
+            <div className="p-12 text-center text-slate-400 text-xs font-semibold flex items-center justify-center space-x-2">
+              <RefreshCw size={16} className="animate-spin text-blue-600" />
+              <span>Đang tải các Fanpage kết nối...</span>
+            </div>
+          ) : channels.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-12 text-center space-y-4 shadow-sm">
+              <div className="w-16 h-16 rounded-3xl bg-blue-50 dark:bg-blue-950/60 text-[#1877F2] flex items-center justify-center mx-auto shadow-sm">
+                <Facebook size={36} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Chưa có Fanpage Facebook nào được kết nối cho {activeBusiness.business_name}
+                </p>
+                <p className="text-xs text-slate-400 mt-1">
+                  Hãy kết nối một trang Fanpage Facebook để bắt đầu trò chuyện và kích hoạt Trợ lý AI
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConnectModal(true)}
+                className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl text-xs font-bold shadow transition cursor-pointer inline-flex items-center space-x-2"
+              >
+                <Plus size={16} />
+                <span>+ Kết nối Fanpage Facebook ngay</span>
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {channels.map((ch) => (
+                <div
+                  key={ch._id}
+                  onClick={() => handleSelectChannel(ch)}
+                  className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/90 dark:border-slate-700/80 p-5 shadow-sm hover:shadow-md transition duration-200 flex flex-col justify-between space-y-4 group cursor-pointer hover:border-blue-300 dark:hover:border-blue-700"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-[#1877F2] flex items-center justify-center shrink-0 shadow-sm border border-blue-200 dark:border-blue-800">
+                        <Facebook size={26} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition">
+                          {ch.page_name}
+                        </h3>
+                        <p className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
+                          Page ID: {ch.page_id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteChannel(ch._id, ch.page_name);
+                      }}
+                      className="text-slate-300 hover:text-red-500 p-1.5 rounded-lg transition hover:bg-red-50 dark:hover:bg-red-950/40"
+                      title="Xóa Fanpage"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+
+                  {/* Trạng thái & Chế độ vận hành */}
+                  <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Chế độ AI:</span>
+                      <span className="font-bold text-blue-600 dark:text-blue-400 flex items-center space-x-1">
+                        <Sparkles size={13} />
+                        <span>
+                          {ch.operating_mode === 'AI_AUTO'
+                            ? 'AI Tự Động 24/7'
+                            : ch.operating_mode === 'HYBRID'
+                            ? 'Chế độ Lai (Hybrid)'
+                            : 'Thủ công'}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-400">Trạng thái:</span>
+                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>Sẵn sàng tiếp nhận tin nhắn</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Nút hành động */}
+                  <div className="flex items-center space-x-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSelectChannel(ch);
+                      }}
+                      className="flex-1 py-2.5 bg-blue-50 dark:bg-blue-950/60 group-hover:bg-[#1877F2] text-[#1877F2] group-hover:text-white dark:text-blue-300 dark:group-hover:text-white border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                    >
+                      <MessageSquare size={14} />
+                      <span>Xem Tin Nhắn Fanpage</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Modal Kết nối Fanpage Facebook Mới */}
         <ConnectChannelModal
           isOpen={showConnectModal}
           onClose={() => setShowConnectModal(false)}
@@ -289,6 +482,9 @@ const LiveChatPage = () => {
     );
   }
 
+  // =========================================================================
+  // TRƯỜNG HỢP 2: ĐÃ CHỌN KÊNH -> GIAO DIỆN NHẮN TIN TRỰC TIẾP (LIVECHAT)
+  // =========================================================================
   return (
     <div className="h-[calc(100vh-3.5rem)] -m-3 sm:-m-6 lg:-m-8 flex bg-[#f0f2f5] dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 overflow-hidden select-none animate-fadeIn font-sans">
       {/* =========================================================================
@@ -297,6 +493,16 @@ const LiveChatPage = () => {
       <aside className="w-14 bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800 flex flex-col items-center justify-between py-3 shrink-0 z-20 shadow-[1px_0_3px_rgba(0,0,0,0.03)]">
         {/* Nhóm Icon trên cùng */}
         <div className="flex flex-col items-center space-y-2.5">
+          {/* Nút Quay lại danh sách Fanpage */}
+          <button
+            type="button"
+            onClick={handleBackToChannelList}
+            className="p-2 text-slate-400 hover:text-[#1877F2] hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer mb-0.5"
+            title="← Quay lại danh sách Fanpage"
+          >
+            <ArrowLeft size={18} />
+          </button>
+
           {/* Logo Shop / Avatar Channel */}
           <div
             className="relative group cursor-pointer mb-1"
@@ -440,6 +646,26 @@ const LiveChatPage = () => {
           CỘT 2: CONVERSATION LIST (DANH SÁCH CUỘC TRÒ CHUYỆN - ~340PX)
           ========================================================================= */}
       <section className="w-80 sm:w-[350px] bg-white dark:bg-slate-900 border-r border-slate-200/90 dark:border-slate-800 flex flex-col shrink-0 z-10 shadow-xs">
+        {/* Header kênh đang chat & Nút đổi kênh */}
+        <div className="px-3 pt-2.5 pb-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
+          <button
+            type="button"
+            onClick={handleBackToChannelList}
+            className="flex items-center space-x-1.5 text-slate-500 hover:text-[#1877F2] dark:hover:text-blue-400 transition text-xs font-semibold cursor-pointer group"
+            title="Quay lại danh sách Fanpage của Cửa hàng"
+          >
+            <ArrowLeft size={14} className="group-hover:-translate-x-0.5 transition-transform" />
+            <span>Đổi kênh</span>
+          </button>
+
+          <div className="flex items-center space-x-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate max-w-[170px]" title={activeChannel?.page_name}>
+              {activeChannel?.page_name}
+            </span>
+          </div>
+        </div>
+
         {/* Top Search & Filter Bar */}
         <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center space-x-2">
           {/* Input Tìm kiếm với icon kính lúp bên phải */}
