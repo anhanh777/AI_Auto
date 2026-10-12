@@ -90,6 +90,11 @@ const customerSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    // Thời điểm tương tác gần nhất của khách hàng
+    last_interaction_at: {
+      type: Date,
+      default: Date.now
+    },
     // 12. Người tạo / hệ thống tạo bản ghi (users._id)
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

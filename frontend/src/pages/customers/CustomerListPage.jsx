@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { customerService } from '../../services/customer.service.js';
+import { socket } from '../../utils/socket.js';
 import {
   Users,
   Search,
@@ -148,6 +149,59 @@ const CustomerListPage = () => {
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
+
+  // Lắng nghe Socket.IO thời gian thực khi có khách mới / tin nhắn mới
+  useEffect(() => {
+    const handleRealtimeCustomer = () => {
+      fetchCustomers();
+      fetchStats();
+    };
+
+    socket.on('customer_updated', handleRealtimeCustomer);
+    socket.on('new_incoming_message', handleRealtimeCustomer);
+    socket.on('conversation_updated', handleRealtimeCustomer);
+
+    return () => {
+      socket.off('customer_updated', handleRealtimeCustomer);
+      socket.off('new_incoming_message', handleRealtimeCustomer);
+      socket.off('conversation_updated', handleRealtimeCustomer);
+    };
+  }, [fetchCustomers, fetchStats]);
+
+  // Format ngày tạo / đăng ký
+  const formatDateTime = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
+
+  // Format thời gian tương tác cuối (tương đối)
+  const formatRelativeTime = (dateStr) => {
+    if (!dateStr) return 'Chưa có';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return 'Chưa có';
+    const now = new Date();
+    const diffMs = now - d;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffMin < 1) return 'Vừa xong';
+    if (diffMin < 60) return `${diffMin} phút trước`;
+    if (diffHour < 24) return `${diffHour} giờ trước`;
+    if (diffDay < 7) return `${diffDay} ngày trước`;
+    return d.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
+  };
 
   // Copy helper
   const handleCopy = (text, label, e) => {
@@ -667,6 +721,8 @@ const CustomerListPage = () => {
                   <th className="py-3.5 px-4 font-bold">Thẻ phân loại</th>
                   <th className="py-3.5 px-4 font-bold text-center">Đơn hàng</th>
                   <th className="py-3.5 px-4 font-bold text-right">Tổng chi tiêu</th>
+                  <th className="py-3.5 px-4 font-bold text-center">Ngày đăng ký</th>
+                  <th className="py-3.5 px-4 font-bold text-center">Tương tác cuối</th>
                   <th className="py-3.5 px-4 font-bold text-center">Thao tác</th>
                 </tr>
               </thead>
@@ -830,6 +886,22 @@ const CustomerListPage = () => {
                       <td className="py-3.5 px-4 text-right">
                         <span className="font-extrabold text-[#f05a28] dark:text-[#ff7e54]">
                           {(c.total_spend_amount || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </td>
+
+                      {/* Ngày đăng ký (Created At) */}
+                      <td className="py-3.5 px-4 text-center text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 font-medium text-[11px]">
+                          <Calendar size={11} className="text-slate-400" />
+                          <span>{formatDateTime(c.created_at || c.createdAt)}</span>
+                        </span>
+                      </td>
+
+                      {/* Tương tác lần cuối (Last Interaction) */}
+                      <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700/80 text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                          <Clock size={11} className="text-sky-500" />
+                          <span>{formatRelativeTime(c.last_interaction_at || c.updated_at || c.updatedAt)}</span>
                         </span>
                       </td>
 

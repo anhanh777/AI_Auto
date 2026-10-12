@@ -192,12 +192,15 @@ export const handleWebhookPayloadService = async (body) => {
           is_read: false
         });
 
-        // D. Cập nhật trạng thái hội thoại
+        // D. Cập nhật trạng thái hội thoại và khách hàng
         conversation.last_message_content = contentToSave;
         conversation.last_message_text = contentToSave;
         conversation.last_message_at = new Date();
         conversation.unread_count = (conversation.unread_count || 0) + 1;
         await conversation.save();
+
+        customer.last_interaction_at = new Date();
+        await customer.save();
 
         // E. Nạp đầy đủ dữ liệu quan hệ để phát Socket.IO
         const populatedConv = await Conversation.findById(conversation._id)
@@ -218,6 +221,7 @@ export const handleWebhookPayloadService = async (body) => {
             conversation: populatedConv,
             message: savedMessage
           });
+          io.emit('customer_updated', customer);
 
           console.log(`[Socket.IO] Đã phát tin nhắn mới từ PSID ${senderPsid} (${customer.full_name})`);
         } catch (socketErr) {
