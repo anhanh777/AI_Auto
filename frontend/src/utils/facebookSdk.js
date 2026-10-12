@@ -3,16 +3,20 @@
  * Hỗ trợ xác thực Meta OAuth 2.0 và quản lý kết nối Fanpage
  */
 
+const DEFAULT_APP_ID = import.meta.env.VITE_FACEBOOK_APP_ID || '361260004211097';
+
 let fbInitPromise = null;
 
-export const initFacebookSdk = (appId) => {
+export const initFacebookSdk = (appId = DEFAULT_APP_ID) => {
   if (fbInitPromise) return fbInitPromise;
+
+  const resolvedAppId = appId || DEFAULT_APP_ID;
 
   fbInitPromise = new Promise((resolve, reject) => {
     if (window.FB) {
-      if (appId) {
+      if (resolvedAppId) {
         window.FB.init({
-          appId,
+          appId: resolvedAppId,
           cookie: true,
           xfbml: true,
           version: 'v21.0'
@@ -23,7 +27,7 @@ export const initFacebookSdk = (appId) => {
 
     window.fbAsyncInit = function () {
       window.FB.init({
-        appId: appId || '1234567890', // Sẽ được cập nhật khi người dùng cung cấp
+        appId: resolvedAppId,
         cookie: true,
         xfbml: true,
         version: 'v21.0'
@@ -52,8 +56,9 @@ export const initFacebookSdk = (appId) => {
 /**
  * Mở cửa sổ Facebook Login để xin quyền quản lý Fanpage
  */
-export const loginWithFacebook = async (appId, scopes = 'pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement') => {
-  if (!appId) {
+export const loginWithFacebook = async (appId = DEFAULT_APP_ID, scopes = 'pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement') => {
+  const resolvedAppId = appId || DEFAULT_APP_ID;
+  if (!resolvedAppId) {
     throw new Error('Vui lòng cung cấp Facebook App ID để thực hiện đăng nhập');
   }
 

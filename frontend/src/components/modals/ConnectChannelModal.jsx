@@ -26,11 +26,6 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
   // Tab: 'oauth' (Đăng nhập Facebook) | 'manual' (Thủ công)
   const [activeTab, setActiveTab] = useState('oauth');
 
-  // App ID State
-  const defaultAppId = import.meta.env.VITE_FACEBOOK_APP_ID || '';
-  const [appId, setAppId] = useState(defaultAppId);
-  const [showAppIdInput, setShowAppIdInput] = useState(!defaultAppId);
-
   // OAuth States
   const [loggingIn, setLoggingIn] = useState(false);
   const [fbUser, setFbUser] = useState(null);
@@ -50,26 +45,13 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
     avatar_url: ''
   });
 
-  useEffect(() => {
-    if (defaultAppId) {
-      setAppId(defaultAppId);
-    }
-  }, [defaultAppId]);
-
   if (!isOpen) return null;
 
   // 1. Xử lý Đăng nhập Facebook OAuth
   const handleFacebookLogin = async () => {
-    const targetAppId = appId.trim();
-    if (!targetAppId) {
-      showToast('warning', 'Vui lòng nhập Facebook App ID để kết nối');
-      setShowAppIdInput(true);
-      return;
-    }
-
     try {
       setLoggingIn(true);
-      const authResult = await loginWithFacebook(targetAppId);
+      const authResult = await loginWithFacebook();
       if (authResult.success && authResult.accessToken) {
         showToast('success', 'Đăng nhập Facebook thành công! Đang tải danh sách Fanpage...');
         setFbUser({
@@ -236,50 +218,6 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
         <div className="overflow-y-auto flex-1 pr-1">
           {activeTab === 'oauth' ? (
             <div className="space-y-4">
-              {/* Cấu hình Facebook App ID */}
-              <div className="p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700/80">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                    <ShieldCheck size={14} className="text-[#1877F2]" />
-                    <span>Meta App ID (Facebook Developers):</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAppIdInput(!showAppIdInput)}
-                    className="text-[11px] text-[#1877F2] hover:underline font-semibold"
-                  >
-                    {showAppIdInput ? 'Thu gọn' : 'Đổi App ID'}
-                  </button>
-                </div>
-
-                {showAppIdInput ? (
-                  <div className="mt-2.5 space-y-1.5">
-                    <input
-                      type="text"
-                      placeholder="Nhập Facebook App ID (VD: 1048291048...)"
-                      value={appId}
-                      onChange={(e) => setAppId(e.target.value)}
-                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-xl text-xs font-mono text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1877F2]"
-                    />
-                    <p className="text-[10px] text-slate-400">
-                      Tạo hoặc lấy App ID tại{' '}
-                      <a
-                        href="https://developers.facebook.com/apps"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#1877F2] underline inline-flex items-center gap-0.5"
-                      >
-                        developers.facebook.com <ExternalLink size={10} />
-                      </a>
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-1 text-xs font-mono text-slate-500 dark:text-slate-400">
-                    {appId ? `Đang sử dụng App ID: ${appId}` : 'Chưa cấu hình App ID'}
-                  </p>
-                )}
-              </div>
-
               {/* TRƯỜNG HỢP 1: Chưa đăng nhập Facebook hoặc chưa lấy được pages */}
               {!fbUser || pages.length === 0 ? (
                 <div className="p-6 bg-blue-50/50 dark:bg-blue-950/20 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-center space-y-4">
