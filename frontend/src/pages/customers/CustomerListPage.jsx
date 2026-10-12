@@ -36,11 +36,12 @@ import {
   Check,
   Send,
   Save,
-  MessageCircle
+  MessageCircle,
+  Building2
 } from 'lucide-react';
 
 const CustomerListPage = () => {
-  const { activeBusiness } = useBusiness();
+  const { activeBusiness, businesses, switchBusiness } = useBusiness();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -428,7 +429,28 @@ const CustomerListPage = () => {
           </div>
         </div>
 
-        <div className="flex items-center space-x-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {businesses && businesses.length > 0 && (
+            <div className="flex items-center space-x-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-xl shadow-sm">
+              <Building2 size={16} className="text-[#f05a28]" />
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Cửa hàng:</span>
+              <select
+                value={activeBusiness?._id || ''}
+                onChange={(e) => {
+                  const selected = businesses.find((b) => b._id === e.target.value);
+                  if (selected) switchBusiness(selected);
+                }}
+                className="text-xs font-bold text-slate-800 dark:text-slate-100 bg-transparent border-none outline-none cursor-pointer focus:ring-0 pr-2"
+              >
+                {businesses.map((b) => (
+                  <option key={b._id} value={b._id} className="dark:bg-slate-800 text-slate-900 dark:text-white">
+                    {b.business_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => {
