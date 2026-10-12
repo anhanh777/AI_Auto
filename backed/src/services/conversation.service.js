@@ -1,6 +1,8 @@
-import { Conversation } from '../models/Conversation.model.js';
-import { Message } from '../models/Message.model.js';
-import { Customer } from '../models/Customer.model.js';
+import axios from 'axios';
+import { Conversation } from '../models/conversation.model.js';
+import { Message } from '../models/message.model.js';
+import { Customer } from '../models/customer.model.js';
+import { getIO } from '../config/socket.config.js';
 
 export const getConversationsService = async ({ business_id, channel_id, search, tag }) => {
   const query = {};
@@ -49,10 +51,48 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
     attachments
   });
 
-  await Conversation.findByIdAndUpdate(conversation_id, {
-    last_message_text: content,
-    last_message_at: new Date()
-  });
+  const updatedConv = await Conversation.findByIdAndUpdate(
+    conversation_id,
+    {
+      last_message_content: content,
+      last_message_text: content,
+      last_message_at: new Date()
+    },
+    { new: true }
+  ).populate('channel_id').populate('customer_id');
+
+  // Gửi tin nhắn sang Messenger của khách nếu khách có PSID và Fanpage có Page Access Token
+  if ((sender_type === 'STAFF' || sender_type === 'AI_BOT') && content && updatedConv) {
+    try {
+      const pageToken = updatedConv.channel_id?.page_access_token || updatedConv.channel_id?.access_token;
+      const recipientPsid = updatedConv.customer_id?.psid;
+
+      if (pageToken && recipientPsid) {
+        await axios.post(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+          {
+            recipient: { id: recipientPsid },
+            message: { text: content }
+          },
+          { timeout: 7000 }
+        );
+        console.log(`[Facebook Send API] Đã gửi tin nhắn đến khách hàng (PSID: ${recipientPsid})`);
+      }
+    } catch (fbErr) {
+      console.warn('[Facebook Send API Warn]', fbErr.response?.data?.error?.message || fbErr.message);
+    }
+  }
+
+  // Phát Real-time qua Socket.IO
+  try {
+    const io = getIO();
+    io.to(conversation_id.toString()).emit('new_message', message);
+    if (updatedConv?.business_id) {
+      io.to(updatedConv.business_id.toString()).emit('conversation_updated', updatedConv);
+    }
+  } catch (socketErr) {
+    // Socket.io chưa kết nối hoặc lỗi phát
+  }
 
   return message;
 };

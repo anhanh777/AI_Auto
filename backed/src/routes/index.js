@@ -14,6 +14,7 @@ import knowledgeRouter from './knowledge.route.js';
 import analyticsRouter from './analytics.route.js';
 import notificationRouter from './notification.route.js';
 import inventoryRouter from './inventory.route.js';
+import webhookRouter from './webhook.route.js';
 
 const rootRouter = Router();
 
@@ -43,5 +44,6 @@ rootRouter.use('/orders', orderRouter);
 rootRouter.use('/knowledge', knowledgeRouter);
 rootRouter.use('/analytics', analyticsRouter);
 rootRouter.use('/notifications', notificationRouter);
+rootRouter.use('/webhooks', webhookRouter);
 
 export default rootRouter;

@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { channelService } from '../../services/channel.service.js';
 import { conversationService } from '../../services/conversation.service.js';
 import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx';
+import { socket } from '../../utils/socket.js';
 import {
   Search,
   ChevronDown,
@@ -196,6 +197,51 @@ const LiveChatPage = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Lắng nghe sự kiện Socket.IO thời gian thực khi có tin nhắn mới hoặc cập nhật hội thoại
+  useEffect(() => {
+    if (!socket) return;
+
+    // Tham gia phòng của cuộc hội thoại đang chọn
+    if (selectedConv?._id) {
+      socket.emit('join_conversation', selectedConv._id);
+    }
+
+    const handleNewMessage = (msg) => {
+      if (msg?.conversation_id === selectedConv?._id) {
+        setMessages((prev) => {
+          if (prev.some((m) => m._id === msg._id)) return prev;
+          return [...prev, msg];
+        });
+      }
+    };
+
+    const handleConversationUpdated = (updatedConv) => {
+      if (!updatedConv?._id) return;
+      setConversations((prev) => {
+        const index = prev.findIndex((c) => c._id === updatedConv._id);
+        if (index > -1) {
+          const newList = [...prev];
+          newList[index] = { ...newList[index], ...updatedConv };
+          const [moved] = newList.splice(index, 1);
+          return [moved, ...newList];
+        }
+        return [updatedConv, ...prev];
+      });
+    };
+
+    socket.on('new_message', handleNewMessage);
+    socket.on('conversation_updated', handleConversationUpdated);
+    socket.on('new_incoming_message', ({ conversation }) => {
+      if (conversation) handleConversationUpdated(conversation);
+    });
+
+    return () => {
+      socket.off('new_message', handleNewMessage);
+      socket.off('conversation_updated', handleConversationUpdated);
+      socket.off('new_incoming_message');
+    };
+  }, [selectedConv?._id]);
 
   // 4. Gửi tin nhắn
   const handleSendMessage = async (e) => {
