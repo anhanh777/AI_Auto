@@ -111,4 +111,4 @@ messageSchema.pre('save', function (next) {
   next();
 });
 
-export const Message = mongoose.model('Message', messageSchema);
+export const Message = mongoose.models.Message || mongoose.model('Message', messageSchema);

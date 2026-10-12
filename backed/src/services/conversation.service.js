@@ -1,7 +1,5 @@
 import axios from 'axios';
-import { Conversation } from '../models/conversation.model.js';
-import { Message } from '../models/message.model.js';
-import { Customer } from '../models/customer.model.js';
+import { Conversation, Message, Customer } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 
 export const getConversationsService = async ({ business_id, channel_id, search, tag }) => {

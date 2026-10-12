@@ -111,4 +111,4 @@ businessSchema.pre('save', function (next) {
   next();
 });
 
-export const Business = mongoose.model('Business', businessSchema);
+export const Business = mongoose.models.Business || mongoose.model('Business', businessSchema);

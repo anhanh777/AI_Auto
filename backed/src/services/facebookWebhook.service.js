@@ -1,8 +1,5 @@
 import axios from 'axios';
-import { Channel } from '../models/channel.model.js';
-import { Customer } from '../models/customer.model.js';
-import { Conversation } from '../models/conversation.model.js';
-import { Message } from '../models/message.model.js';
+import { Channel, Customer, Conversation, Message } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 
 const DEFAULT_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'ai_sales_secret_verify_token';
