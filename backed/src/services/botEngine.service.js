@@ -72,18 +72,22 @@ export const processBotEngineForMessage = async ({
       }
 
       // C. Lưu tin nhắn trả lời của Bot vào cơ sở dữ liệu
-      if (replyContent) {
+      const allImages = Array.isArray(matchedScenario.image_urls) && matchedScenario.image_urls.length > 0
+        ? matchedScenario.image_urls
+        : (matchedScenario.image_url ? [matchedScenario.image_url] : []);
+
+      if (replyContent || allImages.length > 0) {
         const botMessage = await Message.create({
           conversation_id: conversation._id,
           sender_type: 'AI_BOT',
           sender_id: null,
-          content: replyContent,
-          attachments: matchedScenario.image_url ? [{ type: 'image', url: matchedScenario.image_url }] : [],
+          content: replyContent || '[Hình ảnh đính kèm]',
+          attachments: allImages.map((u) => ({ type: 'image', url: u })),
           is_read: true
         });
 
-        conversation.last_message_content = replyContent;
-        conversation.last_message_text = replyContent;
+        conversation.last_message_content = replyContent || '[Hình ảnh đính kèm]';
+        conversation.last_message_text = replyContent || '[Hình ảnh đính kèm]';
         conversation.last_message_at = new Date();
         await conversation.save();
 
@@ -115,10 +119,9 @@ export const processBotEngineForMessage = async ({
             }
           }
 
-          // 2. Gửi hình ảnh đính kèm nếu có
-          if (matchedScenario.image_url) {
+          // 2. Gửi danh sách hình ảnh đính kèm (hỗ trợ nhiều ảnh/album)
+          for (const imgUrl of allImages) {
             try {
-              const imgUrl = matchedScenario.image_url;
               if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
                 // Link ảnh công khai trên Internet
                 await axios.post(

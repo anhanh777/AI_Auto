@@ -56,7 +56,12 @@ const botScenarioSchema = new mongoose.Schema(
       default: '',
       trim: true
     },
-    // Hình ảnh đính kèm (URL ảnh bảng size, QR thanh toán, ảnh voucher nếu có)
+    // Danh sách hình ảnh đính kèm (hỗ trợ gửi nhiều ảnh / album)
+    image_urls: {
+      type: [String],
+      default: []
+    },
+    // Hình ảnh đính kèm đơn lẻ (để tương thích ngược)
     image_url: {
       type: String,
       default: '',
@@ -96,5 +101,14 @@ const botScenarioSchema = new mongoose.Schema(
 );
 
 botScenarioSchema.index({ business_id: 1, is_active: 1, priority: -1 });
+
+botScenarioSchema.pre('save', function (next) {
+  if (Array.isArray(this.image_urls) && this.image_urls.length > 0) {
+    if (!this.image_url) this.image_url = this.image_urls[0];
+  } else if (this.image_url) {
+    this.image_urls = [this.image_url];
+  }
+  next();
+});
 
 export const BotScenario = mongoose.model('BotScenario', botScenarioSchema);

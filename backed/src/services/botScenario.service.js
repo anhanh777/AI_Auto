@@ -88,6 +88,14 @@ export const createBotScenarioService = async (data, userId) => {
     cleanKeywords = data.keywords.split(',').map((k) => k.trim()).filter(Boolean);
   }
 
+  // Chuẩn hóa danh sách ảnh đính kèm
+  let cleanImageUrls = [];
+  if (Array.isArray(data.image_urls)) {
+    cleanImageUrls = data.image_urls.map((u) => String(u).trim()).filter(Boolean);
+  } else if (data.image_url) {
+    cleanImageUrls = [String(data.image_url).trim()];
+  }
+
   const scenario = await BotScenario.create({
     business_id: data.business_id,
     channel_id: data.channel_id || null,
@@ -96,7 +104,8 @@ export const createBotScenarioService = async (data, userId) => {
     keywords: cleanKeywords,
     action_type: data.action_type || 'REPLY_TEXT',
     response_content: data.response_content || '',
-    image_url: data.image_url || '',
+    image_urls: cleanImageUrls,
+    image_url: cleanImageUrls[0] || '',
     tag_to_add: data.tag_to_add || '',
     is_active: data.is_active !== undefined ? data.is_active : true,
     priority: Number(data.priority) || 0,
@@ -122,7 +131,15 @@ export const updateBotScenarioService = async (id, data, business_id, userId) =>
   if (data.trigger_type !== undefined) scenario.trigger_type = data.trigger_type;
   if (data.action_type !== undefined) scenario.action_type = data.action_type;
   if (data.response_content !== undefined) scenario.response_content = data.response_content;
-  if (data.image_url !== undefined) scenario.image_url = data.image_url;
+  if (data.image_urls !== undefined) {
+    if (Array.isArray(data.image_urls)) {
+      scenario.image_urls = data.image_urls.map((u) => String(u).trim()).filter(Boolean);
+      scenario.image_url = scenario.image_urls[0] || '';
+    }
+  } else if (data.image_url !== undefined) {
+    scenario.image_url = data.image_url;
+    scenario.image_urls = data.image_url ? [data.image_url] : [];
+  }
   if (data.tag_to_add !== undefined) scenario.tag_to_add = data.tag_to_add;
   if (data.is_active !== undefined) scenario.is_active = data.is_active;
   if (data.priority !== undefined) scenario.priority = Number(data.priority) || 0;
