@@ -4,6 +4,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { aiConfigService } from '../../services/aiConfig.service.js';
 import { botScenarioService } from '../../services/botScenario.service.js';
 import { uploadService } from '../../services/upload.service.js';
+import MediaPickerModal from '../../components/modals/MediaPickerModal.jsx';
 import {
   Bot,
   Sparkles,
@@ -28,6 +29,7 @@ import {
   Layers,
   ArrowRight,
   Image as ImageIcon,
+  Images,
   Upload,
   Paperclip
 } from 'lucide-react';
@@ -82,6 +84,7 @@ const BotAutoPage = () => {
   const [keywordInput, setKeywordInput] = useState('');
   const [urlInput, setUrlInput] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
   const fileInputRef = useRef(null);
 
   // Xử lý chọn và upload nhiều ảnh cùng lúc từ máy tính
@@ -1142,8 +1145,18 @@ const BotAutoPage = () => {
                     className="hidden"
                   />
 
-                  {/* Nút bấm tải ảnh lên & ô nhập URL */}
+                  {/* Nút bấm tải ảnh lên & Chọn từ Kho Media & ô nhập URL */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowMediaPicker(true)}
+                      className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer shadow-xs"
+                      title="Mở thư viện ảnh doanh nghiệp để chọn bảng size, voucher, sản phẩm..."
+                    >
+                      <Images size={13} />
+                      <span>Chọn từ Kho Media Shop</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -1158,7 +1171,7 @@ const BotAutoPage = () => {
                       ) : (
                         <>
                           <Upload size={13} />
-                          <span>Tải ảnh từ máy tính (Nhiều ảnh)</span>
+                          <span>Tải từ máy tính</span>
                         </>
                       )}
                     </button>
@@ -1270,6 +1283,26 @@ const BotAutoPage = () => {
           </div>
         </div>
       )}
+
+      {/* MODAL CHỌN ẢNH TỪ KHO MEDIA DOANH NGHIỆP */}
+      <MediaPickerModal
+        isOpen={showMediaPicker}
+        onClose={() => setShowMediaPicker(false)}
+        initialFolder="bot"
+        multiple={true}
+        onSelect={(urls) => {
+          setScenarioForm((prev) => {
+            const current = prev.image_urls || [];
+            const updated = [...current, ...urls.filter((u) => !current.includes(u))];
+            return {
+              ...prev,
+              image_urls: updated,
+              image_url: updated[0] || ''
+            };
+          });
+          showToast('success', `Đã thêm ${urls.length} ảnh từ Kho Media vào kịch bản`);
+        }}
+      />
     </div>
   );
 };

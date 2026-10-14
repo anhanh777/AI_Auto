@@ -10,6 +10,7 @@ import AnalyticsPage from '../pages/analytics/AnalyticsPage.jsx';
 import ProductListPage from '../pages/products/ProductListPage.jsx';
 import OrderListPage from '../pages/orders/OrderListPage.jsx';
 import KnowledgeBasePage from '../pages/knowledge/KnowledgeBasePage.jsx';
+import MediaLibraryPage from '../pages/media/MediaLibraryPage.jsx';
 import UserManagementPage from '../pages/settings/UserManagementPage.jsx';
 import BusinessSettingsPage from '../pages/settings/BusinessSettingsPage.jsx';
 import MainLayout from '../components/layout/MainLayout.jsx';
@@ -53,7 +54,10 @@ const AppRoutes = () => {
           {/* 7. Kho Tri Thức RAG */}
           <Route path="/knowledge" element={<KnowledgeBasePage />} />
 
-          {/* 8. Quản lý Thành viên */}
+          {/* 8. Kho Tư liệu & Media Doanh nghiệp */}
+          <Route path="/media" element={<MediaLibraryPage />} />
+
+          {/* 9. Quản lý Thành viên */}
           <Route path="/settings/users" element={<UserManagementPage />} />
           <Route path="/settings/roles" element={<Navigate to="/settings/users" replace />} />
 

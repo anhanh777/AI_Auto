@@ -40,7 +40,8 @@ import {
   Plus,
   Check,
   Store,
-  Clock
+  Clock,
+  Images
 } from 'lucide-react';
 
 import JoinOrCreateBusinessModal from '../modals/JoinOrCreateBusinessModal.jsx';
@@ -70,6 +71,7 @@ const MainLayout = () => {
     { id: 'customers', name: 'Khách hàng', path: '/customers', icon: Users, permission: 'CUSTOMER_VIEW', category: 'Kinh doanh' },
     { id: 'analytics', name: 'Thống kê', path: '/analytics', icon: BarChart3, permission: 'DASHBOARD_VIEW', category: 'Báo cáo' },
     { id: 'products', name: 'Sản phẩm & Kho', path: '/products', icon: Package, permission: 'PRODUCT_VIEW', category: 'Kinh doanh' },
+    { id: 'media', name: 'Kho Tư liệu & Media', path: '/media', icon: Images, permission: 'PRODUCT_VIEW', category: 'Kinh doanh' },
     { id: 'orders', name: 'Quản lý Đơn hàng', path: '/orders', icon: ShoppingCart, permission: 'ORDER_VIEW', category: 'Kinh doanh' },
     { id: 'knowledge', name: 'Kho Tri Thức RAG', path: '/knowledge', icon: Brain, permission: 'KNOWLEDGE_MANAGE', category: 'Trí tuệ nhân tạo' },
     { id: 'users', name: 'Quản lý Thành viên', path: '/settings/users', icon: UserCheck, permission: 'USER_MANAGE', category: 'Hệ thống' },
@@ -79,7 +81,7 @@ const MainLayout = () => {
 
   const [pinnedAppIds, setPinnedAppIds] = useState(() => {
     const saved = localStorage.getItem('ai_sales_pinned_apps');
-    return saved ? JSON.parse(saved) : ['chat', 'bot_auto', 'customers', 'analytics', 'products', 'users'];
+    return saved ? JSON.parse(saved) : ['chat', 'bot_auto', 'customers', 'products', 'media', 'orders'];
   });
 
   // State Dropdowns & Modals
