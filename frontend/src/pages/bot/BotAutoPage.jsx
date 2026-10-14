@@ -1145,15 +1145,15 @@ const BotAutoPage = () => {
                     className="hidden"
                   />
 
-                  {/* Nút bấm tải ảnh lên & Chọn từ Kho Media & ô nhập URL */}
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                  {/* Nút bấm Chọn từ Kho Media & Tải ảnh lên từ máy */}
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <button
                       type="button"
                       onClick={() => setShowMediaPicker(true)}
-                      className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer shadow-xs"
+                      className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
                       title="Mở thư viện ảnh doanh nghiệp để chọn bảng size, voucher, sản phẩm..."
                     >
-                      <Images size={13} />
+                      <Images size={14} />
                       <span>Chọn từ Kho Media Shop</span>
                     </button>
 
@@ -1161,44 +1161,20 @@ const BotAutoPage = () => {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploadingImage}
-                      className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+                      className="px-4 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
                     >
                       {uploadingImage ? (
                         <>
-                          <RefreshCw size={13} className="animate-spin" />
+                          <RefreshCw size={14} className="animate-spin" />
                           <span>Đang tải ảnh...</span>
                         </>
                       ) : (
                         <>
-                          <Upload size={13} />
+                          <Upload size={14} />
                           <span>Tải từ máy tính</span>
                         </>
                       )}
                     </button>
-
-                    <div className="flex items-center space-x-1.5 flex-1">
-                      <input
-                        type="text"
-                        placeholder="Hoặc dán URL ảnh https://..."
-                        value={urlInput}
-                        onChange={(e) => setUrlInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddImageUrl();
-                          }
-                        }}
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddImageUrl}
-                        className="px-3 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold transition shrink-0 cursor-pointer"
-                        title="Thêm link ảnh này"
-                      >
-                        + Thêm link
-                      </button>
-                    </div>
                   </div>
 
                   {/* Danh sách lưới các ảnh đã chọn (Album) */}
