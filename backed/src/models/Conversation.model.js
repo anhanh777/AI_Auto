@@ -86,6 +86,26 @@ const conversationSchema = new mongoose.Schema(
       sparse: true,
       trim: true
     },
+    // Trạng thái đơn hàng nháp / Giỏ hàng tạm thời thu thập qua nhiều lượt chat (Multi-turn Slot Filling)
+    order_draft: {
+      product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', default: null },
+      product_name: { type: String, default: '' },
+      sku: { type: String, default: '' },
+      size: { type: String, default: '' },
+      color: { type: String, default: '' },
+      quantity: { type: Number, default: 1 },
+      price: { type: Number, default: 0 },
+      customer_name: { type: String, default: '' },
+      phone: { type: String, default: '' },
+      shipping_address: { type: String, default: '' },
+      customer_note: { type: String, default: '' },
+      status: {
+        type: String,
+        enum: ['IDLE', 'COLLECTING', 'READY', 'ORDER_CREATED'],
+        default: 'IDLE'
+      },
+      updated_at: { type: Date, default: Date.now }
+    },
     // 13. Người khởi tạo phiên chat (users._id hoặc Hệ thống)
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

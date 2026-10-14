@@ -10,6 +10,7 @@ import {
 } from '../models/index.js';
 import { createOrderService } from './order.service.js';
 import { getIO } from '../config/socket.config.js';
+import { validateAndSanitizePhone, evaluateAddressQuality } from '../helpers/orderValidation.helper.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -22,15 +23,23 @@ const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
  * Hàm phân tích và làm sạch Tên người nhận và Địa chỉ giao hàng từ tin nhắn
  */
 export const extractNameAndCleanAddress = (text = '', defaultCustomerName = '') => {
-  if (!text) return { extractedName: defaultCustomerName || 'Khách hàng', cleanAddress: '' };
+  if (!text) {
+    return {
+      extractedName: defaultCustomerName || 'Khách hàng',
+      cleanAddress: '',
+      phone: '',
+      addressQuality: 'INCOMPLETE',
+      customerNote: ''
+    };
+  }
 
-  // 1. Tách số điện thoại trước
-  const phoneMatch = text.match(/(0[3|5|7|8|9][0-9]{8})\b/);
-  const phone = phoneMatch ? phoneMatch[0] : '';
+  // 1. Phân tích & thẩm định số điện thoại qua helper
+  const phoneValidation = validateAndSanitizePhone(text);
+  const phone = phoneValidation.isValid ? phoneValidation.phone : '';
 
   let workingText = text;
-  if (phone) {
-    workingText = workingText.replace(phone, '').trim();
+  if (phoneValidation.phone) {
+    workingText = workingText.replace(phoneValidation.phone, '').trim();
   }
 
   // 2. Tìm tên xưng hô trong tin nhắn
@@ -51,40 +60,28 @@ export const extractNameAndCleanAddress = (text = '', defaultCustomerName = '') 
     }
   }
 
-  // Nếu trong câu không xưng tên riêng -> Lấy tên thật từ tài khoản Facebook của khách
   if (!extractedName && defaultCustomerName && defaultCustomerName !== 'Khách hàng Facebook') {
     extractedName = defaultCustomerName;
   }
   if (!extractedName) extractedName = 'Khách hàng';
 
-  // 3. Tìm và làm sạch địa chỉ
-  let cleanAddress = '';
-  const locIndex = workingText.search(/\b(về|đến|ở|tại|địa chỉ(?:\s*là)?:?|đ\/c:?)\s+/i);
-  if (locIndex !== -1) {
-    cleanAddress = workingText.slice(locIndex).replace(/^(về|đến|ở|tại|địa chỉ(?:\s*là)?:?|đ\/c:?)\s+/i, '');
-  } else {
-    // Bỏ phần mở đầu thông dụng như: "cho mình lấy 1 hũ...", "ship cho mình..."
-    cleanAddress = workingText.replace(/^(cho mình lấy|cho em lấy|cho anh lấy|mình muốn mua|đặt hàng|mua|ship)\s+[^,]+/i, '').trim();
-  }
+  // 3. Đánh giá chất lượng và làm sạch địa chỉ qua helper
+  const addressEval = evaluateAddressQuality(workingText);
+  let cleanAddress = addressEval.cleanAddress;
 
-  // Cắt bỏ phần tên nếu tên nằm trong đoạn địa chỉ
   if (extractedName && extractedName !== defaultCustomerName && extractedName !== 'Khách hàng') {
-    cleanAddress = cleanAddress.replace(new RegExp('(?:mình là|tên là|tên tớ là|tên em là|tên:|anh|chị)?\\s*' + extractedName, 'i'), '');
+    cleanAddress = cleanAddress.replace(new RegExp('(?:mình là|tên là|tên tớ là|tên em là|tên:|anh|chị)?\\s*' + extractedName, 'i'), '').trim();
   }
 
-  // Cắt bỏ các từ phụ cuối câu (nhé, nha, sđt, sdt, số đt...)
-  cleanAddress = cleanAddress
-    .replace(/[,.\s-]+(cho|mình|nhé|nha|ạ|sđt|sdt|số đt|đt|alo|liên hệ|call)[:\s]*$/i, '')
-    .replace(/[,.\s-]+(nhé|nha|ạ|sđt|sdt|số đt|đt)[:\s]*$/i, '')
-    .replace(/^[,.\s-]+/, '')
-    .replace(/[,.\s-]+$/, '')
-    .trim();
-
-  if (cleanAddress.length > 0) {
-    cleanAddress = cleanAddress.charAt(0).toUpperCase() + cleanAddress.slice(1);
-  }
-
-  return { extractedName, cleanAddress, phone };
+  return {
+    extractedName,
+    cleanAddress,
+    phone,
+    addressQuality: addressEval.quality,
+    customerNote: addressEval.customerNote,
+    addressFeedback: addressEval.feedbackMessage,
+    phoneValidation
+  };
 };
 
 /**
@@ -156,13 +153,17 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
 /**
  * 2. Phân tích tin nhắn bằng Google Gemini 1.5 kết hợp RAG & Bóc tách Đơn hàng
  */
+/**
+ * 2. Phân tích tin nhắn bằng Google Gemini 1.5 kết hợp RAG, Biến thể Kho & Bóc tách Đơn hàng Đa bước
+ */
 export const consultWithGeminiAI = async ({
   business_id,
   conversation_id,
   customer_id,
   messageText,
   channel_id = null,
-  customerName = ''
+  customerName = '',
+  orderDraft = null
 }) => {
   // A. Nạp ngữ cảnh RAG
   const ragContext = await buildRAGContext({ business_id, conversation_id, channel_id });
@@ -186,17 +187,18 @@ export const consultWithGeminiAI = async ({
 
   // C. Nếu chưa cấu hình Google Gemini API Key -> Dùng bộ mô phỏng thông minh (Smart Mock AI)
   if (!genAI) {
-    console.log('[Gemini AI] ⚠️ Chưa cài đặt GEMINI_API_KEY trong file .env, kích hoạt Smart Simulation Engine');
+    console.log('[Gemini AI] ⚠️ Chưa cài đặt GEMINI_API_KEY trong file .env, kích hoạt Smart Multi-Turn Fallback Engine');
     return generateSmartFallbackResponse({
       messageText,
       aiConfig,
       rawProducts,
       chatHistoryText,
-      defaultCustomerName: customerName
+      defaultCustomerName: customerName,
+      existingDraft: orderDraft
     });
   }
 
-  // D. Xây dựng System Prompt chuyên biệt cho Tư vấn & Chốt đơn
+  // D. Xây dựng System Prompt chuyên biệt cho Tư vấn & Chốt đơn đa bước
   const fallbackCustomerName = customerName || 'Khách hàng';
   const systemInstruction = `
 Bạn là ${aiConfig.bot_name || 'Trợ lý AI tư vấn bán hàng'}, đại diện cho cửa hàng.
@@ -210,17 +212,24 @@ ${productContextText}
 === CHÍNH SÁCH BÁN HÀNG & KHO TRI THỨC (FAQ) ===
 ${knowledgeContextText}
 
+=== TRẠNG THÁI GIỎ HÀNG TẠM THỜI (ORDER DRAFT HIỆN TẠI) ===
+- Sản phẩm đã chọn: ${orderDraft?.product_name || 'Chưa chọn'}
+- Size: ${orderDraft?.size || 'Chưa chọn'}
+- Màu: ${orderDraft?.color || 'Chưa chọn'}
+- Số lượng: ${orderDraft?.quantity || 1}
+- SĐT đã lưu: ${orderDraft?.phone || 'Chưa có'}
+- Địa chỉ đã lưu: ${orderDraft?.shipping_address || 'Chưa có'}
+
 === LỊCH SỬ HỘI THOẠI GẦN ĐÂY ===
 ${chatHistoryText}
 
-=== NHIỆM VỤ CỦA BẠN ===
-1. Trả lời tin nhắn mới nhất của khách hàng một cách tự nhiên, lễ phép, tư vấn chính xác size, màu sắc, ưu đãi dựa trên dữ liệu sản phẩm ở trên. KHÔNG bịa đặt sản phẩm không có trong danh sách.
-2. NHẬN DIỆN VÀ BÓC TÁCH ĐƠN HÀNG (Order Extraction):
-   - Nếu khách hàng có ý định đặt mua:
-     + "customer_name": Nếu khách tự xưng tên trong tin nhắn (ví dụ: 'mình là Tuấn', 'tên Lan', 'anh Hải'), lấy tên đó. Nếu khách KHÔNG xưng tên riêng, hãy điền "${fallbackCustomerName}". TUYỆT ĐỐI KHÔNG điền chữ "Khách hàng" nếu đã có tên "${fallbackCustomerName}".
-     + "phone": Số điện thoại 10 số sạch của khách.
-     + "shipping_address": Địa chỉ giao hàng thực tế sạch (số nhà, đường, ngõ, phường, quận, tỉnh), loại bỏ các câu mở đầu ('cho mình lấy 1 áo về...') và các từ phụ ('nhé', 'sđt').
-     + "items": Danh sách sản phẩm mua, phân loại size, màu, số lượng.
+=== NHIỆM VỤ CỦA BẠN (QUY TRÌNH THU THẬP THÔNG TIN ĐƠN HÀNG - SLOT FILLING) ===
+1. Tư vấn chi tiết, chính xác size, màu sắc, ưu đãi dựa trên dữ liệu sản phẩm ở trên. KHÔNG bịa đặt sản phẩm không có trong danh sách.
+2. NGUYÊN TẮC THU THẬP THÔNG TIN TỪNG BƯỚC (Multi-turn Slot Filling):
+   - Bước 1 (Biến thể): Nếu khách muốn mua sản phẩm nhưng chưa chọn Size hoặc Màu (và sản phẩm có biến thể trong kho): Hãy hỏi khách size/màu và tư vấn chiều cao cân nặng. Đặt "missing_fields": ["variant"]. TUYỆT ĐỐI KHÔNG tạo đơn khi chưa có size/màu rõ ràng.
+   - Bước 2 (SĐT): Nếu đã có sản phẩm + size/màu nhưng chưa có Số điện thoại: Khéo léo xác nhận mẫu và xin số điện thoại di động nhận hàng. Đặt "missing_fields": ["phone"].
+   - Bước 3 (Địa chỉ): Nếu đã có SĐT nhưng chưa có Địa chỉ cụ thể (hoặc địa chỉ quá chung chung như 'Hà Nội', 'ở Cầu Giấy'): Ghi nhận SĐT và xin nốt địa chỉ cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP). Đặt "missing_fields": ["shipping_address"].
+   - Bước 4 (Chốt đơn): Khi ĐÃ CÓ ĐỦ TẤT CẢ (Sản phẩm, biến thể, SĐT 10 số hợp lệ, Địa chỉ cụ thể): Đặt "is_order_intent": true, "missing_fields": [], và viết câu tóm tắt đơn hàng hoàn chỉnh cho khách.
 3. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
    - Nếu khách yêu cầu gặp người thật, khiếu nại gay gắt hoặc tức giận, đặt "handover_to_staff": true.
 
@@ -230,9 +239,9 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
   "reply": "Nội dung tin nhắn bạn sẽ gửi lại cho khách hàng bằng tiếng Việt",
   "is_order_intent": true | false,
   "order_data": null hoặc {
-    "customer_name": "Tên khách hàng",
-    "phone": "Số điện thoại 10 số sạch",
-    "shipping_address": "Địa chỉ giao hàng sạch sẽ",
+    "customer_name": "Tên khách hàng (ưu tiên tên khách tự xưng, nếu không thì dùng '${fallbackCustomerName}')",
+    "phone": "Số điện thoại 10 số sạch nếu khách đã cung cấp",
+    "shipping_address": "Địa chỉ giao hàng sạch sẽ nếu khách đã cung cấp",
     "items": [
       {
         "sku": "Mã SKU của sản phẩm",
@@ -279,35 +288,39 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       aiConfig,
       rawProducts,
       chatHistoryText,
-      defaultCustomerName: customerName
+      defaultCustomerName: customerName,
+      existingDraft: orderDraft
     });
   }
 };
 
 /**
- * 3. Bộ mô phỏng AI thông minh (Smart Fallback Engine) khi chưa có API Key
- * Sử dụng Heuristic NLP nâng cao bóc tách tên thật, SĐT và địa chỉ sạch
+ * 3. Bộ mô phỏng AI thông minh Đa bước (Multi-turn Slot-Filling Fallback Engine)
+ * Xử lý tuần tự: Hỏi biến thể -> Xin SĐT -> Xin Địa chỉ -> Hoàn tất đơn hàng
  */
 const generateSmartFallbackResponse = ({
   messageText,
   aiConfig,
   rawProducts,
   chatHistoryText,
-  defaultCustomerName = ''
+  defaultCustomerName = '',
+  existingDraft = null
 }) => {
   const text = (messageText || '').trim();
   const lower = text.toLowerCase();
 
   // Bóc tách tên, địa chỉ sạch và SĐT qua bộ phân tích
-  const { extractedName, cleanAddress, phone } = extractNameAndCleanAddress(text, defaultCustomerName);
+  const {
+    extractedName,
+    cleanAddress,
+    phone,
+    addressQuality,
+    addressFeedback,
+    customerNote,
+    phoneValidation
+  } = extractNameAndCleanAddress(text, defaultCustomerName);
 
-  // Phát hiện từ khóa địa chỉ
-  const hasAddress = lower.includes('số') || lower.includes('ngõ') || lower.includes('đường') ||
-    lower.includes('phường') || lower.includes('quận') || lower.includes('hà nội') ||
-    lower.includes('hcm') || lower.includes('tp') || lower.includes('thị trấn') || lower.includes('thôn') ||
-    cleanAddress.length > 5;
-
-  // Khớp sản phẩm gần nhất trong kho
+  // 1. Khớp sản phẩm gần nhất trong tin nhắn hoặc kế thừa từ existingDraft
   let matchedProduct = null;
   for (const p of rawProducts) {
     const pName = (p.product_name || '').toLowerCase();
@@ -318,29 +331,170 @@ const generateSmartFallbackResponse = ({
     }
   }
 
-  // A. Trường hợp khách để lại SĐT và địa chỉ -> Chốt đơn
-  if (phone && (hasAddress || lower.includes('ship') || lower.includes('lấy') || lower.includes('đặt'))) {
-    const p = matchedProduct || rawProducts[0];
-    const customerDisplayName = extractedName && extractedName !== 'Khách hàng' ? `anh/chị ${extractedName}` : 'anh/chị';
+  if (!matchedProduct && existingDraft?.product_id) {
+    matchedProduct = rawProducts.find((p) => p._id.toString() === existingDraft.product_id.toString()) || null;
+  }
+  if (!matchedProduct && (phone || cleanAddress) && existingDraft?.product_name) {
+    matchedProduct = rawProducts.find((p) => p.product_name === existingDraft.product_name) || null;
+  }
+
+  // 2. Khớp biến thể (size, màu) nếu có
+  let selectedSize = existingDraft?.size || '';
+  let selectedColor = existingDraft?.color || '';
+
+  const sizeMatch = text.match(/\b(?:size|cỡ|sz)\s*([a-zA-Z0-9]+)\b/i) || text.match(/\b(XXL|2XL|XL|L|M|XS)\b/i) || text.match(/\b(?:size|cỡ)?\s*([sS])\b/);
+  if (sizeMatch && sizeMatch[1]) {
+    selectedSize = sizeMatch[1].toUpperCase();
+  }
+
+  const colorsList = ['trắng', 'đen', 'xanh', 'đỏ', 'vàng', 'hồng', 'xám', 'ghi', 'cam', 'tím', 'nâu', 'be', 'pastel'];
+  for (const c of colorsList) {
+    if (lower.includes(c)) {
+      selectedColor = c.charAt(0).toUpperCase() + c.slice(1);
+      break;
+    }
+  }
+
+  // 3. Khớp số lượng: chỉ bắt khi có từ định lượng (cái, hộp, áo...) hoặc từ khóa (lấy 2, mua 1, sl: 3)
+  // Tuyệt đối không nhầm lẫn với số nhà (vd: "Số 25 Cầu Giấy")
+  let quantity = existingDraft?.quantity || 1;
+  const qtyWithUnit = text.match(/\b(\d+)\s*(?:cái|chiếc|hộp|hũ|bộ|áo|quần|đôi|sp|tuýp)\b/i);
+  const qtyWithAction = text.match(/(?:lấy|mua|đặt|ship|sl:?|số lượng:?)\s*(\d+)\b/i);
+  const foundQty = qtyWithUnit ? Number(qtyWithUnit[1]) : (qtyWithAction ? Number(qtyWithAction[1]) : null);
+  if (foundQty && foundQty > 0 && foundQty <= 50) {
+    if (!phone || !phone.includes(String(foundQty))) {
+      quantity = foundQty;
+    }
+  }
+
+  // Gom các slot hiện tại
+  const currentPhone = phone || existingDraft?.phone || '';
+  const currentAddress = cleanAddress || existingDraft?.shipping_address || '';
+  const currentProduct = matchedProduct || (rawProducts.length > 0 ? rawProducts[0] : null);
+
+  // A. Trường hợp khách gõ SĐT nhưng SĐT lỗi (ví dụ thiếu số hoặc sai đầu số viễn thông)
+  if (phoneValidation && !phoneValidation.isValid && phoneValidation.phone && phoneValidation.errorReason !== 'NOT_FOUND') {
     return {
-      reply: `Dạ em cảm ơn ${customerDisplayName} đã để lại thông tin đặt hàng ạ! Em đã ghi nhận đơn hàng ${p ? `"${p.product_name}"` : 'sản phẩm'} giao về "${cleanAddress || 'địa chỉ của mình'}" với số điện thoại ${phone}. Chuyên viên của shop sẽ liên hệ xác nhận đơn và giao hàng sớm nhất nhé!`,
+      reply: `Dạ số điện thoại "${phoneValidation.phone}" hình như chưa đủ 10 chữ số hoặc chưa đúng định dạng mạng di động ạ. Bạn kiểm tra lại và nhắn lại giúp shop nha!`,
+      is_order_intent: false,
+      order_data: null,
+      missing_fields: ['phone'],
+      handover_to_staff: false
+    };
+  }
+
+  // B. Trường hợp khách gõ địa chỉ nhưng địa chỉ quá chung chung (VAGUE_AREA)
+  if (addressQuality === 'VAGUE_AREA' && addressFeedback) {
+    return {
+      reply: addressFeedback,
+      is_order_intent: false,
+      order_data: null,
+      missing_fields: ['shipping_address'],
+      handover_to_staff: false
+    };
+  }
+
+  // C. Kiểm tra biến thể sản phẩm nếu sản phẩm có variants trong kho
+  const hasVariants = currentProduct && Array.isArray(currentProduct.variants_json) && currentProduct.variants_json.length > 0;
+  const availableSizes = hasVariants ? [...new Set(currentProduct.variants_json.map((v) => v.size).filter(Boolean))].join(', ') : '';
+  const availableColors = hasVariants ? [...new Set(currentProduct.variants_json.map((v) => v.color).filter(Boolean))].join(', ') : '';
+
+  // Phát hiện ý định đặt mua hàng
+  const isBuyingIntent = lower.includes('mua') || lower.includes('lấy') || lower.includes('đặt') || lower.includes('ship') || phone || cleanAddress;
+
+  // BƯỚC 1: Nếu khách muốn mua mà chưa chọn Size/Màu
+  if (isBuyingIntent && hasVariants && !selectedSize && availableSizes) {
+    return {
+      reply: `Dạ mẫu "${currentProduct.product_name}" bên em có các size: ${availableSizes}${availableColors ? ` và màu: ${availableColors}` : ''} ạ. Bạn thường mặc size nào hoặc cho shop xin chiều cao, cân nặng để em chọn size vừa vặn nhất cho mình nha!`,
+      is_order_intent: false,
+      order_data: {
+        product_id: currentProduct._id,
+        product_name: currentProduct.product_name,
+        sku: currentProduct.sku,
+        price: currentProduct.sale_price || currentProduct.base_price || 0,
+        quantity,
+        size: selectedSize,
+        color: selectedColor,
+        customer_name: extractedName,
+        phone: currentPhone,
+        shipping_address: currentAddress
+      },
+      missing_fields: ['variant'],
+      handover_to_staff: false
+    };
+  }
+
+  // BƯỚC 2: Nếu đã có sản phẩm nhưng thiếu SĐT
+  if (isBuyingIntent && !currentPhone) {
+    const itemDesc = selectedSize ? `${currentProduct.product_name} (Size ${selectedSize}${selectedColor ? `, Màu ${selectedColor}` : ''})` : currentProduct.product_name;
+    return {
+      reply: `Dạ em đã giữ ${quantity} ${itemDesc} cho mình rồi ạ! Bạn cho shop xin Số điện thoại nhận hàng để bên em tiện liên hệ giao hàng nha!`,
+      is_order_intent: false,
+      order_data: {
+        product_id: currentProduct._id,
+        product_name: currentProduct.product_name,
+        sku: currentProduct.sku,
+        price: currentProduct.sale_price || currentProduct.base_price || 0,
+        quantity,
+        size: selectedSize,
+        color: selectedColor,
+        customer_name: extractedName,
+        phone: currentPhone,
+        shipping_address: currentAddress
+      },
+      missing_fields: ['phone'],
+      handover_to_staff: false
+    };
+  }
+
+  // BƯỚC 3: Nếu đã có SĐT nhưng thiếu Địa chỉ giao hàng cụ thể
+  if (isBuyingIntent && currentPhone && (!currentAddress || addressQuality === 'INCOMPLETE')) {
+    return {
+      reply: `Dạ em đã lưu số điện thoại ${currentPhone} của mình rồi ạ. Bạn cho shop xin thêm Địa chỉ nhận hàng cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP) để shop gửi hàng cho mình nhé!`,
+      is_order_intent: false,
+      order_data: {
+        product_id: currentProduct._id,
+        product_name: currentProduct.product_name,
+        sku: currentProduct.sku,
+        price: currentProduct.sale_price || currentProduct.base_price || 0,
+        quantity,
+        size: selectedSize,
+        color: selectedColor,
+        customer_name: extractedName,
+        phone: currentPhone,
+        shipping_address: currentAddress
+      },
+      missing_fields: ['shipping_address'],
+      handover_to_staff: false
+    };
+  }
+
+  // BƯỚC 4: ĐỦ TẤT CẢ THÔNG TIN -> TỰ ĐỘNG LÊN ĐƠN HÀNG THÀNH CÔNG!
+  if (currentPhone && currentAddress && addressQuality === 'VALID') {
+    const p = currentProduct;
+    const customerDisplayName = extractedName && extractedName !== 'Khách hàng' ? `anh/chị ${extractedName}` : 'anh/chị';
+    const unitPrice = p ? (p.sale_price || p.base_price || 0) : 0;
+    const totalAmount = (unitPrice * quantity).toLocaleString('vi-VN');
+
+    return {
+      reply: `Dạ em cảm ơn ${customerDisplayName} đã để lại thông tin đặt hàng ạ! Em đã lên đơn hàng cho mình:\n- Sản phẩm: ${p ? p.product_name : 'Sản phẩm'}${selectedSize ? ` (Size: ${selectedSize})` : ''}${selectedColor ? ` (Màu: ${selectedColor})` : ''} x ${quantity}\n- Người nhận: ${extractedName}\n- SĐT: ${currentPhone}\n- Địa chỉ giao: ${currentAddress}\n- Tổng tiền: ${totalAmount} VND (Thanh toán khi nhận hàng).\nChuyên viên của shop sẽ sớm liên hệ xác nhận và giao hàng cho mình nhé! ✨`,
       is_order_intent: true,
       order_data: {
         customer_name: extractedName || 'Khách hàng',
-        phone,
-        shipping_address: cleanAddress || text.replace(phone, '').trim(),
+        phone: currentPhone,
+        shipping_address: currentAddress,
+        customer_note: customerNote || text,
         items: p
           ? [
               {
                 sku: p.sku,
                 product_name: p.product_name,
-                size: 'Tiêu chuẩn',
-                color: 'Mặc định',
-                quantity: 1
+                size: selectedSize || 'Tiêu chuẩn',
+                color: selectedColor || 'Mặc định',
+                quantity: quantity || 1
               }
             ]
-          : [],
-        customer_note: text
+          : []
       },
       missing_fields: [],
       handover_to_staff: false,
@@ -348,12 +502,12 @@ const generateSmartFallbackResponse = ({
     };
   }
 
-  // B. Trường hợp hỏi giá hoặc tư vấn
+  // Trường hợp hỏi giá / tư vấn
   if (lower.includes('giá') || lower.includes('nhiêu') || lower.includes('bao tiền')) {
-    if (matchedProduct) {
-      const price = (matchedProduct.sale_price || matchedProduct.base_price || 0).toLocaleString('vi-VN');
+    if (currentProduct) {
+      const price = (currentProduct.sale_price || currentProduct.base_price || 0).toLocaleString('vi-VN');
       return {
-        reply: `Dạ sản phẩm "${matchedProduct.product_name}" hiện đang có giá ưu đãi là ${price} VND ạ! Anh/chị cần em tư vấn thêm về size hay cách dùng không ạ?`,
+        reply: `Dạ sản phẩm "${currentProduct.product_name}" hiện đang có giá ưu đãi là ${price} VND ạ! Anh/chị cần em tư vấn thêm về size hay cách chọn màu không ạ?`,
         is_order_intent: false,
         order_data: null,
         missing_fields: [],
@@ -362,10 +516,10 @@ const generateSmartFallbackResponse = ({
     }
   }
 
-  // C. Phản hồi chào mừng và tư vấn chung
+  // Phản hồi chào mừng và gợi ý mẫu
   const sampleProducts = rawProducts.slice(0, 3).map((p) => p.product_name).join(', ');
   return {
-    reply: `Dạ shop xin chào anh/chị ạ! Hiện tại shop đang có các mẫu nổi bật như: ${sampleProducts || 'sản phẩm hot'}. Anh/chị đang quan tâm đến dòng nào để em hỗ trợ tư vấn chi tiết size và ưu đãi cho mình ạ?`,
+    reply: `Dạ shop xin chào anh/chị ạ! Hiện tại shop đang có các mẫu nổi bật như: ${sampleProducts || 'sản phẩm hot'}. Anh/chị đang quan tâm đến dòng nào hoặc cần tư vấn size, hãy gửi ảnh hoặc chiều cao + cân nặng để shop hỗ trợ ngay nhé!`,
     is_order_intent: false,
     order_data: null,
     missing_fields: [],
@@ -374,7 +528,7 @@ const generateSmartFallbackResponse = ({
 };
 
 /**
- * 4. Xử lý toàn diện luồng AI: Tư vấn + Tạo Đơn Hàng PENDING + Socket.IO thông báo
+ * 4. Xử lý toàn diện luồng AI: Thu thập Đa bước (Multi-turn) + Tạo Đơn Hàng PENDING + Socket.IO
  */
 export const processGeminiAIForMessage = async ({
   business_id,
@@ -403,27 +557,57 @@ export const processGeminiAIForMessage = async ({
       ? conversation.customer_id.full_name
       : '';
 
-    // 1. Phân tích qua Gemini AI (truyền customerName để AI biết tên thật)
+    // Khởi tạo hoặc lấy giỏ hàng nháp hiện tại của hội thoại
+    const currentDraft = conversation.order_draft || {};
+
+    // 1. Phân tích qua Gemini AI kết hợp trạng thái đơn nháp đa bước
     const aiResult = await consultWithGeminiAI({
       business_id,
       channel_id,
       conversation_id,
       customer_id,
       messageText,
-      customerName: customerFbName
+      customerName: customerFbName,
+      orderDraft: currentDraft
     });
 
     let finalReply = aiResult.reply || 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';
 
-    // 2. Nếu AI phát hiện đủ điều kiện tạo ĐƠN HÀNG (is_order_intent = true)
+    // Cập nhật các slot mới thu thập được vào order_draft
+    if (aiResult.order_data) {
+      const od = aiResult.order_data;
+      if (!conversation.order_draft) conversation.order_draft = {};
+
+      if (od.product_id) conversation.order_draft.product_id = od.product_id;
+      if (od.product_name) conversation.order_draft.product_name = od.product_name;
+      if (od.sku) conversation.order_draft.sku = od.sku;
+      if (od.size) conversation.order_draft.size = od.size;
+      if (od.color) conversation.order_draft.color = od.color;
+      if (od.quantity) conversation.order_draft.quantity = od.quantity;
+      if (od.price) conversation.order_draft.price = od.price;
+      if (od.phone) conversation.order_draft.phone = od.phone;
+      if (od.shipping_address) conversation.order_draft.shipping_address = od.shipping_address;
+      if (od.customer_name && od.customer_name !== 'Khách hàng') conversation.order_draft.customer_name = od.customer_name;
+      if (od.customer_note) conversation.order_draft.customer_note = od.customer_note;
+
+      conversation.order_draft.status = 'COLLECTING';
+      conversation.order_draft.updated_at = new Date();
+    }
+
+    // 2. Kiểm tra thẩm định điều kiện chốt ĐƠN HÀNG (Validation Gate)
     let createdOrder = null;
-    if (aiResult.is_order_intent && aiResult.order_data && aiResult.order_data.phone) {
+    const finalPhone = conversation.order_draft?.phone || aiResult.order_data?.phone;
+    const finalAddress = conversation.order_draft?.shipping_address || aiResult.order_data?.shipping_address;
+
+    const phoneCheck = validateAndSanitizePhone(finalPhone || '');
+    const addressCheck = evaluateAddressQuality(finalAddress || '');
+
+    if (aiResult.is_order_intent && phoneCheck.isValid && addressCheck.quality === 'VALID') {
       try {
-        const orderInfo = aiResult.order_data;
+        const orderInfo = aiResult.order_data || conversation.order_draft;
         const itemsToCreate = [];
 
-        // Xác định tên chuẩn xác của khách hàng:
-        // 1. Tên do khách xưng trong câu chat -> 2. Tên tài khoản Facebook thật -> 3. Fallback "Khách hàng"
+        // Xác định tên chuẩn xác của khách hàng
         let finalCustomerName = orderInfo.customer_name;
         if (!finalCustomerName || finalCustomerName === 'Khách hàng' || finalCustomerName === 'null') {
           finalCustomerName = customerFbName || 'Khách hàng';
@@ -443,18 +627,33 @@ export const processGeminiAIForMessage = async ({
                 product_id: foundProduct._id,
                 variant_sku: foundProduct.sku,
                 product_name: foundProduct.product_name,
-                size: it.size || '',
-                color: it.color || '',
+                size: it.size || conversation.order_draft?.size || '',
+                color: it.color || conversation.order_draft?.color || '',
                 quantity: Number(it.quantity) || 1,
                 unit_price: unitPrice,
                 price: unitPrice
               });
             }
           }
+        } else if (conversation.order_draft?.product_id) {
+          const foundProduct = await Product.findById(conversation.order_draft.product_id);
+          if (foundProduct) {
+            const unitPrice = foundProduct.sale_price || foundProduct.base_price || 0;
+            itemsToCreate.push({
+              product_id: foundProduct._id,
+              variant_sku: foundProduct.sku,
+              product_name: foundProduct.product_name,
+              size: conversation.order_draft.size || '',
+              color: conversation.order_draft.color || '',
+              quantity: Number(conversation.order_draft.quantity) || 1,
+              unit_price: unitPrice,
+              price: unitPrice
+            });
+          }
         }
 
         // Tạo đơn hàng ở trạng thái PENDING
-        if (itemsToCreate.length > 0 || orderInfo.shipping_address) {
+        if (itemsToCreate.length > 0 || addressCheck.cleanAddress) {
           createdOrder = await createOrderService(
             {
               business_id,
@@ -462,20 +661,27 @@ export const processGeminiAIForMessage = async ({
               customer_id: customer_id || null,
               customer_name: finalCustomerName,
               shipping_customer_name: finalCustomerName,
-              customer_phone: orderInfo.phone,
-              shipping_phone: orderInfo.phone,
-              shipping_address: orderInfo.shipping_address || 'Địa chỉ đang cập nhật',
+              customer_phone: phoneCheck.phone,
+              shipping_phone: phoneCheck.phone,
+              shipping_address: addressCheck.cleanAddress,
               order_items: itemsToCreate,
               order_status: 'PENDING',
               status: 'PENDING',
               order_source: 'FACEBOOK_AI',
-              note: `Đơn hàng tự động trích xuất bởi Trợ lý AI Gemini: "${orderInfo.customer_note || messageText}"`
+              note: `Đơn hàng tự động trích xuất bởi Trợ lý AI Gemini: "${addressCheck.customerNote || orderInfo.customer_note || messageText}"`
             },
             null
           );
 
           console.log(`[Gemini AI] 🛒 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG THÀNH CÔNG: Mã #${createdOrder.order_code} (Khách: ${finalCustomerName})`);
-          finalReply += `\n\n(Dạ em đã tạo đơn hàng thành công với mã #${createdOrder.order_code}. Shop sẽ sớm liên hệ xác nhận và giao hàng ạ!)`;
+          if (!finalReply.includes(createdOrder.order_code)) {
+            finalReply += `\n\n(Dạ em đã tạo đơn hàng thành công với mã #${createdOrder.order_code}. Shop sẽ sớm liên hệ xác nhận và giao hàng ạ!)`;
+          }
+
+          // Cập nhật trạng thái đơn nháp đã hoàn tất
+          if (conversation.order_draft) {
+            conversation.order_draft.status = 'ORDER_CREATED';
+          }
         }
       } catch (orderErr) {
         console.error('[Gemini AI Order Creation Error]', orderErr.message);

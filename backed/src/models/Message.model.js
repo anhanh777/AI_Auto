@@ -77,6 +77,12 @@ const messageSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    external_message_id: {
+      type: String,
+      default: null,
+      sparse: true,
+      index: true
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: {}

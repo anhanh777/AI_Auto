@@ -11,6 +11,41 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
+ * Giải mã các Biến dữ liệu động (Template Variables) trong nội dung kịch bản Bot
+ * Hỗ trợ các thẻ: {customer_name}, {phone}, {shipping_address}, {product_name}, {size}, {color}, {quantity}, {price}, v.v.
+ */
+export const renderDynamicVariables = (templateText = '', context = {}) => {
+  if (!templateText || typeof templateText !== 'string') return '';
+
+  let rendered = templateText;
+
+  // 1. Nhóm Khách hàng
+  const cName = context.customer_name && context.customer_name !== 'Khách hàng Facebook' && context.customer_name !== 'null'
+    ? context.customer_name
+    : 'anh/chị';
+  rendered = rendered.replace(/\{customer_name\}/g, cName);
+  rendered = rendered.replace(/\{phone\}/g, context.phone || '');
+  rendered = rendered.replace(/\{shipping_address\}/g, context.shipping_address || '');
+
+  // 2. Nhóm Sản phẩm & Kho
+  rendered = rendered.replace(/\{product_name\}/g, context.product_name || 'sản phẩm');
+  rendered = rendered.replace(/\{size\}/g, context.size || '');
+  rendered = rendered.replace(/\{color\}/g, context.color || '');
+  rendered = rendered.replace(/\{quantity\}/g, String(context.quantity || 1));
+  rendered = rendered.replace(/\{price\}/g, context.price ? `${Number(context.price).toLocaleString('vi-VN')}đ` : '');
+  rendered = rendered.replace(/\{available_sizes\}/g, context.available_sizes || '');
+  rendered = rendered.replace(/\{available_colors\}/g, context.available_colors || '');
+
+  // 3. Nhóm Đơn hàng & Shop
+  rendered = rendered.replace(/\{order_code\}/g, context.order_code ? (context.order_code.startsWith('#') ? context.order_code : `#${context.order_code}`) : '');
+  rendered = rendered.replace(/\{total_amount\}/g, context.total_amount ? `${Number(context.total_amount).toLocaleString('vi-VN')}đ` : '');
+  rendered = rendered.replace(/\{shop_name\}/g, context.shop_name || 'Shop');
+  rendered = rendered.replace(/\{hotline\}/g, context.hotline || '');
+
+  return rendered.trim();
+};
+
+/**
  * Xử lý tự động phản hồi tin nhắn của khách hàng dựa trên Kịch bản của Chủ shop
  */
 export const processBotEngineForMessage = async ({
@@ -56,7 +91,22 @@ export const processBotEngineForMessage = async ({
     if (matchedScenario) {
       console.log(`[Bot Engine] 🎯 Khớp Kịch bản của chủ shop: "${matchedScenario.scenario_name}" (Action: ${matchedScenario.action_type})`);
 
-      const replyContent = matchedScenario.response_content || '';
+      // Giải mã biến dữ liệu động trong nội dung kịch bản
+      const draft = conversation.order_draft || {};
+      const dynamicContext = {
+        customer_name: conversation.customer_id?.full_name || 'anh/chị',
+        phone: conversation.customer_id?.phone || draft.phone || '',
+        shipping_address: conversation.customer_id?.shipping_address || draft.shipping_address || '',
+        product_name: draft.product_name || '',
+        size: draft.size || '',
+        color: draft.color || '',
+        quantity: draft.quantity || 1,
+        price: draft.price || 0,
+        total_amount: draft.price ? draft.price * (draft.quantity || 1) : 0,
+        shop_name: channel?.page_name || 'Shop',
+        hotline: ''
+      };
+      const replyContent = renderDynamicVariables(matchedScenario.response_content || '', dynamicContext);
 
       // A. Nếu kịch bản yêu cầu BÀN GIAO NHÂN VIÊN
       if (matchedScenario.action_type === 'HANDOVER_STAFF') {

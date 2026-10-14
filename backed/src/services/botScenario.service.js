@@ -247,7 +247,23 @@ export const matchIncomingMessageToScenario = async ({
     if (scenario.trigger_type === 'KEYWORD_CONTAINS') {
       const isMatched = scenario.keywords.some((kw) => {
         const k = kw.trim().toLowerCase();
-        return k && normalizedText.includes(k);
+        if (!k) return false;
+
+        // Nếu từ khóa là câu chào thông thường (hi, xin chào, hello...)
+        const isGreetingKw = ['hi', 'hello', 'xin chào', 'chào shop', 'chào bạn', 'alo'].includes(k);
+        if (isGreetingKw) {
+          // Nếu khách có câu hỏi cụ thể hoặc không phải lời chào thuần túy, nhường quyền cho AI Gemini
+          const hasSpecificIntent = /(tư vấn|giá|bao nhiêu|mua|đặt|lấy|ship|size|màu|sản phẩm|còn không|shop ở đâu)/i.test(normalizedText);
+          if (hasSpecificIntent) {
+            return false;
+          }
+          // Chỉ coi là chào nếu tin nhắn ngắn (dưới 5 từ)
+          if (normalizedText.split(/\s+/).length > 4) {
+            return false;
+          }
+        }
+
+        return normalizedText.includes(k);
       });
       if (isMatched) return scenario;
     }

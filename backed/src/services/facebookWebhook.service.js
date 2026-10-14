@@ -124,6 +124,16 @@ export const handleWebhookPayloadService = async (body) => {
       const senderPsid = event.sender?.id;
       if (!senderPsid || senderPsid === pageId) continue;
 
+      // Chống lặp tin nhắn từ Meta Webhook Retry (Idempotency check qua mid)
+      const metaMessageId = event.message.mid;
+      if (metaMessageId) {
+        const existingMsg = await Message.findOne({ external_message_id: metaMessageId });
+        if (existingMsg) {
+          console.log(`[Facebook Webhook] ⏩ Bỏ qua tin nhắn trùng lặp từ Meta (mid: ${metaMessageId})`);
+          continue;
+        }
+      }
+
       const messageText = event.message.text || '';
       const attachments = (event.message.attachments || []).map((att) => ({
         type: att.type === 'image' ? 'image' : 'file',
@@ -188,6 +198,7 @@ export const handleWebhookPayloadService = async (body) => {
           conversation_id: conversation._id,
           sender_type: 'CUSTOMER',
           sender_id: senderPsid,
+          external_message_id: metaMessageId || null,
           content: contentToSave,
           attachments,
           is_read: false

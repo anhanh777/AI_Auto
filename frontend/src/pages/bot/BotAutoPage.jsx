@@ -87,6 +87,141 @@ const BotAutoPage = () => {
   const [showMediaPicker, setShowMediaPicker] = useState(false);
   const fileInputRef = useRef(null);
 
+  // 4. Modal Biến dữ liệu động & Ref con trỏ textarea
+  const [showVariableModal, setShowVariableModal] = useState(false);
+  const responseTextareaRef = useRef(null);
+
+  const DYNAMIC_VARIABLES = [
+    {
+      category: 'Khách hàng',
+      icon: '👤',
+      items: [
+        {
+          tag: '{customer_name}',
+          name: 'Tên khách hàng',
+          desc: 'Tên Facebook thật của khách hoặc tên khách tự xưng trong chat',
+          example: 'Ying Ying'
+        },
+        {
+          tag: '{phone}',
+          name: 'Số điện thoại',
+          desc: 'Số điện thoại 10 số của khách đã được kiểm tra hợp lệ',
+          example: '0988776655'
+        },
+        {
+          tag: '{shipping_address}',
+          name: 'Địa chỉ giao hàng',
+          desc: 'Địa chỉ nhận hàng chi tiết và sạch sẽ của khách',
+          example: 'Số 25 Cầu Giấy, Hà Nội'
+        }
+      ]
+    },
+    {
+      category: 'Sản phẩm & Kho',
+      icon: '📦',
+      items: [
+        {
+          tag: '{product_name}',
+          name: 'Tên sản phẩm',
+          desc: 'Tên sản phẩm khách đang quan tâm hoặc đặt mua',
+          example: 'Áo Sơ Mi Oxford'
+        },
+        {
+          tag: '{size}',
+          name: 'Kích cỡ (Size)',
+          desc: 'Size khách hàng đã chọn',
+          example: 'Size L'
+        },
+        {
+          tag: '{color}',
+          name: 'Màu sắc',
+          desc: 'Màu sắc khách hàng đã chọn',
+          example: 'Trắng'
+        },
+        {
+          tag: '{quantity}',
+          name: 'Số lượng',
+          desc: 'Số lượng sản phẩm khách đặt',
+          example: '1'
+        },
+        {
+          tag: '{price}',
+          name: 'Đơn giá sản phẩm',
+          desc: 'Giá bán ưu đãi của sản phẩm kèm đơn vị đ',
+          example: '290.000đ'
+        },
+        {
+          tag: '{available_sizes}',
+          name: 'Các size còn hàng',
+          desc: 'Danh sách các size còn hàng thực tế trong kho',
+          example: 'M, L, XL'
+        },
+        {
+          tag: '{available_colors}',
+          name: 'Các màu còn hàng',
+          desc: 'Danh sách các màu còn hàng thực tế trong kho',
+          example: 'Trắng, Đen, Xanh'
+        }
+      ]
+    },
+    {
+      category: 'Đơn hàng & Cửa hàng',
+      icon: '🏷️',
+      items: [
+        {
+          tag: '{order_code}',
+          name: 'Mã đơn hàng',
+          desc: 'Mã đơn hàng tự động sinh ra khi chốt đơn',
+          example: '#DH-1005258'
+        },
+        {
+          tag: '{total_amount}',
+          name: 'Tổng tiền thanh toán',
+          desc: 'Tổng số tiền khách cần thanh toán',
+          example: '290.000đ'
+        },
+        {
+          tag: '{shop_name}',
+          name: 'Tên cửa hàng',
+          desc: 'Tên Fanpage hoặc tên thương hiệu của shop',
+          example: 'Shop Thời Trang Nam'
+        },
+        {
+          tag: '{hotline}',
+          name: 'Hotline cửa hàng',
+          desc: 'Số hotline hỗ trợ khách hàng',
+          example: '1900 6868'
+        }
+      ]
+    }
+  ];
+
+  const handleInsertVariable = (variableTag) => {
+    const textarea = responseTextareaRef.current;
+    if (!textarea) {
+      setScenarioForm((prev) => ({
+        ...prev,
+        response_content: prev.response_content ? `${prev.response_content} ${variableTag}` : variableTag
+      }));
+      return;
+    }
+
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const currentVal = scenarioForm.response_content || '';
+    const newVal = currentVal.substring(0, start) + variableTag + currentVal.substring(end);
+
+    setScenarioForm((prev) => ({
+      ...prev,
+      response_content: newVal
+    }));
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + variableTag.length, start + variableTag.length);
+    }, 50);
+  };
+
   // Xử lý chọn và upload nhiều ảnh cùng lúc từ máy tính
   const handleImageFilesChange = async (e) => {
     const files = Array.from(e.target.files || []);
@@ -1176,19 +1311,61 @@ const BotAutoPage = () => {
                   </div>
                 )}
 
-                {/* Nội dung câu trả lời tự động */}
-                <div>
-                  <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1">
-                    Nội dung tin nhắn Bot sẽ trả lời: *
-                  </label>
+                {/* Nội dung câu trả lời tự động kèm Thẻ biến dữ liệu động */}
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <label className="text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center space-x-1">
+                      <span>Nội dung tin nhắn Bot sẽ trả lời: *</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowVariableModal(true)}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:hover:bg-amber-900/80 dark:text-amber-300 rounded-lg text-[11px] font-bold border border-amber-200 dark:border-amber-800 transition-colors shadow-xs"
+                    >
+                      <Sparkles size={12} className="text-amber-500 animate-pulse" />
+                      <span>{'{x}'} Bảng tất cả biến động ▾</span>
+                    </button>
+                  </div>
+
+                  {/* Thanh nút bấm chèn nhanh biến động */}
+                  <div className="flex flex-wrap items-center gap-1.5 p-2 bg-slate-100 dark:bg-slate-900/80 rounded-xl border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 mr-1 flex items-center space-x-1">
+                      <span>Chèn nhanh:</span>
+                    </span>
+                    {[
+                      { label: '👤 Tên khách', tag: '{customer_name}' },
+                      { label: '📦 Tên SP', tag: '{product_name}' },
+                      { label: '📏 Size', tag: '{size}' },
+                      { label: '🎨 Màu', tag: '{color}' },
+                      { label: '📞 SĐT', tag: '{phone}' },
+                      { label: '📍 Địa chỉ', tag: '{shipping_address}' },
+                      { label: '💰 Giá', tag: '{price}' },
+                      { label: '🏷️ Mã đơn', tag: '{order_code}' }
+                    ].map((btn) => (
+                      <button
+                        key={btn.tag}
+                        type="button"
+                        onClick={() => handleInsertVariable(btn.tag)}
+                        title={`Chèn ${btn.tag} vào vị trí con trỏ`}
+                        className="px-2 py-0.5 bg-white dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-900/40 text-slate-700 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 border border-slate-200 dark:border-slate-700 rounded-md text-[11px] font-medium transition-all shadow-2xs active:scale-95"
+                      >
+                        + {btn.label}
+                      </button>
+                    ))}
+                  </div>
+
                   <textarea
+                    ref={responseTextareaRef}
                     rows={4}
                     required={scenarioForm.action_type === 'REPLY_TEXT'}
-                    placeholder="Soạn nội dung tin nhắn gửi tự động cho khách khi khớp kịch bản này..."
+                    placeholder="Soạn nội dung tin nhắn gửi tự động cho khách. Bạn có thể chèn các biến động như {customer_name}, {product_name}, {phone}..."
                     value={scenarioForm.response_content}
                     onChange={(e) => setScenarioForm({ ...scenarioForm, response_content: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">
+                    💡 Mẹo: Khi khách chat, các thẻ như <code className="text-blue-600 font-bold bg-blue-50 dark:bg-blue-950/60 px-1 py-0.5 rounded">{'{customer_name}'}</code>, <code className="text-blue-600 font-bold bg-blue-50 dark:bg-blue-950/60 px-1 py-0.5 rounded">{'{product_name}'}</code> sẽ tự động thay bằng dữ liệu thực tế của khách hàng.
+                  </p>
                 </div>
 
                 {/* Hình ảnh đính kèm (Ảnh bảng size, Voucher, Bộ sưu tập...) */}
@@ -1346,6 +1523,97 @@ const BotAutoPage = () => {
           showToast('success', `Đã thêm ${urls.length} ảnh từ Kho Media vào kịch bản`);
         }}
       />
+
+      {/* MODAL BẢNG TRA CỨU & CHÈN BIẾN DỮ LIỆU ĐỘNG */}
+      {showVariableModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            {/* Header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-950/80 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xs">
+                  {'{x}'}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-white">
+                    Bảng Tra Cứu & Chèn Biến Dữ Liệu Động
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Click vào nút <span className="font-semibold text-blue-600">"+ Chèn"</span> để gắn biến vào câu trả lời của Bot.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVariableModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 overflow-y-auto space-y-5 flex-1">
+              {DYNAMIC_VARIABLES.map((cat) => (
+                <div key={cat.category} className="space-y-2">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center space-x-1.5 uppercase tracking-wider">
+                    <span>{cat.icon}</span>
+                    <span>Nhóm {cat.category}</span>
+                  </h4>
+                  <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-700/60 bg-slate-50/50 dark:bg-slate-900/40">
+                    {cat.items.map((it) => (
+                      <div
+                        key={it.tag}
+                        className="p-3 flex items-center justify-between gap-3 hover:bg-white dark:hover:bg-slate-800/80 transition-colors"
+                      >
+                        <div className="space-y-0.5 flex-1 min-w-0">
+                          <div className="flex items-center space-x-2">
+                            <code className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded-md border border-blue-200/60 dark:border-blue-900/40">
+                              {it.tag}
+                            </code>
+                            <span className="text-xs font-bold text-slate-800 dark:text-white">
+                              {it.name}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {it.desc}
+                          </p>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500">
+                            Ví dụ thực tế: <span className="text-emerald-600 dark:text-emerald-400 font-medium">"{it.example}"</span>
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleInsertVariable(it.tag);
+                            showToast('success', `Đã chèn biến ${it.tag} vào nội dung tin nhắn`);
+                            setShowVariableModal(false);
+                          }}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center space-x-1 shrink-0 shadow-xs cursor-pointer active:scale-95"
+                        >
+                          <Plus size={13} />
+                          <span>Chèn</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div className="p-3 border-t border-slate-100 dark:border-slate-700 flex justify-end bg-slate-50/50 dark:bg-slate-900/50">
+              <button
+                type="button"
+                onClick={() => setShowVariableModal(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-white rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
