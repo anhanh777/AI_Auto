@@ -407,6 +407,20 @@ const BotAutoPage = () => {
         message_text: simMessage.trim()
       });
       const data = res?.data || res;
+
+      // Nếu không khớp kịch bản của chủ shop -> Cho AI Gemini tư vấn & bóc tách thử nghiệm luôn!
+      if (!data?.is_matched) {
+        try {
+          const aiRes = await aiConfigService.testAIChat({
+            business_id: activeBusiness._id,
+            messageText: simMessage.trim()
+          });
+          data.ai_response = aiRes?.data || aiRes;
+        } catch (aiErr) {
+          console.warn('AI Test Error:', aiErr);
+        }
+      }
+
       setSimResult(data);
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi thử nghiệm kịch bản');
@@ -989,6 +1003,59 @@ const BotAutoPage = () => {
                       {simResult.scenario.response_content}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Phản hồi từ Trợ lý AI Gemini khi không khớp kịch bản */}
+              {!simResult.is_matched && simResult.ai_response && (
+                <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="font-bold text-slate-900 dark:text-white text-xs flex items-center space-x-1.5">
+                      <Sparkles size={14} className="text-blue-600" />
+                      <span>Trợ lý AI Gemini phản hồi tự động:</span>
+                    </p>
+                    {simResult.ai_response.handover_to_staff && (
+                      <span className="px-2 py-0.5 bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-md text-[10px] font-bold">
+                        Bàn giao nhân viên
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="p-3 bg-blue-50/70 dark:bg-blue-950/40 rounded-xl text-xs text-slate-800 dark:text-slate-200 border border-blue-200/50 dark:border-blue-800/50 leading-relaxed whitespace-pre-wrap">
+                    {simResult.ai_response.reply}
+                  </div>
+
+                  {/* Bóc tách Đơn hàng thông minh */}
+                  {simResult.ai_response.is_order_intent && simResult.ai_response.order_data && (
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-xl space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center space-x-1">
+                          <CheckCircle2 size={13} />
+                          <span>AI đã bóc tách dữ liệu đơn hàng:</span>
+                        </span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">
+                          Trạng thái: PENDING (Chờ duyệt)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                        <div>
+                          <strong>Người nhận:</strong> {simResult.ai_response.order_data.customer_name || 'Khách hàng'}
+                        </div>
+                        <div>
+                          <strong>Số điện thoại:</strong> {simResult.ai_response.order_data.phone || 'Chưa rõ'}
+                        </div>
+                        <div className="col-span-2">
+                          <strong>Địa chỉ giao:</strong> {simResult.ai_response.order_data.shipping_address || 'Chưa rõ'}
+                        </div>
+                        {Array.isArray(simResult.ai_response.order_data.items) && simResult.ai_response.order_data.items.length > 0 && (
+                          <div className="col-span-2">
+                            <strong>Sản phẩm:</strong>{' '}
+                            {simResult.ai_response.order_data.items.map((it) => `${it.product_name || it.sku} (x${it.quantity || 1})`).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

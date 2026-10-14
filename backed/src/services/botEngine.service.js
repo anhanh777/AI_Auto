@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { Conversation, Message, Customer, Channel } from '../models/index.js';
 import { matchIncomingMessageToScenario } from './botScenario.service.js';
+import { processGeminiAIForMessage } from './geminiAI.service.js';
 import { getIO } from '../config/socket.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -178,8 +179,36 @@ export const processBotEngineForMessage = async ({
       };
     }
 
-    // Không khớp kịch bản nào -> Trả về để luồng AI Gemini xử lý ở bước tiếp theo
-    return { handled: false, reason: 'NO_SCENARIO_MATCH' };
+    // 2. Không khớp kịch bản cứng của chủ shop -> Chuyển giao sang Trợ lý AI Gemini tư vấn & chốt đơn!
+    console.log(`[Bot Engine] 🤖 Không khớp kịch bản cứng -> Kích hoạt Trợ lý AI Gemini tư vấn cho: "${messageText}"`);
+
+    const aiResult = await processGeminiAIForMessage({
+      business_id,
+      channel_id,
+      conversation_id,
+      customer_id,
+      senderPsid,
+      messageText
+    });
+
+    if (aiResult.handled && pageToken && senderPsid && aiResult.reply) {
+      // Gửi câu trả lời của AI đến Facebook Messenger của khách qua Meta Graph Send API
+      try {
+        await axios.post(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+          {
+            recipient: { id: senderPsid },
+            message: { text: aiResult.reply }
+          },
+          { timeout: 8000 }
+        );
+        console.log(`[Facebook Send API] AI Gemini đã gửi tin nhắn tư vấn thành công đến PSID ${senderPsid}`);
+      } catch (fbErr) {
+        console.warn('[Facebook Send AI Warn]', fbErr.response?.data?.error?.message || fbErr.message);
+      }
+    }
+
+    return aiResult;
   } catch (error) {
     console.error('[Bot Engine Error]', error);
     return { handled: false, error: error.message };

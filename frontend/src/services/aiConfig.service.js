@@ -9,5 +9,9 @@ export const aiConfigService = {
   updateAIConfig: async (data) => {
     const res = await apiClient.put('/ai-config', data);
     return res.data;
+  },
+
+  testAIChat: async (data) => {
+    return await apiClient.post('/ai-config/chat-test', data);
   }
 };
