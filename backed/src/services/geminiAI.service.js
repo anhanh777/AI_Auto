@@ -12,13 +12,63 @@ import { createOrderService } from './order.service.js';
 import { autoTagConversationService } from './conversation.service.js';
 import { getIO } from '../config/socket.config.js';
 import { validateAndSanitizePhone, evaluateAddressQuality } from '../helpers/orderValidation.helper.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const apiKey = process.env.GEMINI_API_KEY || '';
 const genAI = apiKey && apiKey !== 'your_gemini_api_key_here' ? new GoogleGenerativeAI(apiKey) : null;
 const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+
+/**
+ * Chuyển đổi URL hình ảnh (cả URL Internet và đường dẫn local /uploads/) thành Gemini Multimodal Part
+ */
+export async function convertImageUrlToGeminiPart(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    let buffer = null;
+    let mimeType = 'image/jpeg';
+
+    if (url.includes('localhost') || url.includes('127.0.0.1') || url.startsWith('/uploads')) {
+      const uploadsIndex = url.indexOf('/uploads/');
+      const relPath = uploadsIndex !== -1 ? url.substring(uploadsIndex + '/uploads/'.length) : url;
+      const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
+      if (fs.existsSync(localFilePath)) {
+        buffer = fs.readFileSync(localFilePath);
+        const ext = path.extname(localFilePath).toLowerCase();
+        if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.webp') mimeType = 'image/webp';
+        else if (ext === '.gif') mimeType = 'image/gif';
+      }
+    }
+
+    if (!buffer && (url.startsWith('http://') || url.startsWith('https://'))) {
+      const resp = await axios.get(url, { responseType: 'arraybuffer', timeout: 8000 });
+      buffer = Buffer.from(resp.data);
+      const ct = resp.headers['content-type'];
+      if (ct && ct.startsWith('image/')) mimeType = ct.split(';')[0];
+    }
+
+    if (buffer) {
+      return {
+        inlineData: {
+          data: buffer.toString('base64'),
+          mimeType
+        }
+      };
+    }
+  } catch (err) {
+    console.warn('[Gemini Image Part Convert Warn]', err.message);
+  }
+  return null;
+}
 
 /**
  * Hàm phân tích và làm sạch Tên người nhận và Địa chỉ giao hàng từ tin nhắn
@@ -165,7 +215,8 @@ export const consultWithGeminiAI = async ({
   messageText,
   channel_id = null,
   customerName = '',
-  orderDraft = null
+  orderDraft = null,
+  customerImageUrls = []
 }) => {
   // A. Nạp ngữ cảnh RAG
   const ragContext = await buildRAGContext({ business_id, conversation_id, channel_id });
@@ -196,7 +247,8 @@ export const consultWithGeminiAI = async ({
       rawProducts,
       chatHistoryText,
       defaultCustomerName: customerName,
-      existingDraft: orderDraft
+      existingDraft: orderDraft,
+      customerImageUrls
     });
   }
 
@@ -245,6 +297,12 @@ ${chatHistoryText}
    - Khi khách cho Địa chỉ cụ thể -> Đủ thông tin thì đặt "is_order_intent": true và viết lời cảm ơn, tóm tắt đơn hàng rõ ràng.
 5. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
    - Nếu khách yêu cầu gặp người thật, khiếu nại gay gắt hoặc tức giận, đặt "handover_to_staff": true.
+6. NHẬN DIỆN SẢN PHẨM QUA HÌNH ẢNH (MULTIMODAL VISION):
+   - Khi khách gửi hình ảnh hoặc trích dẫn ảnh hỏi ("ảnh này là sản phẩm nào", "mẫu này còn không", "cho mình xin giá cái này", "sản phẩm trong hình là gì", "mẫu này là mẫu nào"):
+     + Bạn ĐANG ĐƯỢC TRUYỀN HÌNH ẢNH THẬT đính kèm tin nhắn này. Hãy quan sát thật kỹ hình ảnh: nhận diện màu sắc, chi tiết, đặc điểm nhân vật, con vật, trang phục hoặc hình dáng.
+     + So sánh đối chiếu trực tiếp với Danh mục sản phẩm ở trên.
+     + Khẳng định chính xác sản phẩm tương ứng trong kho (Ví dụ: "Dạ hình ảnh bạn vừa hỏi chính là mẫu [Tên sản phẩm] (SKU: [Mã SKU]) bên em đó ạ! Mẫu này có giá [Giá] VND...").
+     + Trích xuất URL ảnh của sản phẩm này vào mảng "image_urls" của JSON trả về để tiếp tục hiển thị cho khách.
 
 === ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (JSON ONLY) ===
 Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdown code block) theo schema sau:
@@ -282,8 +340,18 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       }
     });
 
+    // Chuyển đổi các hình ảnh khách gửi / khách trích dẫn thành Gemini Multimodal Parts
+    const geminiImageParts = [];
+    if (Array.isArray(customerImageUrls) && customerImageUrls.length > 0) {
+      for (const imgUrl of customerImageUrls.slice(0, 2)) {
+        const part = await convertImageUrlToGeminiPart(imgUrl);
+        if (part) geminiImageParts.push(part);
+      }
+    }
+
     const prompt = `${systemInstruction}\n\nTin nhắn mới từ khách hàng: "${messageText}"`;
-    const result = await model.generateContent(prompt);
+    const contentPayload = geminiImageParts.length > 0 ? [prompt, ...geminiImageParts] : prompt;
+    const result = await model.generateContent(contentPayload);
     const responseText = result.response.text();
 
     const parsed = JSON.parse(responseText.trim());
@@ -304,7 +372,8 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       rawProducts,
       chatHistoryText,
       defaultCustomerName: customerName,
-      existingDraft: orderDraft
+      existingDraft: orderDraft,
+      customerImageUrls
     });
   }
 };
@@ -319,7 +388,8 @@ export const generateSmartFallbackResponse = ({
   rawProducts,
   chatHistoryText,
   defaultCustomerName = '',
-  existingDraft = null
+  existingDraft = null,
+  customerImageUrls = []
 }) => {
   const text = (messageText || '').trim();
   const lower = text.toLowerCase();
@@ -337,12 +407,31 @@ export const generateSmartFallbackResponse = ({
 
   // 1. Khớp sản phẩm được nhắc đến trong tin nhắn
   let matchedProduct = null;
-  for (const p of rawProducts) {
-    const pName = (p.product_name || '').toLowerCase();
-    const pSku = (p.sku || '').toLowerCase();
-    if (lower.includes(pName) || (pSku && lower.includes(pSku))) {
-      matchedProduct = p;
-      break;
+
+  // Nếu khách gửi ảnh hoặc trích dẫn ảnh, ưu tiên khớp sản phẩm qua đường link ảnh
+  if (Array.isArray(customerImageUrls) && customerImageUrls.length > 0) {
+    for (const p of rawProducts) {
+      if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
+        const hasMatchedImg = p.image_urls.some((pUrl) => {
+          const pBase = path.basename(pUrl);
+          return customerImageUrls.some((cUrl) => cUrl && cUrl.includes(pBase));
+        });
+        if (hasMatchedImg) {
+          matchedProduct = p;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!matchedProduct) {
+    for (const p of rawProducts) {
+      const pName = (p.product_name || '').toLowerCase();
+      const pSku = (p.sku || '').toLowerCase();
+      if (lower.includes(pName) || (pSku && lower.includes(pSku))) {
+        matchedProduct = p;
+        break;
+      }
     }
   }
 
@@ -668,7 +757,8 @@ export const processGeminiAIForMessage = async ({
   conversation_id,
   customer_id,
   senderPsid,
-  messageText
+  messageText,
+  customerImageUrls = []
 }) => {
   if (!business_id || !conversation_id) return { handled: false };
 
@@ -692,7 +782,7 @@ export const processGeminiAIForMessage = async ({
     // Khởi tạo hoặc lấy giỏ hàng nháp hiện tại của hội thoại
     const currentDraft = conversation.order_draft || {};
 
-    // 1. Phân tích qua Gemini AI kết hợp trạng thái đơn nháp đa bước
+    // 1. Phân tích qua Gemini AI kết hợp trạng thái đơn nháp đa bước & nhận diện ảnh
     const aiResult = await consultWithGeminiAI({
       business_id,
       channel_id,
@@ -700,7 +790,8 @@ export const processGeminiAIForMessage = async ({
       customer_id,
       messageText,
       customerName: customerFbName,
-      orderDraft: currentDraft
+      orderDraft: currentDraft,
+      customerImageUrls
     });
 
     let finalReply = aiResult.reply || 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';

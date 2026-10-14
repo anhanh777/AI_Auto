@@ -119,6 +119,7 @@ export const processBotEngineForMessage = async ({
   customer_id,
   senderPsid,
   messageText = '',
+  customerImageUrls = [],
   isFirstMessage = false
 }) => {
   if (!business_id || !conversation_id) return { handled: false };
@@ -257,7 +258,8 @@ export const processBotEngineForMessage = async ({
       conversation_id,
       customer_id,
       senderPsid,
-      messageText
+      messageText,
+      customerImageUrls
     });
 
     if (aiResult.handled && pageToken && senderPsid) {

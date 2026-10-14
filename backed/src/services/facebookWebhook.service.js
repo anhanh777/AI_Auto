@@ -151,6 +151,9 @@ export const handleWebhookPayloadService = async (body) => {
         url: att.payload?.url || ''
       })).filter((a) => a.url);
 
+      const replyToMid = event.message?.reply_to?.mid || null;
+      const customerImageUrls = attachments.filter((a) => a.type === 'image').map((a) => a.url);
+
       // Nếu khách gửi Like thumb hoặc Sticker mà không có text
       if (!messageText && attachments.length === 0) {
         if (event.message?.sticker_id) {
@@ -273,6 +276,35 @@ export const handleWebhookPayloadService = async (body) => {
           console.warn('[Socket.IO Webhook Warn]', socketErr.message);
         }
 
+        // Bóc tách hình ảnh từ tin nhắn trích dẫn (Quote Reply) hoặc tin nhắn ảnh gần nhất
+        if (replyToMid) {
+          const quotedMsg = await Message.findOne({ external_message_id: replyToMid });
+          if (quotedMsg && Array.isArray(quotedMsg.attachments)) {
+            for (const att of quotedMsg.attachments) {
+              if (att.url && !customerImageUrls.includes(att.url)) {
+                customerImageUrls.push(att.url);
+              }
+            }
+          }
+        }
+
+        // Nếu khách hỏi về ảnh ("ảnh này", "hình này", "mẫu này") mà chưa có URL, tìm ảnh gần nhất trong cuộc trò chuyện
+        if (customerImageUrls.length === 0 && /(?:ảnh này|hình này|mẫu này|cái này|sản phẩm này|mẫu trong ảnh|hình trong tin nhắn)/i.test(messageText)) {
+          const lastImageMsg = await Message.findOne({
+            conversation_id: conversation._id,
+            _id: { $ne: savedMessage._id },
+            'attachments.0': { $exists: true }
+          }).sort({ created_at: -1 });
+
+          if (lastImageMsg && Array.isArray(lastImageMsg.attachments)) {
+            for (const att of lastImageMsg.attachments) {
+              if (att.url && (att.type === 'image' || !att.type) && !customerImageUrls.includes(att.url)) {
+                customerImageUrls.push(att.url);
+              }
+            }
+          }
+        }
+
         // G. Kích hoạt Bộ máy Bot tự động phản hồi theo kịch bản do Chủ shop cấu hình
         processBotEngineForMessage({
           business_id: channel.business_id,
@@ -281,6 +313,7 @@ export const handleWebhookPayloadService = async (body) => {
           customer_id: customer._id,
           senderPsid,
           messageText,
+          customerImageUrls,
           isFirstMessage: (conversation.unread_count || 0) <= 1
         }).catch((botErr) => {
           console.warn('[Bot Execution Error]', botErr.message);
