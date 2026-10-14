@@ -2,6 +2,8 @@ import axios from 'axios';
 import { Channel, Customer, Conversation, Message } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 import { processBotEngineForMessage } from './botEngine.service.js';
+import { autoTagConversationService } from './conversation.service.js';
+import { validateAndSanitizePhone } from '../helpers/orderValidation.helper.js';
 
 const DEFAULT_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'ai_sales_secret_verify_token';
 
@@ -213,6 +215,18 @@ export const handleWebhookPayloadService = async (body) => {
 
         customer.last_interaction_at = new Date();
         await customer.save();
+
+        // Tự động gán nhãn khi tin nhắn khách chứa SĐT hợp lệ hoặc phân loại khách
+        if (messageText) {
+          const phoneRes = validateAndSanitizePhone(messageText);
+          if (phoneRes.isValid) {
+            autoTagConversationService(conversation._id, {
+              hasPhone: true,
+              phone: phoneRes.cleanPhone,
+              customerId: customer._id
+            }).catch(() => {});
+          }
+        }
 
         // E. Nạp đầy đủ dữ liệu quan hệ để phát Socket.IO
         const populatedConv = await Conversation.findById(conversation._id)

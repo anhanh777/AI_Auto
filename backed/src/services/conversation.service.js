@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { Conversation, Message, Customer } from '../models/index.js';
+import { Conversation, Message, Customer, Order } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -244,4 +244,104 @@ export const updateConversationTagsService = async (conversationId, { action = '
   }
 
   return conversation;
+};
+
+/**
+ * Tự động phân tích và gán thẻ dựa trên dữ liệu (Phone, Order, Product, Customer History)
+ */
+export const autoTagConversationService = async (conversationId, {
+  hasPhone,
+  phone,
+  orderCreated,
+  productName,
+  customerId
+} = {}) => {
+  try {
+    const conversation = await Conversation.findById(conversationId)
+      .populate('customer_id')
+      .populate('channel_id');
+    if (!conversation) return null;
+
+    let currentTags = Array.isArray(conversation.tags) ? [...conversation.tags] : [];
+    let changed = false;
+
+    // 1. Tự động gán nhãn "Có SĐT" khi phát hiện SĐT hợp lệ
+    const detectedPhone = phone || conversation.customer_id?.phone || conversation.order_draft?.phone;
+    if (hasPhone || (detectedPhone && String(detectedPhone).trim().length >= 10)) {
+      if (!currentTags.includes('Có SĐT')) {
+        currentTags.push('Có SĐT');
+        changed = true;
+      }
+    }
+
+    // 2. Tự động gán nhãn "Đã đặt hàng" khi đơn hàng được tạo
+    if (orderCreated || conversation.order_draft?.status === 'ORDER_CREATED') {
+      if (!currentTags.includes('Đã đặt hàng')) {
+        currentTags.push('Đã đặt hàng');
+        changed = true;
+      }
+    }
+
+    // 3. Tự động gán nhãn Tên sản phẩm khách quan tâm / đặt
+    const targetProduct = productName || conversation.order_draft?.product_name;
+    if (targetProduct && typeof targetProduct === 'string' && targetProduct.trim()) {
+      const cleanProdTag = targetProduct.trim();
+      if (!currentTags.includes(cleanProdTag)) {
+        currentTags.push(cleanProdTag);
+        changed = true;
+      }
+    }
+
+    // 4. Tự động phân loại "Khách mới" / "Mua lại" dựa trên lịch sử đơn hàng
+    const cId = customerId || conversation.customer_id?._id;
+    if (cId) {
+      const pastOrdersCount = await Order.countDocuments({
+        customer_id: cId,
+        status: { $in: ['COMPLETED', 'DELIVERED', 'CONFIRMED', 'PENDING'] }
+      });
+
+      if (pastOrdersCount > 1 || (pastOrdersCount >= 1 && !orderCreated)) {
+        if (!currentTags.includes('Mua lại')) {
+          currentTags.push('Mua lại');
+          currentTags = currentTags.filter((t) => t !== 'Khách mới');
+          changed = true;
+        }
+      } else if (pastOrdersCount === 0) {
+        if (!currentTags.includes('Khách mới')) {
+          currentTags.push('Khách mới');
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      conversation.tags = currentTags;
+      await conversation.save();
+
+      if (conversation.customer_id) {
+        await Customer.findByIdAndUpdate(conversation.customer_id._id, {
+          $set: { tags: currentTags, customer_tags: currentTags }
+        });
+      }
+
+      // Phát Real-time qua Socket.IO
+      try {
+        const io = getIO();
+        if (conversation.business_id) {
+          io.to(conversation.business_id.toString()).emit('conversation_updated', conversation);
+        }
+        io.emit('conversation_tags_updated', {
+          conversation_id: conversation._id,
+          tags: currentTags
+        });
+      } catch (socketErr) {
+        // Socket warn ignored
+      }
+    }
+
+    return conversation;
+  } catch (err) {
+    console.warn('[AutoTag Error]', err.message);
+    return null;
+  }
 };

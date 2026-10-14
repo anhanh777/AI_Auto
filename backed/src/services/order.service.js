@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Order, OrderDetail, Product, Customer, Inventory } from '../models/index.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 import { getIO } from '../config/socket.config.js';
+import { autoTagConversationService } from './conversation.service.js';
 
 /**
  * 1. Lấy danh sách Đơn hàng (Hỗ trợ lọc theo trạng thái, kênh bán, tìm kiếm, ngày tháng)
@@ -387,6 +388,16 @@ export const createOrderService = async (data, userId) => {
     io.emit('order_created', populated);
   } catch (sockErr) {
     console.warn('[Socket Order Warn]', sockErr.message);
+  }
+
+  // Tự động gán nhãn "Đã đặt hàng" cho cuộc trò chuyện nếu tạo đơn từ chat
+  if (data.conversation_id) {
+    autoTagConversationService(data.conversation_id, {
+      orderCreated: true,
+      customerId: customer?._id,
+      hasPhone: Boolean(shippingPhone),
+      phone: shippingPhone
+    }).catch(() => {});
   }
 
   return order;

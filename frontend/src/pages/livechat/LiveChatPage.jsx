@@ -52,17 +52,13 @@ import {
   Filter
 } from 'lucide-react';
 
-// Danh sách Thẻ Mặc định phong cách Pancake / Fchat
+// Danh sách Thẻ Hệ Thống Căn Bản (Khởi tạo mặc định)
 const DEFAULT_BUSINESS_TAGS = [
-  { name: 'Đã đặt hàng', icon: '📞', color: '#C026D3', bg_color: '#FDF4FF', text_color: '#A21CAF', border_color: '#E879F9' },
-  { name: 'Đã Cop Đơn', icon: '👁️', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
-  { name: "Sp L'venta", icon: '🌡️', color: '#DC2626', bg_color: '#FEF2F2', text_color: '#B91C1C', border_color: '#F87171' },
-  { name: 'Sp Sline6D', icon: '🧍', color: '#EA580C', bg_color: '#FFF7ED', text_color: '#C2410C', border_color: '#FB923C' },
-  { name: 'Check lại', icon: '', color: '#DB2777', bg_color: '#FDF2F8', text_color: '#BE185D', border_color: '#F472B6' },
-  { name: 'MuaLại', icon: '🎁', color: '#6B21A8', bg_color: '#FAF5FF', text_color: '#581C87', border_color: '#A855F7' },
-  { name: 'SĐT', icon: '📄', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
-  { name: 'ReMKT', icon: '👌', color: '#6366F1', bg_color: '#EEF2FF', text_color: '#4338CA', border_color: '#A5B4FC' },
-  { name: 'Khách mới', icon: '✨', color: '#64748B', bg_color: '#F8FAFC', text_color: '#334155', border_color: '#CBD5E1' }
+  { name: 'Có SĐT', icon: '📞', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
+  { name: 'Đã đặt hàng', icon: '🛒', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
+  { name: 'Khách mới', icon: '✨', color: '#2563EB', bg_color: '#EFF6FF', text_color: '#1D4ED8', border_color: '#93C5FD' },
+  { name: 'Mua lại', icon: '🎁', color: '#7C3AED', bg_color: '#F5F3FF', text_color: '#6D28D9', border_color: '#C4B5FD' },
+  { name: 'Check lại', icon: '⚠️', color: '#D97706', bg_color: '#FFFBEB', text_color: '#B45309', border_color: '#FCD34D' }
 ];
 
 const TAG_COLOR_PALETTE = [
@@ -1544,51 +1540,6 @@ const LiveChatPage = () => {
                 </div>
               </div>
 
-              {/* =========================================================================
-                  PANCAKE-STYLE TAG BAR (THANH THẺ NHÃN NHANH DÀNH CHO CONVERSATION HIỆN TẠI)
-                  ========================================================================= */}
-              <div className="px-4 py-2 bg-white dark:bg-slate-900 border-b border-slate-200/90 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 z-10 shadow-2xs">
-                {/* Danh sách thẻ cuộn ngang */}
-                <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
-                  {availableTags.map((tag) => {
-                    const isApplied = (selectedConv.tags || []).includes(tag.name);
-                    return (
-                      <button
-                        key={tag.name}
-                        type="button"
-                        onClick={() => handleToggleTag(tag.name)}
-                        style={{
-                          backgroundColor: isApplied ? tag.color : (tag.bg_color || '#F8FAFC'),
-                          borderColor: tag.color,
-                          color: isApplied ? '#FFFFFF' : (tag.text_color || tag.color)
-                        }}
-                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition cursor-pointer shrink-0 select-none shadow-2xs hover:opacity-90 active:scale-95 ${
-                          isApplied
-                            ? 'ring-2 ring-offset-1 ring-slate-400/30 font-bold'
-                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                        title={`Click để ${isApplied ? 'gỡ' : 'gắn'} nhãn "${tag.name}"`}
-                      >
-                        {tag.icon && <span>{tag.icon}</span>}
-                        <span>{tag.name}</span>
-                        {isApplied && <Check size={12} className="ml-0.5 stroke-[3]" />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Nút + Thêm thẻ mới */}
-                <button
-                  type="button"
-                  onClick={() => setShowNewTagModal(true)}
-                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-bold text-[#1877F2] bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 transition cursor-pointer shadow-2xs"
-                  title="Tạo thêm thẻ nhãn mới cho cửa hàng"
-                >
-                  <Plus size={13} className="stroke-[2.5]" />
-                  <span className="whitespace-nowrap">Thêm thẻ mới</span>
-                </button>
-              </div>
-
               {/* Khung Tin Nhắn (Messages Stream) */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#f8fafc] dark:bg-[#0b1120] no-scrollbar flex flex-col">
                 {loadingMessages ? (
@@ -1717,6 +1668,51 @@ const LiveChatPage = () => {
                   })
                 )}
                 <div ref={messagesEndRef} />
+              </div>
+
+              {/* =========================================================================
+                  PANCAKE-STYLE TAG BAR (THANH THẺ NHÃN NẰM Ở DƯỚI - NGAY TRÊN KHUNG NHẬP TIN NHẮN)
+                  ========================================================================= */}
+              <div className="px-3.5 py-1.5 bg-[#f8fafc] dark:bg-slate-900/90 border-t border-slate-200/90 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 z-10 shadow-2xs">
+                {/* Danh sách thẻ cuộn ngang */}
+                <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
+                  {availableTags.map((tag) => {
+                    const isApplied = (selectedConv.tags || []).includes(tag.name);
+                    return (
+                      <button
+                        key={tag.name}
+                        type="button"
+                        onClick={() => handleToggleTag(tag.name)}
+                        style={{
+                          backgroundColor: isApplied ? tag.color : (tag.bg_color || '#FFFFFF'),
+                          borderColor: tag.border_color || tag.color,
+                          color: isApplied ? '#FFFFFF' : (tag.text_color || tag.color)
+                        }}
+                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition cursor-pointer shrink-0 select-none shadow-2xs hover:opacity-90 active:scale-95 ${
+                          isApplied
+                            ? 'ring-2 ring-offset-1 ring-slate-400/30 font-bold'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                        title={`Click để ${isApplied ? 'gỡ' : 'gắn'} nhãn "${tag.name}"`}
+                      >
+                        {tag.icon && <span>{tag.icon}</span>}
+                        <span>{tag.name}</span>
+                        {isApplied && <Check size={12} className="ml-0.5 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Nút + Thêm thẻ mới */}
+                <button
+                  type="button"
+                  onClick={() => setShowNewTagModal(true)}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-bold text-[#1877F2] bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 transition cursor-pointer shadow-2xs"
+                  title="Tạo thêm thẻ nhãn mới cho cửa hàng"
+                >
+                  <Plus size={13} className="stroke-[2.5]" />
+                  <span className="whitespace-nowrap">Thêm thẻ mới</span>
+                </button>
               </div>
 
               {/* Bottom Input Message Bar (NẰM GỌN TRONG CỘT CHAT, CO GIÃN LINH ĐỘNG THEO CỘT CHAT) */}

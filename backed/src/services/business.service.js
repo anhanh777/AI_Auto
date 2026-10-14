@@ -1,4 +1,4 @@
-import { Business, User, Channel, BusinessJoinRequest, Notification, Role } from '../models/index.js';
+import { Business, User, Channel, BusinessJoinRequest, Notification, Role, Product } from '../models/index.js';
 
 /**
  * Lấy danh sách doanh nghiệp (kèm channels_count thực tế)
@@ -439,30 +439,50 @@ export const deleteBusinessService = async (businessId) => {
 };
 
 /**
- * Danh sách Thẻ Mặc định phong cách Pancake / Fchat
+ * Danh sách Thẻ Mặc định căn bản cho hệ thống
  */
 export const DEFAULT_BUSINESS_TAGS = [
-  { name: 'Đã đặt hàng', icon: '📞', color: '#C026D3', bg_color: '#FDF4FF', text_color: '#A21CAF', border_color: '#E879F9' },
-  { name: 'Đã Cop Đơn', icon: '👁️', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
-  { name: "Sp L'venta", icon: '🌡️', color: '#DC2626', bg_color: '#FEF2F2', text_color: '#B91C1C', border_color: '#F87171' },
-  { name: 'Sp Sline6D', icon: '🧍', color: '#EA580C', bg_color: '#FFF7ED', text_color: '#C2410C', border_color: '#FB923C' },
-  { name: 'Check lại', icon: '', color: '#DB2777', bg_color: '#FDF2F8', text_color: '#BE185D', border_color: '#F472B6' },
-  { name: 'MuaLại', icon: '🎁', color: '#6B21A8', bg_color: '#FAF5FF', text_color: '#581C87', border_color: '#A855F7' },
-  { name: 'SĐT', icon: '📄', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
-  { name: 'ReMKT', icon: '👌', color: '#6366F1', bg_color: '#EEF2FF', text_color: '#4338CA', border_color: '#A5B4FC' },
-  { name: 'Khách mới', icon: '✨', color: '#64748B', bg_color: '#F8FAFC', text_color: '#334155', border_color: '#CBD5E1' }
+  { name: 'Có SĐT', icon: '📞', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
+  { name: 'Đã đặt hàng', icon: '🛒', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
+  { name: 'Khách mới', icon: '✨', color: '#2563EB', bg_color: '#EFF6FF', text_color: '#1D4ED8', border_color: '#93C5FD' },
+  { name: 'Mua lại', icon: '🎁', color: '#7C3AED', bg_color: '#F5F3FF', text_color: '#6D28D9', border_color: '#C4B5FD' },
+  { name: 'Check lại', icon: '⚠️', color: '#D97706', bg_color: '#FFFBEB', text_color: '#B45309', border_color: '#FCD34D' }
 ];
 
 /**
- * Lấy danh sách toàn bộ Thẻ nhãn của Business (Mặc định + Tùy chỉnh)
+ * Lấy danh sách toàn bộ Thẻ nhãn của Business (Thẻ hệ thống + Thẻ Sản phẩm trong kho + Thẻ Tùy chỉnh của shop)
  */
 export const getBusinessTagsService = async (businessId) => {
-  if (!businessId) return DEFAULT_BUSINESS_TAGS;
-  const business = await Business.findById(businessId).lean();
-  const custom = business?.custom_tags || [];
-
   const map = new Map();
   DEFAULT_BUSINESS_TAGS.forEach((t) => map.set(t.name.toLowerCase(), t));
+
+  if (!businessId) return Array.from(map.values());
+
+  const [business, products] = await Promise.all([
+    Business.findById(businessId).lean(),
+    Product.find({ business_id: businessId }).select('product_name sku').limit(25).lean()
+  ]);
+
+  // Thêm thẻ sản phẩm tự động từ kho hàng của chính cửa hàng này
+  if (Array.isArray(products)) {
+    products.forEach((p) => {
+      const pName = (p.product_name || p.sku || '').trim();
+      if (pName && !map.has(pName.toLowerCase())) {
+        map.set(pName.toLowerCase(), {
+          name: pName,
+          icon: '📦',
+          color: '#DC2626',
+          bg_color: '#FEF2F2',
+          text_color: '#B91C1C',
+          border_color: '#F87171',
+          is_product: true
+        });
+      }
+    });
+  }
+
+  // Thêm thẻ tùy chỉnh do chủ shop tự tạo
+  const custom = business?.custom_tags || [];
   custom.forEach((t) => map.set(t.name.toLowerCase(), t));
 
   return Array.from(map.values());

@@ -9,6 +9,7 @@ import {
   Channel
 } from '../models/index.js';
 import { createOrderService } from './order.service.js';
+import { autoTagConversationService } from './conversation.service.js';
 import { getIO } from '../config/socket.config.js';
 import { validateAndSanitizePhone, evaluateAddressQuality } from '../helpers/orderValidation.helper.js';
 import dotenv from 'dotenv';
@@ -726,11 +727,21 @@ export const processGeminiAIForMessage = async ({
 
       if (Object.keys(updateFields).length > 0) {
         await Customer.findByIdAndUpdate(customer_id, {
-          $set: updateFields,
-          $addToSet: { tags: 'Khách để lại SĐT' }
+          $set: updateFields
         });
       }
     }
+
+    // 5.1 Tự động gán nhãn thông minh dựa trên dữ liệu (Phone, Order, Product, Khách mới/Mua lại)
+    const phoneVal = conversation.order_draft?.phone || aiResult.order_data?.phone;
+    const prodVal = conversation.order_draft?.product_name || aiResult.order_data?.product_name;
+    autoTagConversationService(conversation._id, {
+      hasPhone: Boolean(phoneVal && String(phoneVal).length >= 10),
+      phone: phoneVal,
+      orderCreated: Boolean(createdOrder),
+      productName: prodVal,
+      customerId: customer_id
+    }).catch((tagErr) => console.warn('[AutoTag Gemini Warn]', tagErr.message));
 
     // 6. Phát Socket.IO cho màn hình LiveChat
     try {
