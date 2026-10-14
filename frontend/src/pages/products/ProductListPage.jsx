@@ -8,6 +8,7 @@ import { inventoryService } from '../../services/inventory.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import { generateSku, generateSlug } from '../../utils/slug.utils.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
+import MediaPickerModal from '../../components/modals/MediaPickerModal.jsx';
 import {
   Package,
   Plus,
@@ -17,6 +18,7 @@ import {
   Edit3,
   Trash2,
   Image as ImageIcon,
+  Images,
   Sparkles,
   Layers,
   ChevronLeft,
@@ -67,6 +69,7 @@ const ProductListPage = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
   const [editingCategory, setEditingCategory] = useState(null);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
 
   // Inventory & History state
   const [historyList, setHistoryList] = useState([]);
@@ -1990,12 +1993,23 @@ const ProductListPage = () => {
                   <div className="space-y-4">
                     {/* Danh sách ảnh sản phẩm */}
                     <div className="p-4 bg-slate-50/50 dark:bg-slate-800/40 rounded-2xl border border-slate-200/80 dark:border-slate-700">
-                      <h4 className="font-bold text-slate-900 dark:text-white flex items-center space-x-1 mb-0.5">
-                        <span className="text-[#f05a28] font-black">|</span>
-                        <span>Danh sách ảnh sản phẩm</span>
-                      </h4>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <h4 className="font-bold text-slate-900 dark:text-white flex items-center space-x-1">
+                          <span className="text-[#f05a28] font-black">|</span>
+                          <span>Danh sách ảnh sản phẩm</span>
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => setShowMediaPicker(true)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 rounded-xl border border-blue-200 dark:border-blue-800 transition cursor-pointer"
+                          title="Chọn ảnh từ Thư viện Media tập trung của Doanh nghiệp"
+                        >
+                          <Images size={13} />
+                          <span>Chọn từ Kho Media</span>
+                        </button>
+                      </div>
                       <p className="text-[11px] text-slate-400 mb-3">
-                        Tải lên nhiều hình ảnh chất lượng cao để khách hàng thấy được nhiều khía cạnh của sản phẩm.
+                        Tải lên nhiều hình ảnh chất lượng cao hoặc chọn từ Kho Media của Shop.
                       </p>
 
                       <div className="grid grid-cols-4 gap-2.5">
@@ -2584,6 +2598,25 @@ const ProductListPage = () => {
         cancelText={confirmDialog.cancelText}
         type={confirmDialog.type}
         loading={confirmDialog.loading}
+      />
+
+      {/* ================= KHO MEDIA PICKER MODAL ================= */}
+      <MediaPickerModal
+        isOpen={showMediaPicker}
+        onClose={() => setShowMediaPicker(false)}
+        initialFolder="products"
+        multiple={true}
+        onSelect={(urls) => {
+          setProductForm((prev) => {
+            const current = prev.image_urls || [];
+            const updated = [...current, ...urls.filter((u) => !current.includes(u))];
+            return {
+              ...prev,
+              image_urls: updated
+            };
+          });
+          showToast('success', `Đã thêm ${urls.length} ảnh từ Kho Media vào sản phẩm`);
+        }}
       />
     </div>
   );

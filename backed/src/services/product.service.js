@@ -1,6 +1,34 @@
-import { Product, Category, Inventory } from '../models/index.js';
+import { Product, Category, Inventory, MediaAsset } from '../models/index.js';
 import { createSlug } from '../helpers/slug.helper.js';
 import { getPagination } from '../helpers/pagination.helper.js';
+
+/**
+ * Tự động đồng bộ ảnh sản phẩm vào Kho Media Doanh nghiệp
+ */
+const autoRegisterProductMedia = async (business_id, productName, sku, imageUrls = [], userId = null) => {
+  if (!business_id || !Array.isArray(imageUrls) || imageUrls.length === 0) return;
+  for (const url of imageUrls) {
+    if (!url || typeof url !== 'string') continue;
+    try {
+      const exists = await MediaAsset.findOne({ business_id, file_url: url });
+      if (!exists) {
+        await MediaAsset.create({
+          business_id,
+          uploaded_by: userId || null,
+          file_name: productName || 'Ảnh sản phẩm',
+          original_name: sku || productName || 'product',
+          file_url: url,
+          file_path: url.startsWith('/uploads/') ? url : '',
+          folder: 'products',
+          tags: [productName, sku].filter(Boolean),
+          caption: `Ảnh sản phẩm: ${productName} (${sku || 'N/A'})`
+        });
+      }
+    } catch (err) {
+      console.warn('[autoRegisterProductMedia] Error auto-indexing image:', err.message);
+    }
+  }
+};
 
 /**
  * Lấy danh sách sản phẩm có phân trang, tìm kiếm, lọc theo doanh nghiệp
@@ -223,6 +251,15 @@ export const createProductService = async (data, userId) => {
     console.error('Lỗi khi ghi lịch sử khởi tạo sản phẩm vào Inventory:', logErr);
   }
 
+  // Tự động nạp ảnh sản phẩm vào Kho Media Doanh nghiệp
+  autoRegisterProductMedia(
+    business_id,
+    newProduct.product_name,
+    newProduct.sku,
+    newProduct.image_urls,
+    userId
+  );
+
   const populatedProduct = await Product.findById(newProduct._id)
     .populate('category_ids', 'category_name slug image_url')
     .populate('created_by', 'full_name avatar username');
@@ -347,6 +384,15 @@ export const updateProductService = async (productId, data, userId) => {
   } catch (logErr) {
     console.error('Lỗi khi ghi lịch sử cập nhật sản phẩm vào Inventory:', logErr);
   }
+
+  // Tự động nạp các ảnh mới của sản phẩm vào Kho Media Doanh nghiệp
+  autoRegisterProductMedia(
+    product.business_id,
+    product.product_name,
+    product.sku,
+    product.image_urls,
+    userId
+  );
 
   const updatedProduct = await Product.findById(productId)
     .populate('category_ids', 'category_name slug image_url')
