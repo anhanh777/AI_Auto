@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { Conversation, Message, Customer, Order } from '../models/index.js';
+import { Conversation, Message, Customer, Order, OrderDetail } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,6 +19,83 @@ export const getConversationsService = async ({ business_id, channel_id, search,
     .populate('customer_id')
     .populate('channel_id')
     .sort({ last_message_at: -1 });
+
+  // Tự động kiểm tra và đồng bộ thẻ nhãn dựa trên dữ liệu thực tế (Phone, Order, Product)
+  if (conversations.length > 0) {
+    try {
+      const customerIds = conversations.map(c => c.customer_id?._id).filter(Boolean);
+      const convIds = conversations.map(c => c._id);
+
+      const orders = await Order.find({
+        $or: [
+          { customer_id: { $in: customerIds } },
+          { conversation_id: { $in: convIds } }
+        ]
+      }).lean();
+
+      let orderDetails = [];
+      if (orders.length > 0) {
+        orderDetails = await OrderDetail.find({ order_id: { $in: orders.map(o => o._id) } }).lean();
+      }
+
+      for (const conv of conversations) {
+        let currentTags = Array.isArray(conv.tags) ? [...conv.tags] : [];
+        let changed = false;
+
+        // 1. Kiểm tra SĐT
+        const phone = conv.customer_id?.phone || conv.order_draft?.phone;
+        if (phone && String(phone).replace(/\D/g, '').length >= 10) {
+          if (!currentTags.includes('Có SĐT')) {
+            currentTags.push('Có SĐT');
+            changed = true;
+          }
+        }
+
+        // 2. Kiểm tra Đơn hàng & Sản phẩm
+        const custOrders = orders.filter(o =>
+          (o.customer_id && String(o.customer_id) === String(conv.customer_id?._id)) ||
+          (o.conversation_id && String(o.conversation_id) === String(conv._id))
+        );
+
+        if (custOrders.length > 0 || conv.order_draft?.status === 'ORDER_CREATED') {
+          if (!currentTags.includes('Đã đặt hàng')) {
+            currentTags.push('Đã đặt hàng');
+            changed = true;
+          }
+
+          if (custOrders.length > 1) {
+            if (!currentTags.includes('Mua lại')) {
+              currentTags.push('Mua lại');
+              currentTags = currentTags.filter(t => t !== 'Khách mới');
+              changed = true;
+            }
+          }
+
+          const cOrderIds = custOrders.map(o => String(o._id));
+          const cDetails = orderDetails.filter(d => cOrderIds.includes(String(d.order_id)));
+          for (const d of cDetails) {
+            const pName = (d.product_name || '').trim();
+            if (pName && !currentTags.includes(pName)) {
+              currentTags.push(pName);
+              changed = true;
+            }
+          }
+        } else {
+          if (!currentTags.includes('Khách mới') && !currentTags.includes('Mua lại')) {
+            currentTags.push('Khách mới');
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          conv.tags = currentTags;
+          Conversation.updateOne({ _id: conv._id }, { $set: { tags: currentTags } }).catch(() => {});
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[Sync Conversation Tags Error]', syncErr.message);
+    }
+  }
 
   if (search) {
     const q = search.toLowerCase();
@@ -274,11 +351,31 @@ export const autoTagConversationService = async (conversationId, {
       }
     }
 
-    // 2. Tự động gán nhãn "Đã đặt hàng" khi đơn hàng được tạo
-    if (orderCreated || conversation.order_draft?.status === 'ORDER_CREATED') {
+    // 2. Tự động gán nhãn "Đã đặt hàng" & Tên sản phẩm từ Order
+    const existingOrders = await Order.find({
+      $or: [
+        { conversation_id: conversation._id },
+        { customer_id: conversation.customer_id?._id }
+      ]
+    }).sort({ created_at: -1 }).lean();
+
+    if (orderCreated || conversation.order_draft?.status === 'ORDER_CREATED' || existingOrders.length > 0) {
       if (!currentTags.includes('Đã đặt hàng')) {
         currentTags.push('Đã đặt hàng');
         changed = true;
+      }
+
+      // Trích xuất tên sản phẩm từ chi tiết đơn hàng
+      if (existingOrders.length > 0) {
+        const orderIds = existingOrders.map((o) => o._id);
+        const details = await OrderDetail.find({ order_id: { $in: orderIds } }).lean();
+        for (const d of details) {
+          const pName = (d.product_name || '').trim();
+          if (pName && !currentTags.includes(pName)) {
+            currentTags.push(pName);
+            changed = true;
+          }
+        }
       }
     }
 
@@ -330,6 +427,7 @@ export const autoTagConversationService = async (conversationId, {
         if (conversation.business_id) {
           io.to(conversation.business_id.toString()).emit('conversation_updated', conversation);
         }
+        io.emit('conversation_updated', conversation);
         io.emit('conversation_tags_updated', {
           conversation_id: conversation._id,
           tags: currentTags

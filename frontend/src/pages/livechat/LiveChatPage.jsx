@@ -490,6 +490,14 @@ const LiveChatPage = () => {
         }
         return [updatedConv, ...prev];
       });
+
+      setSelectedConv((prev) => {
+        const targetId = (updatedConv._id || updatedConv.id)?.toString();
+        if ((prev?._id || prev?.id)?.toString() === targetId) {
+          return { ...prev, ...updatedConv };
+        }
+        return prev;
+      });
     };
 
     const handleConversationTagsUpdated = (data) => {

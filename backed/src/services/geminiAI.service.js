@@ -659,6 +659,7 @@ export const processGeminiAIForMessage = async ({
             {
               business_id,
               channel_id: channel_id || null,
+              conversation_id: conversation._id,
               customer_id: customer_id || null,
               customer_name: finalCustomerName,
               shipping_customer_name: finalCustomerName,
@@ -733,21 +734,31 @@ export const processGeminiAIForMessage = async ({
     }
 
     // 5.1 Tự động gán nhãn thông minh dựa trên dữ liệu (Phone, Order, Product, Khách mới/Mua lại)
-    const phoneVal = conversation.order_draft?.phone || aiResult.order_data?.phone;
-    const prodVal = conversation.order_draft?.product_name || aiResult.order_data?.product_name;
-    autoTagConversationService(conversation._id, {
-      hasPhone: Boolean(phoneVal && String(phoneVal).length >= 10),
-      phone: phoneVal,
-      orderCreated: Boolean(createdOrder),
-      productName: prodVal,
-      customerId: customer_id
-    }).catch((tagErr) => console.warn('[AutoTag Gemini Warn]', tagErr.message));
+    let updatedConvWithTags = null;
+    try {
+      const phoneVal = conversation.order_draft?.phone || aiResult.order_data?.phone;
+      const prodVal = conversation.order_draft?.product_name || aiResult.order_data?.product_name;
+      updatedConvWithTags = await autoTagConversationService(conversation._id, {
+        hasPhone: Boolean(phoneVal && String(phoneVal).length >= 10),
+        phone: phoneVal,
+        orderCreated: Boolean(createdOrder),
+        productName: prodVal,
+        customerId: customer_id
+      });
+    } catch (tagErr) {
+      console.warn('[AutoTag Gemini Warn]', tagErr.message);
+    }
+
+    const convToEmit = updatedConvWithTags || conversation;
 
     // 6. Phát Socket.IO cho màn hình LiveChat
     try {
       const io = getIO();
       io.to(conversation._id.toString()).emit('new_message', aiMessage);
-      io.to(business_id.toString()).emit('conversation_updated', conversation);
+      if (business_id) {
+        io.to(business_id.toString()).emit('conversation_updated', convToEmit);
+      }
+      io.emit('conversation_updated', convToEmit);
     } catch (sockErr) {
       console.warn('[Gemini AI Socket Warn]', sockErr.message);
     }
