@@ -46,6 +46,65 @@ export const renderDynamicVariables = (templateText = '', context = {}) => {
 };
 
 /**
+ * Gửi hình ảnh qua Facebook Messenger (Hỗ trợ URL công khai trên mạng và file upload cục bộ trên server)
+ */
+export const sendFacebookImage = async (imgUrl, senderPsid, pageToken) => {
+  if (!imgUrl || !senderPsid || !pageToken) return;
+  try {
+    const isPublicHttpUrl = (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) &&
+      !imgUrl.includes('localhost') &&
+      !imgUrl.includes('127.0.0.1');
+
+    if (isPublicHttpUrl) {
+      // Link ảnh công khai trên Internet
+      await axios.post(
+        `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+        {
+          recipient: { id: senderPsid },
+          message: {
+            attachment: {
+              type: 'image',
+              payload: { url: imgUrl, is_reusable: true }
+            }
+          }
+        },
+        { timeout: 10000 }
+      );
+      console.log(`[Facebook Send API] Đã gửi hình ảnh URL đến PSID ${senderPsid}`);
+    } else {
+      // File cục bộ trên máy tính/server trong /uploads/
+      const uploadsIndex = imgUrl.indexOf('/uploads/');
+      const relPath = uploadsIndex !== -1 ? imgUrl.substring(uploadsIndex + '/uploads/'.length) : imgUrl;
+      const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
+
+      if (fs.existsSync(localFilePath)) {
+        const fileBuf = fs.readFileSync(localFilePath);
+        const ext = path.extname(localFilePath).toLowerCase();
+        let mimeType = 'image/jpeg';
+        if (ext === '.png') mimeType = 'image/png';
+        else if (ext === '.webp') mimeType = 'image/webp';
+        else if (ext === '.gif') mimeType = 'image/gif';
+
+        const form = new FormData();
+        form.append('recipient', JSON.stringify({ id: senderPsid }));
+        form.append('message', JSON.stringify({ attachment: { type: 'image', payload: {} } }));
+        form.append('filedata', new Blob([fileBuf], { type: mimeType }), path.basename(localFilePath));
+
+        await fetch(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+          { method: 'POST', body: form }
+        );
+        console.log(`[Facebook Send API] Đã gửi file ảnh local đến PSID ${senderPsid}`);
+      } else {
+        console.warn(`[Facebook Send API] File ảnh không tồn tại: ${localFilePath}`);
+      }
+    }
+  } catch (imgErr) {
+    console.warn('[Facebook Send Image Warn]', imgErr.message);
+  }
+};
+
+/**
  * Xử lý tự động phản hồi tin nhắn của khách hàng dựa trên Kịch bản của Chủ shop
  */
 export const processBotEngineForMessage = async ({
@@ -172,52 +231,7 @@ export const processBotEngineForMessage = async ({
 
           // 2. Gửi danh sách hình ảnh đính kèm (hỗ trợ nhiều ảnh/album)
           for (const imgUrl of allImages) {
-            try {
-              if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
-                // Link ảnh công khai trên Internet
-                await axios.post(
-                  `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-                  {
-                    recipient: { id: senderPsid },
-                    message: {
-                      attachment: {
-                        type: 'image',
-                        payload: { url: imgUrl, is_reusable: true }
-                      }
-                    }
-                  },
-                  { timeout: 10000 }
-                );
-                console.log(`[Facebook Send API] Bot đã gửi hình ảnh kịch bản URL đến PSID ${senderPsid}`);
-              } else {
-                // File cục bộ trên máy tính/server trong /uploads/
-                const uploadsIndex = imgUrl.indexOf('/uploads/');
-                const relPath = uploadsIndex !== -1 ? imgUrl.substring(uploadsIndex + '/uploads/'.length) : imgUrl;
-                const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
-
-                if (fs.existsSync(localFilePath)) {
-                  const fileBuf = fs.readFileSync(localFilePath);
-                  const ext = path.extname(localFilePath).toLowerCase();
-                  let mimeType = 'image/jpeg';
-                  if (ext === '.png') mimeType = 'image/png';
-                  else if (ext === '.webp') mimeType = 'image/webp';
-                  else if (ext === '.gif') mimeType = 'image/gif';
-
-                  const form = new FormData();
-                  form.append('recipient', JSON.stringify({ id: senderPsid }));
-                  form.append('message', JSON.stringify({ attachment: { type: 'image', payload: {} } }));
-                  form.append('filedata', new Blob([fileBuf], { type: mimeType }), path.basename(localFilePath));
-
-                  await fetch(
-                    `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-                    { method: 'POST', body: form }
-                  );
-                  console.log(`[Facebook Send API] Bot đã gửi file ảnh local đến PSID ${senderPsid}`);
-                }
-              }
-            } catch (imgErr) {
-              console.warn('[Facebook Send Bot Image Warn]', imgErr.message);
-            }
+            await sendFacebookImage(imgUrl, senderPsid, pageToken);
           }
         }
       }
@@ -241,20 +255,30 @@ export const processBotEngineForMessage = async ({
       messageText
     });
 
-    if (aiResult.handled && pageToken && senderPsid && aiResult.reply) {
-      // Gửi câu trả lời của AI đến Facebook Messenger của khách qua Meta Graph Send API
-      try {
-        await axios.post(
-          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-          {
-            recipient: { id: senderPsid },
-            message: { text: aiResult.reply }
-          },
-          { timeout: 8000 }
-        );
-        console.log(`[Facebook Send API] AI Gemini đã gửi tin nhắn tư vấn thành công đến PSID ${senderPsid}`);
-      } catch (fbErr) {
-        console.warn('[Facebook Send AI Warn]', fbErr.response?.data?.error?.message || fbErr.message);
+    if (aiResult.handled && pageToken && senderPsid) {
+      if (aiResult.reply) {
+        // Gửi câu trả lời của AI đến Facebook Messenger của khách qua Meta Graph Send API
+        try {
+          await axios.post(
+            `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+            {
+              recipient: { id: senderPsid },
+              message: { text: aiResult.reply }
+            },
+            { timeout: 8000 }
+          );
+          console.log(`[Facebook Send API] AI Gemini đã gửi tin nhắn tư vấn thành công đến PSID ${senderPsid}`);
+        } catch (fbErr) {
+          console.warn('[Facebook Send AI Warn]', fbErr.response?.data?.error?.message || fbErr.message);
+        }
+      }
+
+      // Gửi kèm hình ảnh sản phẩm nếu AI có trả về (tối đa 3 ảnh để tránh rate limit)
+      if (Array.isArray(aiResult.image_urls) && aiResult.image_urls.length > 0) {
+        const imagesToSend = aiResult.image_urls.slice(0, 3);
+        for (const imgUrl of imagesToSend) {
+          await sendFacebookImage(imgUrl, senderPsid, pageToken);
+        }
       }
     }
 

@@ -147,10 +147,22 @@ export const evaluateAddressQuality = (rawAddress = '') => {
     };
   }
 
+  // Trường hợp có từ khóa gợi ý địa chỉ (vd: "địa chỉ là...", "ship về...", "giao đến...")
+  const hasAddressLead = /(?:địa chỉ|giao về|ship về|gửi về|đến địa chỉ|ở tại|ở số|nhà ở|chỗ ở)/i.test(rawAddress);
+  if (hasAddressLead) {
+    return {
+      quality: 'INCOMPLETE',
+      cleanAddress: text,
+      customerNote,
+      feedbackMessage: 'Dạ bạn cho shop xin địa chỉ nhận hàng cụ thể (gồm Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/TP) để bên em gửi hàng cho mình nha!'
+    };
+  }
+
+  // Nếu câu nói thông thường hoàn toàn KHÔNG có dấu hiệu địa chỉ nào -> cleanAddress phải là rỗng ''
   return {
-    quality: 'INCOMPLETE',
-    cleanAddress: text,
-    customerNote,
-    feedbackMessage: 'Dạ bạn cho shop xin địa chỉ nhận hàng cụ thể (gồm Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/TP) để bên em gửi hàng cho mình nha!'
+    quality: 'NONE',
+    cleanAddress: '',
+    customerNote: '',
+    feedbackMessage: ''
   };
 };

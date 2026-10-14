@@ -122,7 +122,8 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
     const variantsStr = Array.isArray(p.variants_json) && p.variants_json.length > 0
       ? p.variants_json.map((v) => `${v.size || ''}/${v.color || ''} (còn ${v.stock || 0})`).join(', ')
       : 'Không có biến thể';
-    return `- [SKU: ${p.sku}] ${p.product_name} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''}`;
+    const imgUrls = Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls.join(', ') : 'Chưa có ảnh';
+    return `- [SKU: ${p.sku}] ${p.product_name} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''} | Ảnh sản phẩm: ${imgUrls}`;
   }).join('\n');
 
   const knowledgeContextText = knowledgeList.map((k) => {
@@ -224,31 +225,43 @@ ${knowledgeContextText}
 === LỊCH SỬ HỘI THOẠI GẦN ĐÂY ===
 ${chatHistoryText}
 
-=== NHIỆM VỤ CỦA BẠN (QUY TRÌNH THU THẬP THÔNG TIN ĐƠN HÀNG - SLOT FILLING) ===
-1. Tư vấn chi tiết, chính xác size, màu sắc, ưu đãi dựa trên dữ liệu sản phẩm ở trên. KHÔNG bịa đặt sản phẩm không có trong danh sách.
-2. NGUYÊN TẮC THU THẬP THÔNG TIN TỪNG BƯỚC (Multi-turn Slot Filling):
-   - Bước 1 (Biến thể): Nếu khách muốn mua sản phẩm nhưng chưa chọn Size hoặc Màu (và sản phẩm có biến thể trong kho): Hãy hỏi khách size/màu và tư vấn chiều cao cân nặng. Đặt "missing_fields": ["variant"]. TUYỆT ĐỐI KHÔNG tạo đơn khi chưa có size/màu rõ ràng.
-   - Bước 2 (SĐT): Nếu đã có sản phẩm + size/màu nhưng chưa có Số điện thoại: Khéo léo xác nhận mẫu và xin số điện thoại di động nhận hàng. Đặt "missing_fields": ["phone"].
-   - Bước 3 (Địa chỉ): Nếu đã có SĐT nhưng chưa có Địa chỉ cụ thể (hoặc địa chỉ quá chung chung như 'Hà Nội', 'ở Cầu Giấy'): Ghi nhận SĐT và xin nốt địa chỉ cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP). Đặt "missing_fields": ["shipping_address"].
-   - Bước 4 (Chốt đơn): Khi ĐÃ CÓ ĐỦ TẤT CẢ (Sản phẩm, biến thể, SĐT 10 số hợp lệ, Địa chỉ cụ thể): Đặt "is_order_intent": true, "missing_fields": [], và viết câu tóm tắt đơn hàng hoàn chỉnh cho khách.
-3. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
+=== NGUYÊN TẮC GIAO TIẾP VÀ TƯ VẤN (TUYỆT ĐỐI TUÂN THỦ) ===
+1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH:
+   - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào":
+     + Niềm nở giới thiệu đặc điểm nổi bật, chất liệu, phom dáng và mức giá ưu đãi.
+     + Trích xuất link ảnh sản phẩm từ thông tin kho ở trên vào trường "image_urls" để gửi ảnh cho khách ngắm.
+     + Hỏi khéo màu sắc khách thích hoặc chiều cao + cân nặng để tư vấn size.
+     + TUYỆT ĐỐI KHÔNG tự tiện chọn size (như tự ý gán Size M), KHÔNG nói "đã giữ hàng", KHÔNG đòi số điện thoại khi khách chỉ muốn xem mẫu!
+2. GIAI ĐOẠN 2 - TƯ VẤN SIZE & MÀU THEO CHIỀU CAO CÂN NẶNG:
+   - Khi khách gửi chiều cao cân nặng (vd: 1m70 65kg, cao 1m65 55kg...):
+     + Dựa trên các size sẵn có trong kho (M, L, XL...) để khuyên khách chọn size vừa vặn, tôn dáng nhất.
+     + Giới thiệu các màu có sẵn và hỏi khách thích màu nào để shop chuẩn bị.
+3. GIAI ĐOẠN 3 - CHỐT MUA RÕ RÀNG (BUYING INTENT):
+   - CHỈ KHI khách nói rõ muốn mua (vd: "lấy mình 1 cái...", "đặt 1 cái size L màu đen", "ship cho mình"):
+     + Nếu đã rõ Size và Màu: Xác nhận giữ hàng và xin Số điện thoại nhận hàng.
+     + Nếu chưa rõ Size hoặc Màu: Hỏi nốt size/màu còn thiếu trước khi xin SĐT.
+4. GIAI ĐOẠN 4 - THU THẬP SĐT & ĐỊA CHỈ (CHECKOUT):
+   - Khi khách cho SĐT -> Xác nhận lưu SĐT và xin Địa chỉ nhận hàng cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP).
+   - Khi khách cho Địa chỉ cụ thể -> Đủ thông tin thì đặt "is_order_intent": true và viết lời cảm ơn, tóm tắt đơn hàng rõ ràng.
+5. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
    - Nếu khách yêu cầu gặp người thật, khiếu nại gay gắt hoặc tức giận, đặt "handover_to_staff": true.
 
-=== ĐỊNH DẠNG ĐẦU RA BẮT BUỘC ===
+=== ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (JSON ONLY) ===
 Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdown code block) theo schema sau:
 {
   "reply": "Nội dung tin nhắn bạn sẽ gửi lại cho khách hàng bằng tiếng Việt",
+  "image_urls": ["Danh sách URL ảnh sản phẩm nếu khách hỏi xem mẫu/ảnh"],
   "is_order_intent": true | false,
   "order_data": null hoặc {
-    "customer_name": "Tên khách hàng (ưu tiên tên khách tự xưng, nếu không thì dùng '${fallbackCustomerName}')",
-    "phone": "Số điện thoại 10 số sạch nếu khách đã cung cấp",
-    "shipping_address": "Địa chỉ giao hàng sạch sẽ nếu khách đã cung cấp",
+    "customer_name": "Tên khách hàng",
+    "phone": "Số điện thoại nếu khách đã cung cấp",
+    "shipping_address": "Địa chỉ giao hàng nếu khách đã cung cấp",
     "items": [
       {
         "sku": "Mã SKU của sản phẩm",
         "product_name": "Tên sản phẩm",
-        "size": "Size nếu có",
-        "color": "Màu nếu có",
+        "size": "Size nếu khách đã chọn",
+        "color": "Màu nếu khách đã chọn",
         "quantity": 1
       }
     ],
@@ -276,6 +289,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
     const parsed = JSON.parse(responseText.trim());
     return {
       reply: parsed.reply || 'Dạ shop xin chào bạn! Shop có thể hỗ trợ gì cho bạn hôm nay ạ?',
+      image_urls: Array.isArray(parsed.image_urls) ? parsed.image_urls : [],
       is_order_intent: Boolean(parsed.is_order_intent),
       order_data: parsed.order_data || null,
       missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
@@ -299,7 +313,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
  * 3. Bộ mô phỏng AI thông minh Đa bước (Multi-turn Slot-Filling Fallback Engine)
  * Xử lý tuần tự: Hỏi biến thể -> Xin SĐT -> Xin Địa chỉ -> Hoàn tất đơn hàng
  */
-const generateSmartFallbackResponse = ({
+export const generateSmartFallbackResponse = ({
   messageText,
   aiConfig,
   rawProducts,
@@ -321,7 +335,7 @@ const generateSmartFallbackResponse = ({
     phoneValidation
   } = extractNameAndCleanAddress(text, defaultCustomerName);
 
-  // 1. Khớp sản phẩm gần nhất trong tin nhắn hoặc kế thừa từ existingDraft
+  // 1. Khớp sản phẩm được nhắc đến trong tin nhắn
   let matchedProduct = null;
   for (const p of rawProducts) {
     const pName = (p.product_name || '').toLowerCase();
@@ -332,16 +346,37 @@ const generateSmartFallbackResponse = ({
     }
   }
 
+  // Khớp từng phần cụm từ khóa (vd: "áo khoác gió", "áo sơ mi", "lego", "kem massage")
+  if (!matchedProduct) {
+    const cleanTokens = lower.replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter((w) => w.length >= 2);
+    let bestScore = 0;
+    for (const p of rawProducts) {
+      const pTokens = (p.product_name || '').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter((w) => w.length >= 2);
+      let matchCount = 0;
+      for (const t of cleanTokens) {
+        if (pTokens.includes(t)) matchCount++;
+      }
+      if (matchCount >= 2 && matchCount > bestScore) {
+        bestScore = matchCount;
+        matchedProduct = p;
+      }
+    }
+  }
+
+  // Nếu không nhắc tên sản phẩm mới, kiểm tra xem có đang kế thừa từ giỏ hàng nháp không
   if (!matchedProduct && existingDraft?.product_id) {
     matchedProduct = rawProducts.find((p) => p._id.toString() === existingDraft.product_id.toString()) || null;
   }
   if (!matchedProduct && (phone || cleanAddress) && existingDraft?.product_name) {
     matchedProduct = rawProducts.find((p) => p.product_name === existingDraft.product_name) || null;
   }
+  if (!matchedProduct && rawProducts.length > 0) {
+    matchedProduct = rawProducts[0];
+  }
 
-  // 2. Khớp biến thể (size, màu) nếu có
-  let selectedSize = existingDraft?.size || '';
-  let selectedColor = existingDraft?.color || '';
+  // 2. Phân loại biến thể (Size & Màu sắc) trong tin nhắn hiện tại
+  let selectedSize = '';
+  let selectedColor = '';
 
   const sizeMatch = text.match(/\b(?:size|cỡ|sz)\s*([a-zA-Z0-9]+)\b/i) || text.match(/\b(XXL|2XL|XL|L|M|XS)\b/i) || text.match(/\b(?:size|cỡ)?\s*([sS])\b/);
   if (sizeMatch && sizeMatch[1]) {
@@ -356,8 +391,7 @@ const generateSmartFallbackResponse = ({
     }
   }
 
-  // 3. Khớp số lượng: chỉ bắt khi có từ định lượng (cái, hộp, áo...) hoặc từ khóa (lấy 2, mua 1, sl: 3)
-  // Tuyệt đối không nhầm lẫn với số nhà (vd: "Số 25 Cầu Giấy")
+  // 3. Khớp số lượng
   let quantity = existingDraft?.quantity || 1;
   const qtyWithUnit = text.match(/\b(\d+)\s*(?:cái|chiếc|hộp|hũ|bộ|áo|quần|đôi|sp|tuýp)\b/i);
   const qtyWithAction = text.match(/(?:lấy|mua|đặt|ship|sl:?|số lượng:?)\s*(\d+)\b/i);
@@ -368,159 +402,256 @@ const generateSmartFallbackResponse = ({
     }
   }
 
-  // Gom các slot hiện tại
-  const currentPhone = phone || existingDraft?.phone || '';
-  const currentAddress = cleanAddress || existingDraft?.shipping_address || '';
-  const currentProduct = matchedProduct || (rawProducts.length > 0 ? rawProducts[0] : null);
+  // 4. Nhận diện các Ý định (Intent Classification)
+  // A. Ý định xem sản phẩm / xem ảnh / tìm hiểu mẫu
+  const isViewingIntent = /(?:cho\s+(?:mình|em|anh|chị)?\s*xem|xem\s+sản\s+phẩm|xem\s+ảnh|cho\s+xem\s+ảnh|ảnh\s+thật|hình\s+ảnh|xem\s+mẫu|xem\s+hàng|chi\s+tiết|sản\s+phẩm\s+này|có\s+mẫu\s+nào|gửi\s+ảnh|gửi\s+hình|gửi\s+mẫu)/i.test(text) ||
+    ((lower.startsWith('xem ') || lower.includes(' xem ')) && !lower.includes('mua') && !lower.includes('đặt') && !lower.includes('lấy'));
 
-  // A. Trường hợp khách gõ SĐT nhưng SĐT lỗi (ví dụ thiếu số hoặc sai đầu số viễn thông)
-  if (phoneValidation && !phoneValidation.isValid && phoneValidation.phone && phoneValidation.errorReason !== 'NOT_FOUND') {
-    return {
-      reply: `Dạ số điện thoại "${phoneValidation.phone}" hình như chưa đủ 10 chữ số hoặc chưa đúng định dạng mạng di động ạ. Bạn kiểm tra lại và nhắn lại giúp shop nha!`,
-      is_order_intent: false,
-      order_data: null,
-      missing_fields: ['phone'],
-      handover_to_staff: false
-    };
-  }
+  // B. Ý định hỏi giá
+  const isPriceIntent = /(?:giá|bao\s+nhiêu|nhiêu\s+tiền|bao\s+tiền|giá\s+sao|bao\s+nhiêu\s+k|bn\s+tiền)/i.test(text) && !isViewingIntent;
 
-  // B. Trường hợp khách gõ địa chỉ nhưng địa chỉ quá chung chung (VAGUE_AREA)
-  if (addressQuality === 'VAGUE_AREA' && addressFeedback) {
-    return {
-      reply: addressFeedback,
-      is_order_intent: false,
-      order_data: null,
-      missing_fields: ['shipping_address'],
-      handover_to_staff: false
-    };
-  }
+  // C. Ý định tư vấn size theo chiều cao, cân nặng
+  const heightWeightMatch = text.match(/(?:cao\s*)?(\d{1,3}(?:m\d{1,2}|cm)?)\s*[,.\s-]+\s*(?:nặng\s*)?(\d{2,3})\s*(?:kg|kí|cân)?/i) ||
+    text.match(/(\d{2,3})\s*(?:kg|kí|cân)\s*[,.\s-]+\s*(?:cao\s*)?(\d{1,3}(?:m\d{1,2}|cm)?)/i);
+  const isConsultingIntent = Boolean(heightWeightMatch) || /(?:size\s+gì|cỡ\s+gì|mặc\s+vừa|vừa\s+không|chọn\s+size|tư\s+vấn\s+size|có\s+màu\s+gì)/i.test(text);
 
-  // C. Kiểm tra biến thể sản phẩm nếu sản phẩm có variants trong kho
+  // D. Ý định chốt mua hàng rõ ràng (chỉ bắt khi có từ hành động mua thực sự, có SĐT/Địa chỉ, hoặc đang trong quá trình đặt hàng slot-filling)
+  const hasBuyingKeywords = /(?:mua|đặt\s+hàng|lấy\s+(?:\d+|cái|chiếc|áo|quần|size|màu|1|2|3|mẫu)|chốt|ship\s+(?:cho|về|1|2)|order|lấy\s+nhé|lấy\s+nha|mua\s+nhé|cho\s+mình\s+(?:\d+|1|2)\s+cái)/i.test(text);
+  const isSlotFillingActive = Boolean(existingDraft?.size) || existingDraft?.status === 'COLLECTING';
+  const hasContactInfo = Boolean(phoneValidation?.phone) || Boolean(cleanAddress);
+  const isBuyingIntent = (hasBuyingKeywords || hasContactInfo || isSlotFillingActive) && !isViewingIntent && !isConsultingIntent && !isPriceIntent;
+
+  const currentProduct = matchedProduct;
   const hasVariants = currentProduct && Array.isArray(currentProduct.variants_json) && currentProduct.variants_json.length > 0;
   const availableSizes = hasVariants ? [...new Set(currentProduct.variants_json.map((v) => v.size).filter(Boolean))].join(', ') : '';
   const availableColors = hasVariants ? [...new Set(currentProduct.variants_json.map((v) => v.color).filter(Boolean))].join(', ') : '';
 
-  // Phát hiện ý định đặt mua hàng
-  const isBuyingIntent = lower.includes('mua') || lower.includes('lấy') || lower.includes('đặt') || lower.includes('ship') || phone || cleanAddress;
+  // --- TRƯỜNG HỢP 1: Khách chỉ muốn XEM MẪU / XEM ẢNH / KHÁM PHÁ SẢN PHẨM ---
+  if (isViewingIntent && currentProduct) {
+    const p = currentProduct;
+    const priceStr = (p.sale_price || p.base_price || 0).toLocaleString('vi-VN');
+    const desc = p.ai_selling_points || p.description || 'thiết kế hiện đại, chất liệu bền đẹp, đường may tỉ mỉ';
 
-  // BƯỚC 1: Nếu khách muốn mua mà chưa chọn Size/Màu
-  if (isBuyingIntent && hasVariants && !selectedSize && availableSizes) {
+    const reply = `Dạ em gửi anh/chị xem hình ảnh và thông tin mẫu "${p.product_name}" bên em ạ! ✨\n- Đặc điểm: ${desc}\n- Giá ưu đãi: ${priceStr} VND\n- Bảng màu: ${availableColors || 'Đen, Trắng'}\n- Size số: ${availableSizes || 'M, L'}\n\nAnh/chị ưng màu nào hoặc cho em xin chiều cao + cân nặng để em tư vấn size chuẩn đẹp nhất cho mình nha!`;
+
     return {
-      reply: `Dạ mẫu "${currentProduct.product_name}" bên em có các size: ${availableSizes}${availableColors ? ` và màu: ${availableColors}` : ''} ạ. Bạn thường mặc size nào hoặc cho shop xin chiều cao, cân nặng để em chọn size vừa vặn nhất cho mình nha!`,
+      reply,
+      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
       is_order_intent: false,
       order_data: {
-        product_id: currentProduct._id,
-        product_name: currentProduct.product_name,
-        sku: currentProduct.sku,
-        price: currentProduct.sale_price || currentProduct.base_price || 0,
-        quantity,
-        size: selectedSize,
-        color: selectedColor,
+        product_id: p._id,
+        product_name: p.product_name,
+        sku: p.sku,
+        price: p.sale_price || p.base_price || 0,
+        quantity: 1,
+        size: '', // Reset size, không tự ý gán Size M
+        color: '',
         customer_name: extractedName,
-        phone: currentPhone,
-        shipping_address: currentAddress
+        phone: '',
+        shipping_address: ''
       },
       missing_fields: ['variant'],
       handover_to_staff: false
     };
   }
 
-  // BƯỚC 2: Nếu đã có sản phẩm nhưng thiếu SĐT
-  if (isBuyingIntent && !currentPhone) {
-    const itemDesc = selectedSize ? `${currentProduct.product_name} (Size ${selectedSize}${selectedColor ? `, Màu ${selectedColor}` : ''})` : currentProduct.product_name;
-    return {
-      reply: `Dạ em đã giữ ${quantity} ${itemDesc} cho mình rồi ạ! Bạn cho shop xin Số điện thoại nhận hàng để bên em tiện liên hệ giao hàng nha!`,
-      is_order_intent: false,
-      order_data: {
-        product_id: currentProduct._id,
-        product_name: currentProduct.product_name,
-        sku: currentProduct.sku,
-        price: currentProduct.sale_price || currentProduct.base_price || 0,
-        quantity,
-        size: selectedSize,
-        color: selectedColor,
-        customer_name: extractedName,
-        phone: currentPhone,
-        shipping_address: currentAddress
-      },
-      missing_fields: ['phone'],
-      handover_to_staff: false
-    };
-  }
-
-  // BƯỚC 3: Nếu đã có SĐT nhưng thiếu Địa chỉ giao hàng cụ thể
-  if (isBuyingIntent && currentPhone && (!currentAddress || addressQuality === 'INCOMPLETE')) {
-    return {
-      reply: `Dạ em đã lưu số điện thoại ${currentPhone} của mình rồi ạ. Bạn cho shop xin thêm Địa chỉ nhận hàng cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP) để shop gửi hàng cho mình nhé!`,
-      is_order_intent: false,
-      order_data: {
-        product_id: currentProduct._id,
-        product_name: currentProduct.product_name,
-        sku: currentProduct.sku,
-        price: currentProduct.sale_price || currentProduct.base_price || 0,
-        quantity,
-        size: selectedSize,
-        color: selectedColor,
-        customer_name: extractedName,
-        phone: currentPhone,
-        shipping_address: currentAddress
-      },
-      missing_fields: ['shipping_address'],
-      handover_to_staff: false
-    };
-  }
-
-  // BƯỚC 4: ĐỦ TẤT CẢ THÔNG TIN -> TỰ ĐỘNG LÊN ĐƠN HÀNG THÀNH CÔNG!
-  if (currentPhone && currentAddress && addressQuality === 'VALID') {
+  // --- TRƯỜNG HỢP 2: Khách hỏi tư vấn SIZE theo chiều cao cân nặng ---
+  if (isConsultingIntent && currentProduct) {
     const p = currentProduct;
-    const customerDisplayName = extractedName && extractedName !== 'Khách hàng' ? `anh/chị ${extractedName}` : 'anh/chị';
-    const unitPrice = p ? (p.sale_price || p.base_price || 0) : 0;
-    const totalAmount = (unitPrice * quantity).toLocaleString('vi-VN');
+    const sizeList = hasVariants ? [...new Set(p.variants_json.map((v) => v.size).filter(Boolean))] : ['M', 'L'];
+    let suggestedSize = 'L';
+
+    const weightMatch = text.match(/(\d{2,3})\s*(?:kg|kí|cân)?/i);
+    const weightNum = weightMatch ? Number(weightMatch[1]) : 0;
+    if (weightNum > 0) {
+      if (weightNum < 58 && sizeList.includes('S')) suggestedSize = 'S';
+      else if (weightNum <= 65 && sizeList.includes('M')) suggestedSize = 'M';
+      else if (weightNum <= 75 && sizeList.includes('L')) suggestedSize = 'L';
+      else if (sizeList.includes('XL')) suggestedSize = 'XL';
+      else if (sizeList.includes('2XL') || sizeList.includes('XXL')) suggestedSize = '2XL';
+      else suggestedSize = sizeList[sizeList.length - 1] || 'L';
+    } else {
+      suggestedSize = sizeList.includes('L') ? 'L' : (sizeList[0] || 'M');
+    }
+
+    const reply = `Dạ với thông số của mình thì mặc Size ${suggestedSize} là vừa vặn, chuẩn phom và thoải mái nhất ạ! Mẫu "${p.product_name}" bên em đang có sẵn các màu: ${availableColors || 'Đen, Trắng'}. Anh/chị thích tông màu nào để em hỗ trợ giữ hàng cho mình nha!`;
 
     return {
-      reply: `Dạ em cảm ơn ${customerDisplayName} đã để lại thông tin đặt hàng ạ! Em đã lên đơn hàng cho mình:\n- Sản phẩm: ${p ? p.product_name : 'Sản phẩm'}${selectedSize ? ` (Size: ${selectedSize})` : ''}${selectedColor ? ` (Màu: ${selectedColor})` : ''} x ${quantity}\n- Người nhận: ${extractedName}\n- SĐT: ${currentPhone}\n- Địa chỉ giao: ${currentAddress}\n- Tổng tiền: ${totalAmount} VND (Thanh toán khi nhận hàng).\nChuyên viên của shop sẽ sớm liên hệ xác nhận và giao hàng cho mình nhé! ✨`,
-      is_order_intent: true,
+      reply,
+      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+      is_order_intent: false,
       order_data: {
-        customer_name: extractedName || 'Khách hàng',
-        phone: currentPhone,
-        shipping_address: currentAddress,
-        customer_note: customerNote || text,
-        items: p
-          ? [
-              {
-                sku: p.sku,
-                product_name: p.product_name,
-                size: selectedSize || 'Tiêu chuẩn',
-                color: selectedColor || 'Mặc định',
-                quantity: quantity || 1
-              }
-            ]
-          : []
+        product_id: p._id,
+        product_name: p.product_name,
+        sku: p.sku,
+        price: p.sale_price || p.base_price || 0,
+        quantity: 1,
+        size: suggestedSize,
+        color: selectedColor || '',
+        customer_name: extractedName,
+        phone: '',
+        shipping_address: ''
       },
-      missing_fields: [],
-      handover_to_staff: false,
-      handover_reason: null
+      missing_fields: ['variant'],
+      handover_to_staff: false
     };
   }
 
-  // Trường hợp hỏi giá / tư vấn
-  if (lower.includes('giá') || lower.includes('nhiêu') || lower.includes('bao tiền')) {
-    if (currentProduct) {
-      const price = (currentProduct.sale_price || currentProduct.base_price || 0).toLocaleString('vi-VN');
+  // --- TRƯỜNG HỢP 3: Khách hỏi GIÁ sản phẩm ---
+  if (isPriceIntent && currentProduct) {
+    const p = currentProduct;
+    const priceStr = (p.sale_price || p.base_price || 0).toLocaleString('vi-VN');
+    return {
+      reply: `Dạ sản phẩm "${p.product_name}" hiện đang có giá ưu đãi là ${priceStr} VND ạ! Anh/chị cần em tư vấn thêm về màu sắc hay size số theo chiều cao cân nặng không ạ?`,
+      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+      is_order_intent: false,
+      order_data: null,
+      missing_fields: [],
+      handover_to_staff: false
+    };
+  }
+
+  // --- TRƯỜNG HỢP 4: Khách có ý định MUA HÀNG hoặc cung cấp thông tin Đơn hàng ---
+  if (isBuyingIntent && currentProduct) {
+    // Chỉ kế thừa size nếu chính sản phẩm đó khớp
+    const finalSize = selectedSize || (existingDraft?.product_name === currentProduct.product_name ? existingDraft?.size : '');
+    const finalColor = selectedColor || (existingDraft?.product_name === currentProduct.product_name ? existingDraft?.color : '');
+    const currentPhone = phone || existingDraft?.phone || '';
+    const currentAddress = cleanAddress || existingDraft?.shipping_address || '';
+
+    // Kiểm tra SĐT lỗi nếu khách có gõ SĐT
+    if (phoneValidation && !phoneValidation.isValid && phoneValidation.phone && phoneValidation.errorReason !== 'NOT_FOUND') {
       return {
-        reply: `Dạ sản phẩm "${currentProduct.product_name}" hiện đang có giá ưu đãi là ${price} VND ạ! Anh/chị cần em tư vấn thêm về size hay cách chọn màu không ạ?`,
+        reply: `Dạ số điện thoại "${phoneValidation.phone}" hình như chưa đủ 10 chữ số hoặc chưa đúng định dạng mạng di động ạ. Bạn kiểm tra lại và nhắn lại giúp shop nha!`,
         is_order_intent: false,
         order_data: null,
-        missing_fields: [],
+        missing_fields: ['phone'],
         handover_to_staff: false
+      };
+    }
+
+    // Kiểm tra địa chỉ chung chung (VAGUE_AREA)
+    if (addressQuality === 'VAGUE_AREA' && addressFeedback) {
+      return {
+        reply: addressFeedback,
+        is_order_intent: false,
+        order_data: null,
+        missing_fields: ['shipping_address'],
+        handover_to_staff: false
+      };
+    }
+
+    // Bước 4.1: Chưa chọn Size/Màu
+    if (hasVariants && !finalSize && availableSizes) {
+      return {
+        reply: `Dạ mẫu "${currentProduct.product_name}" bên em có các size: ${availableSizes}${availableColors ? ` và màu: ${availableColors}` : ''} ạ. Bạn muốn lấy size nào và màu gì hoặc cho shop xin chiều cao, cân nặng để em chọn size vừa vặn nhất cho mình nha!`,
+        image_urls: Array.isArray(currentProduct.image_urls) ? currentProduct.image_urls : [],
+        is_order_intent: false,
+        order_data: {
+          product_id: currentProduct._id,
+          product_name: currentProduct.product_name,
+          sku: currentProduct.sku,
+          price: currentProduct.sale_price || currentProduct.base_price || 0,
+          quantity,
+          size: finalSize,
+          color: finalColor,
+          customer_name: extractedName,
+          phone: currentPhone,
+          shipping_address: currentAddress
+        },
+        missing_fields: ['variant'],
+        handover_to_staff: false
+      };
+    }
+
+    // Bước 4.2: Đã có Size nhưng thiếu SĐT
+    if (!currentPhone) {
+      const itemDesc = finalSize ? `${currentProduct.product_name} (Size ${finalSize}${finalColor ? `, Màu ${finalColor}` : ''})` : currentProduct.product_name;
+      return {
+        reply: `Dạ em đã giữ ${quantity} ${itemDesc} cho mình rồi ạ! Bạn cho shop xin Số điện thoại nhận hàng để bên em tiện liên hệ giao hàng nha!`,
+        image_urls: [],
+        is_order_intent: false,
+        order_data: {
+          product_id: currentProduct._id,
+          product_name: currentProduct.product_name,
+          sku: currentProduct.sku,
+          price: currentProduct.sale_price || currentProduct.base_price || 0,
+          quantity,
+          size: finalSize,
+          color: finalColor,
+          customer_name: extractedName,
+          phone: currentPhone,
+          shipping_address: currentAddress
+        },
+        missing_fields: ['phone'],
+        handover_to_staff: false
+      };
+    }
+
+    // Bước 4.3: Đã có SĐT nhưng thiếu Địa chỉ cụ thể
+    if (currentPhone && (!currentAddress || addressQuality === 'INCOMPLETE')) {
+      return {
+        reply: `Dạ em đã lưu số điện thoại ${currentPhone} của mình rồi ạ. Bạn cho shop xin thêm Địa chỉ nhận hàng cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP) để shop gửi hàng cho mình nhé!`,
+        image_urls: [],
+        is_order_intent: false,
+        order_data: {
+          product_id: currentProduct._id,
+          product_name: currentProduct.product_name,
+          sku: currentProduct.sku,
+          price: currentProduct.sale_price || currentProduct.base_price || 0,
+          quantity,
+          size: finalSize,
+          color: finalColor,
+          customer_name: extractedName,
+          phone: currentPhone,
+          shipping_address: currentAddress
+        },
+        missing_fields: ['shipping_address'],
+        handover_to_staff: false
+      };
+    }
+
+    // Bước 4.4: ĐỦ TẤT CẢ THÔNG TIN -> TỰ ĐỘNG CHỐT ĐƠN HÀNG!
+    if (currentPhone && currentAddress && addressQuality === 'VALID') {
+      const p = currentProduct;
+      const customerDisplayName = extractedName && extractedName !== 'Khách hàng' ? `anh/chị ${extractedName}` : 'anh/chị';
+      const unitPrice = p ? (p.sale_price || p.base_price || 0) : 0;
+      const totalAmount = (unitPrice * quantity).toLocaleString('vi-VN');
+
+      return {
+        reply: `Dạ em cảm ơn ${customerDisplayName} đã để lại thông tin đặt hàng ạ! Em đã lên đơn hàng cho mình:\n- Sản phẩm: ${p ? p.product_name : 'Sản phẩm'}${finalSize ? ` (Size: ${finalSize})` : ''}${finalColor ? ` (Màu: ${finalColor})` : ''} x ${quantity}\n- Người nhận: ${extractedName}\n- SĐT: ${currentPhone}\n- Địa chỉ giao: ${currentAddress}\n- Tổng tiền: ${totalAmount} VND (Thanh toán khi nhận hàng).\nChuyên viên của shop sẽ sớm liên hệ xác nhận và giao hàng cho mình nhé! ✨`,
+        image_urls: [],
+        is_order_intent: true,
+        order_data: {
+          customer_name: extractedName || 'Khách hàng',
+          phone: currentPhone,
+          shipping_address: currentAddress,
+          customer_note: customerNote || text,
+          items: p
+            ? [
+                {
+                  sku: p.sku,
+                  product_name: p.product_name,
+                  size: finalSize || 'Tiêu chuẩn',
+                  color: finalColor || 'Mặc định',
+                  quantity: quantity || 1
+                }
+              ]
+            : []
+        },
+        missing_fields: [],
+        handover_to_staff: false,
+        handover_reason: null
       };
     }
   }
 
-  // Phản hồi chào mừng và gợi ý mẫu
+  // --- TRƯỜNG HỢP 5: Chào mừng và Gợi ý mẫu sản phẩm nổi bật ---
   const sampleProducts = rawProducts.slice(0, 3).map((p) => p.product_name).join(', ');
+  const sampleImages = rawProducts.slice(0, 2).flatMap((p) => (Array.isArray(p.image_urls) ? p.image_urls : [])).filter(Boolean);
   return {
     reply: `Dạ shop xin chào anh/chị ạ! Hiện tại shop đang có các mẫu nổi bật như: ${sampleProducts || 'sản phẩm hot'}. Anh/chị đang quan tâm đến dòng nào hoặc cần tư vấn size, hãy gửi ảnh hoặc chiều cao + cân nặng để shop hỗ trợ ngay nhé!`,
+    image_urls: sampleImages,
     is_order_intent: false,
     order_data: null,
     missing_fields: [],
@@ -579,11 +710,19 @@ export const processGeminiAIForMessage = async ({
       const od = aiResult.order_data;
       if (!conversation.order_draft) conversation.order_draft = {};
 
+      const isDifferentProduct = od.product_id && conversation.order_draft.product_id && String(conversation.order_draft.product_id) !== String(od.product_id);
+      if (isDifferentProduct) {
+        // Khách chuyển sang hỏi/chọn sản phẩm mới -> reset size, color của sản phẩm cũ
+        conversation.order_draft.size = '';
+        conversation.order_draft.color = '';
+        conversation.order_draft.quantity = 1;
+      }
+
       if (od.product_id) conversation.order_draft.product_id = od.product_id;
       if (od.product_name) conversation.order_draft.product_name = od.product_name;
       if (od.sku) conversation.order_draft.sku = od.sku;
-      if (od.size) conversation.order_draft.size = od.size;
-      if (od.color) conversation.order_draft.color = od.color;
+      if (od.size !== undefined) conversation.order_draft.size = od.size;
+      if (od.color !== undefined) conversation.order_draft.color = od.color;
       if (od.quantity) conversation.order_draft.quantity = od.quantity;
       if (od.price) conversation.order_draft.price = od.price;
       if (od.phone) conversation.order_draft.phone = od.phone;
@@ -698,12 +837,17 @@ export const processGeminiAIForMessage = async ({
     }
 
     // 4. Lưu câu trả lời của AI vào Collection messages
+    const attachments = (aiResult.image_urls || []).map((url) => ({
+      type: 'image',
+      url
+    }));
+
     const aiMessage = await Message.create({
       conversation_id: conversation._id,
       sender_type: 'AI_BOT',
       sender_id: null,
       content: finalReply,
-      attachments: [],
+      attachments,
       is_read: true
     });
 
@@ -766,6 +910,7 @@ export const processGeminiAIForMessage = async ({
     return {
       handled: true,
       reply: finalReply,
+      image_urls: aiResult.image_urls || [],
       order: createdOrder,
       handover: aiResult.handover_to_staff
     };
