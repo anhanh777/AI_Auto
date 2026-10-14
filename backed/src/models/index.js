@@ -15,3 +15,4 @@ export { KnowledgeBase } from './KnowledgeBase.model.js';
 export { AIConfig } from './AIConfig.model.js';
 export { BusinessJoinRequest } from './BusinessJoinRequest.model.js';
 export { Notification } from './Notification.model.js';
+export { BotScenario } from './BotScenario.model.js';

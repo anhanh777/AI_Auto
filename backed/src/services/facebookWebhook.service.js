@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Channel, Customer, Conversation, Message } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
+import { processBotEngineForMessage } from './botEngine.service.js';
 
 const DEFAULT_VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'ai_sales_secret_verify_token';
 
@@ -227,6 +228,19 @@ export const handleWebhookPayloadService = async (body) => {
         } catch (socketErr) {
           console.warn('[Socket.IO Webhook Warn]', socketErr.message);
         }
+
+        // G. Kích hoạt Bộ máy Bot tự động phản hồi theo kịch bản do Chủ shop cấu hình
+        processBotEngineForMessage({
+          business_id: channel.business_id,
+          channel_id: channel._id,
+          conversation_id: conversation._id,
+          customer_id: customer._id,
+          senderPsid,
+          messageText,
+          isFirstMessage: (conversation.unread_count || 0) <= 1
+        }).catch((botErr) => {
+          console.warn('[Bot Execution Error]', botErr.message);
+        });
 
       } catch (procErr) {
         console.error(`[Facebook Webhook] Lỗi xử lý event của PSID ${senderPsid}:`, procErr);

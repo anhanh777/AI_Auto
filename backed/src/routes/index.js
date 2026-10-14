@@ -15,6 +15,7 @@ import analyticsRouter from './analytics.route.js';
 import notificationRouter from './notification.route.js';
 import inventoryRouter from './inventory.route.js';
 import webhookRouter from './webhook.route.js';
+import botScenarioRouter from './botScenario.route.js';
 
 const rootRouter = Router();
 
@@ -40,6 +41,7 @@ rootRouter.use('/products', productRouter);
 rootRouter.use('/inventory', inventoryRouter);
 rootRouter.use('/customers', customerRouter);
 rootRouter.use('/ai-config', aiConfigRouter);
+rootRouter.use('/bot-scenarios', botScenarioRouter);
 rootRouter.use('/orders', orderRouter);
 rootRouter.use('/knowledge', knowledgeRouter);
 rootRouter.use('/analytics', analyticsRouter);
