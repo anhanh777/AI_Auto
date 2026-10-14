@@ -19,5 +19,10 @@ export const conversationService = {
   // Bật / Tắt Bot AI cho cuộc hội thoại
   toggleBot: async (conversationId) => {
     return await apiClient.patch(`/conversations/${conversationId}/toggle-bot`);
+  },
+
+  // Cập nhật thẻ nhãn của cuộc hội thoại (TOGGLE, ADD, REMOVE, SET)
+  updateTags: async (conversationId, payload) => {
+    return await apiClient.patch(`/conversations/${conversationId}/tags`, payload);
   }
 };

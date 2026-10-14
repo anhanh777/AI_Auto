@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { channelService } from '../../services/channel.service.js';
 import { conversationService } from '../../services/conversation.service.js';
+import { businessService } from '../../services/business.service.js';
 import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx';
 import { uploadService } from '../../services/upload.service.js';
 import { socket } from '../../utils/socket.js';
@@ -51,6 +52,37 @@ import {
   Filter
 } from 'lucide-react';
 
+// Danh sách Thẻ Mặc định phong cách Pancake / Fchat
+const DEFAULT_BUSINESS_TAGS = [
+  { name: 'Đã đặt hàng', icon: '📞', color: '#C026D3', bg_color: '#FDF4FF', text_color: '#A21CAF', border_color: '#E879F9' },
+  { name: 'Đã Cop Đơn', icon: '👁️', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
+  { name: "Sp L'venta", icon: '🌡️', color: '#DC2626', bg_color: '#FEF2F2', text_color: '#B91C1C', border_color: '#F87171' },
+  { name: 'Sp Sline6D', icon: '🧍', color: '#EA580C', bg_color: '#FFF7ED', text_color: '#C2410C', border_color: '#FB923C' },
+  { name: 'Check lại', icon: '', color: '#DB2777', bg_color: '#FDF2F8', text_color: '#BE185D', border_color: '#F472B6' },
+  { name: 'MuaLại', icon: '🎁', color: '#6B21A8', bg_color: '#FAF5FF', text_color: '#581C87', border_color: '#A855F7' },
+  { name: 'SĐT', icon: '📄', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
+  { name: 'ReMKT', icon: '👌', color: '#6366F1', bg_color: '#EEF2FF', text_color: '#4338CA', border_color: '#A5B4FC' },
+  { name: 'Khách mới', icon: '✨', color: '#64748B', bg_color: '#F8FAFC', text_color: '#334155', border_color: '#CBD5E1' }
+];
+
+const TAG_COLOR_PALETTE = [
+  { name: 'Đỏ Ruby', hex: '#DC2626' },
+  { name: 'Hồng Fuchsia', hex: '#C026D3' },
+  { name: 'Hồng Phấn', hex: '#DB2777' },
+  { name: 'Cam Tươi', hex: '#EA580C' },
+  { name: 'Hổ Phách', hex: '#D97706' },
+  { name: 'Xanh Lá', hex: '#16A34A' },
+  { name: 'Xanh Ngọc', hex: '#0D9488' },
+  { name: 'Xanh Dương', hex: '#2563EB' },
+  { name: 'Xanh Chàm', hex: '#4F46E5' },
+  { name: 'Tím Đậm', hex: '#7C3AED' },
+  { name: 'Xám Slate', hex: '#475569' }
+];
+
+const QUICK_TAG_EMOJIS = [
+  '📞', '👁️', '🌡️', '🧍', '🎁', '📄', '👌', '✨', '⚡', '🔥', '⭐', '❤️', '⚠️', '🛒', '💰', '🏷️', '✅', '❌'
+];
+
 const LiveChatPage = () => {
   const { user } = useAuth();
   const { activeBusiness } = useBusiness();
@@ -76,6 +108,12 @@ const LiveChatPage = () => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [sending, setSending] = useState(false);
   const [showCustomerCrm, setShowCustomerCrm] = useState(false);
+
+  // Pancake Tags state
+  const [availableTags, setAvailableTags] = useState(DEFAULT_BUSINESS_TAGS);
+  const [showNewTagModal, setShowNewTagModal] = useState(false);
+  const [newTagForm, setNewTagForm] = useState({ name: '', color: '#DC2626', icon: '🏷️' });
+  const [submittingNewTag, setSubmittingNewTag] = useState(false);
 
   // Attachment & Emoji states
   const [selectedAttachment, setSelectedAttachment] = useState(null); // { file, previewUrl, type, name, size }
@@ -247,8 +285,22 @@ const LiveChatPage = () => {
     }
   };
 
+  // 1.1 Tải danh sách Thẻ nhãn Pancake của Doanh nghiệp
+  const fetchBusinessTags = async () => {
+    if (!activeBusiness?._id) return;
+    try {
+      const res = await businessService.getTags(activeBusiness._id);
+      if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+        setAvailableTags(res.data);
+      }
+    } catch (err) {
+      console.warn('Lỗi khi tải danh sách thẻ nhãn:', err);
+    }
+  };
+
   useEffect(() => {
     fetchChannels();
+    fetchBusinessTags();
   }, [activeBusiness?._id]);
 
   // Đồng bộ activeChannel khi URL search param thay đổi
@@ -444,16 +496,55 @@ const LiveChatPage = () => {
       });
     };
 
+    const handleConversationTagsUpdated = (data) => {
+      if (!data?.conversation_id) return;
+      const targetId = data.conversation_id.toString();
+      const updatedTags = data.tags || [];
+
+      setConversations((prev) =>
+        prev.map((c) => {
+          if ((c._id || c.id)?.toString() === targetId) {
+            return { ...c, tags: updatedTags };
+          }
+          return c;
+        })
+      );
+
+      setSelectedConv((prev) => {
+        if ((prev?._id || prev?.id)?.toString() === targetId) {
+          return { ...prev, tags: updatedTags };
+        }
+        return prev;
+      });
+    };
+
+    const handleBusinessTagsUpdated = (data) => {
+      if (!data) return;
+      const tagObj = data.tag || data;
+      if (tagObj?.name) {
+        setAvailableTags((prev) => {
+          if (prev.some((t) => t.name.toLowerCase() === tagObj.name.toLowerCase())) {
+            return prev;
+          }
+          return [...prev, tagObj];
+        });
+      }
+    };
+
     socket.on('new_message', handleNewMessage);
     socket.on('conversation_updated', handleConversationUpdated);
     socket.on('new_incoming_message', ({ conversation }) => {
       if (conversation) handleConversationUpdated(conversation);
     });
+    socket.on('conversation_tags_updated', handleConversationTagsUpdated);
+    socket.on('business_tags_updated', handleBusinessTagsUpdated);
 
     return () => {
       socket.off('new_message', handleNewMessage);
       socket.off('conversation_updated', handleConversationUpdated);
       socket.off('new_incoming_message');
+      socket.off('conversation_tags_updated', handleConversationTagsUpdated);
+      socket.off('business_tags_updated', handleBusinessTagsUpdated);
     };
   }, [selectedConv?._id, activeChannel?._id]);
 
@@ -533,6 +624,77 @@ const LiveChatPage = () => {
       }
     } catch (err) {
       showToast('error', 'Lỗi khi chuyển đổi trạng thái AI');
+    }
+  };
+
+  // 6. Bật / Tắt thẻ nhãn cho cuộc hội thoại đang chọn (Pancake style)
+  const handleToggleTag = async (tagName) => {
+    if (!selectedConv?._id) return;
+    const currentTags = Array.isArray(selectedConv.tags) ? [...selectedConv.tags] : [];
+    const exists = currentTags.includes(tagName);
+    const nextTags = exists
+      ? currentTags.filter((t) => t !== tagName)
+      : [...currentTags, tagName];
+
+    // Optimistic UI update
+    setSelectedConv((prev) => (prev ? { ...prev, tags: nextTags } : prev));
+    setConversations((prev) =>
+      prev.map((c) => ((c._id || c.id) === (selectedConv._id || selectedConv.id) ? { ...c, tags: nextTags } : c))
+    );
+
+    try {
+      const res = await conversationService.updateTags(selectedConv._id, {
+        action: 'TOGGLE',
+        tag: tagName
+      });
+      if (res.success && res.data) {
+        setSelectedConv((prev) => (prev ? { ...prev, tags: res.data.tags } : prev));
+      }
+    } catch (err) {
+      console.error('Lỗi khi cập nhật nhãn:', err);
+      showToast('error', 'Không thể cập nhật thẻ nhãn');
+      // Revert on error
+      setSelectedConv((prev) => (prev ? { ...prev, tags: currentTags } : prev));
+      setConversations((prev) =>
+        prev.map((c) => ((c._id || c.id) === (selectedConv._id || selectedConv.id) ? { ...c, tags: currentTags } : c))
+      );
+    }
+  };
+
+  // 7. Tạo Thẻ Nhãn Mới cho Cửa Hàng
+  const handleCreateNewTag = async (e) => {
+    e?.preventDefault();
+    if (!newTagForm.name.trim()) {
+      showToast('error', 'Vui lòng nhập tên thẻ nhãn');
+      return;
+    }
+    if (!activeBusiness?._id) return;
+
+    try {
+      setSubmittingNewTag(true);
+      const res = await businessService.createTag(activeBusiness._id, {
+        name: newTagForm.name.trim(),
+        icon: newTagForm.icon,
+        color: newTagForm.color
+      });
+      if (res.success && res.data) {
+        showToast('success', `Đã tạo thẻ "${res.data.name}" thành công!`);
+        setAvailableTags((prev) => {
+          if (prev.some((t) => t.name.toLowerCase() === res.data.name.toLowerCase())) {
+            return prev;
+          }
+          return [...prev, res.data];
+        });
+        if (selectedConv?._id) {
+          handleToggleTag(res.data.name);
+        }
+        setShowNewTagModal(false);
+        setNewTagForm({ name: '', color: '#DC2626', icon: '🏷️' });
+      }
+    } catch (err) {
+      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi tạo thẻ mới');
+    } finally {
+      setSubmittingNewTag(false);
     }
   };
 
@@ -648,15 +810,17 @@ const LiveChatPage = () => {
     sortUnreadFirst
   ]);
 
-  // Danh sách thẻ phân loại chuẩn của dự án AI_Auto
-  const tagOptions = [
-    { label: 'Tất cả nhãn', value: '' },
-    { label: '⭐ Khách VIP', value: 'VIP' },
-    { label: 'Tiềm năng', value: 'Tiềm năng' },
-    { label: 'Khách mới', value: 'Khách mới' },
-    { label: 'Đã mua hàng', value: 'Đã mua hàng' },
-    { label: '⚠️ Cảnh giác bom hàng', value: 'BO_BOM' }
-  ];
+  // Danh sách thẻ phân loại động theo Pancake / Business Tags
+  const tagOptions = useMemo(() => {
+    const list = [{ label: 'Tất cả nhãn', value: '' }];
+    availableTags.forEach((t) => {
+      list.push({
+        label: `${t.icon ? t.icon + ' ' : ''}${t.name}`,
+        value: t.name
+      });
+    });
+    return list;
+  }, [availableTags]);
 
   if (!activeBusiness) {
     return (
@@ -1270,6 +1434,34 @@ const LiveChatPage = () => {
                         - {conv.last_message_text || 'Chưa có nội dung tin nhắn'}
                       </span>
                     </div>
+
+                    {/* Dòng 3: Thẻ nhãn Pancake Style (Hiển thị ngay dưới tin nhắn như mẫu media_1791974689974_a7231e43.png) */}
+                    {Array.isArray(conv.tags) && conv.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1.5 items-center">
+                        {conv.tags.map((tagName) => {
+                          const tagMeta = availableTags.find((t) => t.name.toLowerCase() === tagName.toLowerCase());
+                          const bg = tagMeta?.bg_color || '#F1F5F9';
+                          const textColor = tagMeta?.text_color || '#334155';
+                          const borderColor = tagMeta?.border_color || '#CBD5E1';
+                          const icon = tagMeta?.icon || '';
+                          return (
+                            <span
+                              key={tagName}
+                              style={{
+                                backgroundColor: bg,
+                                color: textColor,
+                                borderColor: borderColor
+                              }}
+                              className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold border leading-tight shrink-0 shadow-2xs"
+                              title={tagName}
+                            >
+                              {icon && <span className="mr-0.5">{icon}</span>}
+                              <span className="truncate max-w-[110px]">{tagName}</span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -1350,6 +1542,51 @@ const LiveChatPage = () => {
                     <User size={16} />
                   </button>
                 </div>
+              </div>
+
+              {/* =========================================================================
+                  PANCAKE-STYLE TAG BAR (THANH THẺ NHÃN NHANH DÀNH CHO CONVERSATION HIỆN TẠI)
+                  ========================================================================= */}
+              <div className="px-4 py-2 bg-white dark:bg-slate-900 border-b border-slate-200/90 dark:border-slate-800 flex items-center justify-between gap-2 shrink-0 z-10 shadow-2xs">
+                {/* Danh sách thẻ cuộn ngang */}
+                <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
+                  {availableTags.map((tag) => {
+                    const isApplied = (selectedConv.tags || []).includes(tag.name);
+                    return (
+                      <button
+                        key={tag.name}
+                        type="button"
+                        onClick={() => handleToggleTag(tag.name)}
+                        style={{
+                          backgroundColor: isApplied ? tag.color : (tag.bg_color || '#F8FAFC'),
+                          borderColor: tag.color,
+                          color: isApplied ? '#FFFFFF' : (tag.text_color || tag.color)
+                        }}
+                        className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold border transition cursor-pointer shrink-0 select-none shadow-2xs hover:opacity-90 active:scale-95 ${
+                          isApplied
+                            ? 'ring-2 ring-offset-1 ring-slate-400/30 font-bold'
+                            : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                        title={`Click để ${isApplied ? 'gỡ' : 'gắn'} nhãn "${tag.name}"`}
+                      >
+                        {tag.icon && <span>{tag.icon}</span>}
+                        <span>{tag.name}</span>
+                        {isApplied && <Check size={12} className="ml-0.5 stroke-[3]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Nút + Thêm thẻ mới */}
+                <button
+                  type="button"
+                  onClick={() => setShowNewTagModal(true)}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-bold text-[#1877F2] bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shrink-0 transition cursor-pointer shadow-2xs"
+                  title="Tạo thêm thẻ nhãn mới cho cửa hàng"
+                >
+                  <Plus size={13} className="stroke-[2.5]" />
+                  <span className="whitespace-nowrap">Thêm thẻ mới</span>
+                </button>
               </div>
 
               {/* Khung Tin Nhắn (Messages Stream) */}
@@ -1723,14 +1960,27 @@ const LiveChatPage = () => {
                   <span className="text-[11px] font-bold text-slate-400 uppercase">Thẻ khách hàng</span>
                   <div className="flex flex-wrap gap-1">
                     {selectedConv.customer_id?.tags?.length > 0 ? (
-                      selectedConv.customer_id.tags.map((t, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 bg-blue-50 dark:bg-blue-950 text-[#1877F2] rounded-md text-[10px] font-bold"
-                        >
-                          #{t}
-                        </span>
-                      ))
+                      selectedConv.customer_id.tags.map((t, idx) => {
+                        const tagMeta = availableTags.find((tag) => tag.name.toLowerCase() === t.toLowerCase());
+                        const bg = tagMeta?.bg_color || '#EEF2FF';
+                        const text = tagMeta?.text_color || '#1877F2';
+                        const border = tagMeta?.border_color || '#C7D2FE';
+                        const icon = tagMeta?.icon || '';
+                        return (
+                          <span
+                            key={idx}
+                            style={{
+                              backgroundColor: bg,
+                              color: text,
+                              borderColor: border
+                            }}
+                            className="px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center space-x-1 shadow-2xs"
+                          >
+                            {icon && <span>{icon}</span>}
+                            <span>{t}</span>
+                          </span>
+                        );
+                      })
                     ) : (
                       <span className="text-slate-400 italic text-[11px]">Chưa gắn thẻ</span>
                     )}
@@ -1741,6 +1991,165 @@ const LiveChatPage = () => {
           </div>
         )}
       </main>
+
+      {/* Modal Thêm Thẻ Nhãn Mới (Pancake Style) */}
+      {showNewTagModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-md overflow-hidden animate-scaleUp">
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/40">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-50 dark:bg-blue-950 text-[#1877F2] flex items-center justify-center">
+                  <Tag size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Thêm Thẻ Nhãn Mới
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Phong cách Pancake / Fchat cho phân loại tin nhắn
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewTagModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleCreateNewTag} className="p-5 space-y-4">
+              {/* Tên Thẻ */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between">
+                  <span>Tên thẻ nhãn <span className="text-rose-500">*</span></span>
+                  <span className="text-[10px] text-slate-400 font-normal">Tối đa 30 ký tự</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  maxLength={30}
+                  placeholder="Ví dụ: Đã thanh toán, Cần gọi gấp, Hẹn giao..."
+                  value={newTagForm.name}
+                  onChange={(e) => setNewTagForm((prev) => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1877F2]"
+                  autoFocus
+                />
+              </div>
+
+              {/* Biểu tượng Emoji nhanh */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Biểu tượng (Icon / Emoji)
+                </label>
+                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/80 max-h-24 overflow-y-auto no-scrollbar">
+                  {QUICK_TAG_EMOJIS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => setNewTagForm((prev) => ({ ...prev, icon: emoji }))}
+                      className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition cursor-pointer hover:scale-110 ${
+                        newTagForm.icon === emoji
+                          ? 'bg-blue-100 dark:bg-blue-900 border border-blue-400 scale-105'
+                          : 'hover:bg-white dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Bảng màu chủ đạo */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                  Màu sắc nhận diện
+                </label>
+                <div className="grid grid-cols-6 gap-2">
+                  {TAG_COLOR_PALETTE.map((c) => (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      onClick={() => setNewTagForm((prev) => ({ ...prev, color: c.hex }))}
+                      style={{ backgroundColor: c.hex }}
+                      className={`h-7 rounded-lg transition cursor-pointer flex items-center justify-center shadow-xs ${
+                        newTagForm.color === c.hex ? 'ring-2 ring-offset-2 ring-slate-800 dark:ring-white scale-105' : 'hover:scale-105 opacity-90'
+                      }`}
+                      title={c.name}
+                    >
+                      {newTagForm.color === c.hex && <Check size={14} className="text-white drop-shadow-sm" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Xem trước mẫu thẻ */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Xem trước hiển thị:</span>
+                <div className="flex items-center space-x-3">
+                  {/* Dạng Active (Đã gắn) */}
+                  <span
+                    style={{
+                      backgroundColor: newTagForm.color,
+                      color: '#ffffff',
+                      borderColor: newTagForm.color
+                    }}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-bold border shadow-xs"
+                  >
+                    {newTagForm.icon && <span>{newTagForm.icon}</span>}
+                    <span>{newTagForm.name || 'Tên thẻ'}</span>
+                    <Check size={12} className="ml-0.5 stroke-[3]" />
+                  </span>
+
+                  {/* Dạng Badge nhỏ ở danh sách chat */}
+                  <span
+                    style={{
+                      backgroundColor: `${newTagForm.color}15`,
+                      color: newTagForm.color,
+                      borderColor: `${newTagForm.color}40`
+                    }}
+                    className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border shadow-2xs"
+                  >
+                    {newTagForm.icon && <span>{newTagForm.icon}</span>}
+                    <span>{newTagForm.name || 'Tên thẻ'}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowNewTagModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingNewTag || !newTagForm.name.trim()}
+                  className="px-4 py-2 rounded-xl bg-[#1877F2] hover:bg-[#166fe5] text-white text-xs font-bold transition disabled:opacity-50 flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                >
+                  {submittingNewTag ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Đang tạo...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={13} />
+                      <span>Tạo Thẻ Nhãn</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal Kết nối Kênh Fanpage mới nếu cần */}
       <ConnectChannelModal

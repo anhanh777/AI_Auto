@@ -437,3 +437,67 @@ export const deleteBusinessService = async (businessId) => {
   await Business.findByIdAndDelete(businessId);
   return { success: true, message: 'Đã xóa doanh nghiệp thành công' };
 };
+
+/**
+ * Danh sách Thẻ Mặc định phong cách Pancake / Fchat
+ */
+export const DEFAULT_BUSINESS_TAGS = [
+  { name: 'Đã đặt hàng', icon: '📞', color: '#C026D3', bg_color: '#FDF4FF', text_color: '#A21CAF', border_color: '#E879F9' },
+  { name: 'Đã Cop Đơn', icon: '👁️', color: '#16A34A', bg_color: '#F0FDF4', text_color: '#15803D', border_color: '#4ADE80' },
+  { name: "Sp L'venta", icon: '🌡️', color: '#DC2626', bg_color: '#FEF2F2', text_color: '#B91C1C', border_color: '#F87171' },
+  { name: 'Sp Sline6D', icon: '🧍', color: '#EA580C', bg_color: '#FFF7ED', text_color: '#C2410C', border_color: '#FB923C' },
+  { name: 'Check lại', icon: '', color: '#DB2777', bg_color: '#FDF2F8', text_color: '#BE185D', border_color: '#F472B6' },
+  { name: 'MuaLại', icon: '🎁', color: '#6B21A8', bg_color: '#FAF5FF', text_color: '#581C87', border_color: '#A855F7' },
+  { name: 'SĐT', icon: '📄', color: '#0D9488', bg_color: '#F0FDFA', text_color: '#0F766E', border_color: '#2DD4BF' },
+  { name: 'ReMKT', icon: '👌', color: '#6366F1', bg_color: '#EEF2FF', text_color: '#4338CA', border_color: '#A5B4FC' },
+  { name: 'Khách mới', icon: '✨', color: '#64748B', bg_color: '#F8FAFC', text_color: '#334155', border_color: '#CBD5E1' }
+];
+
+/**
+ * Lấy danh sách toàn bộ Thẻ nhãn của Business (Mặc định + Tùy chỉnh)
+ */
+export const getBusinessTagsService = async (businessId) => {
+  if (!businessId) return DEFAULT_BUSINESS_TAGS;
+  const business = await Business.findById(businessId).lean();
+  const custom = business?.custom_tags || [];
+
+  const map = new Map();
+  DEFAULT_BUSINESS_TAGS.forEach((t) => map.set(t.name.toLowerCase(), t));
+  custom.forEach((t) => map.set(t.name.toLowerCase(), t));
+
+  return Array.from(map.values());
+};
+
+/**
+ * Tạo Thẻ nhãn mới cho Business
+ */
+export const createBusinessTagService = async (businessId, { name, icon = '🏷️', color = '#E11D48', bg_color, text_color, border_color }) => {
+  if (!businessId) throw new Error('businessId là bắt buộc');
+  if (!name || !name.trim()) throw new Error('Tên thẻ nhãn không được để trống');
+
+  const business = await Business.findById(businessId);
+  if (!business) throw new Error('Không tìm thấy cửa hàng');
+
+  const cleanName = name.trim();
+  const exists = (business.custom_tags || []).some((t) => t.name.toLowerCase() === cleanName.toLowerCase());
+  if (exists) {
+    throw new Error(`Thẻ "${cleanName}" đã tồn tại`);
+  }
+
+  const newTag = {
+    name: cleanName,
+    icon: icon || '🏷️',
+    color: color || '#E11D48',
+    bg_color: bg_color || `${color}15`,
+    text_color: text_color || color,
+    border_color: border_color || `${color}60`
+  };
+
+  if (!Array.isArray(business.custom_tags)) {
+    business.custom_tags = [];
+  }
+  business.custom_tags.push(newTag);
+  await business.save();
+
+  return newTag;
+};

@@ -82,6 +82,20 @@ const businessSchema = new mongoose.Schema(
       type: String,
       default: 'Bán lẻ - Thời trang & Phụ kiện'
     },
+    // Danh sách thẻ nhãn tùy chỉnh của Cửa hàng (Pancake Style Tag Bar)
+    custom_tags: {
+      type: [
+        {
+          name: { type: String, required: true },
+          color: { type: String, default: '#E11D48' },
+          bg_color: { type: String, default: '#FFF1F2' },
+          text_color: { type: String, default: '#BE123C' },
+          border_color: { type: String, default: '#FDA4AF' },
+          icon: { type: String, default: '🏷️' }
+        }
+      ],
+      default: []
+    },
     // 13. Người tạo bản ghi (users._id)
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

@@ -190,3 +190,58 @@ export const toggleBotActiveService = async (conversationId) => {
   await conversation.save();
   return conversation;
 };
+
+/**
+ * Cập nhật thẻ nhãn (tags) của cuộc hội thoại: TOGGLE, ADD, REMOVE, SET
+ */
+export const updateConversationTagsService = async (conversationId, { action = 'TOGGLE', tag, tags }) => {
+  const conversation = await Conversation.findById(conversationId)
+    .populate('customer_id')
+    .populate('channel_id');
+  if (!conversation) throw new Error('Không tìm thấy cuộc trò chuyện');
+
+  let currentTags = Array.isArray(conversation.tags) ? [...conversation.tags] : [];
+
+  if (action === 'TOGGLE' && tag) {
+    const trimmed = tag.trim();
+    if (currentTags.includes(trimmed)) {
+      currentTags = currentTags.filter((t) => t !== trimmed);
+    } else {
+      currentTags.push(trimmed);
+    }
+  } else if (action === 'ADD' && tag) {
+    const trimmed = tag.trim();
+    if (!currentTags.includes(trimmed)) currentTags.push(trimmed);
+  } else if (action === 'REMOVE' && tag) {
+    const trimmed = tag.trim();
+    currentTags = currentTags.filter((t) => t !== trimmed);
+  } else if (action === 'SET' && Array.isArray(tags)) {
+    currentTags = tags.map((t) => String(t).trim()).filter(Boolean);
+  }
+
+  conversation.tags = currentTags;
+  await conversation.save();
+
+  // Đồng bộ thẻ sang Customer nếu có customer_id
+  if (conversation.customer_id) {
+    await Customer.findByIdAndUpdate(conversation.customer_id._id, {
+      $set: { tags: currentTags, customer_tags: currentTags }
+    });
+  }
+
+  // Phát Socket.IO cập nhật real-time
+  try {
+    const io = getIO();
+    if (conversation.business_id) {
+      io.to(conversation.business_id.toString()).emit('conversation_updated', conversation);
+    }
+    io.emit('conversation_tags_updated', {
+      conversation_id: conversation._id,
+      tags: currentTags
+    });
+  } catch (err) {
+    console.warn('[Socket Tag Update Warn]', err.message);
+  }
+
+  return conversation;
+};

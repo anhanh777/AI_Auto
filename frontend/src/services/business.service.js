@@ -39,5 +39,14 @@ export const businessService = {
 
   rejectJoinRequest: async (requestId, note = '') => {
     return await apiClient.post(`/businesses/join-requests/${requestId}/reject`, { note });
+  },
+
+  // Quản lý Thẻ nhãn Pancake Style của Cửa hàng
+  getTags: async (businessId) => {
+    return await apiClient.get(`/businesses/${businessId}/tags`);
+  },
+
+  createTag: async (businessId, tagData) => {
+    return await apiClient.post(`/businesses/${businessId}/tags`, tagData);
   }
 };

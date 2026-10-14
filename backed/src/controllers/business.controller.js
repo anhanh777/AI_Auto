@@ -8,9 +8,12 @@ import {
   rejectJoinRequestService,
   updateBusinessService,
   deleteBusinessService,
-  toggleArchiveBusinessService
+  toggleArchiveBusinessService,
+  getBusinessTagsService,
+  createBusinessTagService
 } from '../services/business.service.js';
 import { sendSuccess, sendError } from '../utils/response.util.js';
+import { getIO } from '../config/socket.config.js';
 
 export const getBusinesses = async (req, res) => {
   try {
@@ -107,6 +110,35 @@ export const deleteBusiness = async (req, res) => {
   try {
     const result = await deleteBusinessService(req.params.id);
     return sendSuccess(res, result.message, result);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const getBusinessTags = async (req, res) => {
+  try {
+    const businessId = req.params.id || req.headers['x-business-id'];
+    const tags = await getBusinessTagsService(businessId);
+    return sendSuccess(res, 'Lấy danh sách thẻ nhãn thành công', tags);
+  } catch (error) {
+    return sendError(res, error.message, null, 400);
+  }
+};
+
+export const createBusinessTag = async (req, res) => {
+  try {
+    const businessId = req.params.id || req.headers['x-business-id'];
+    const newTag = await createBusinessTagService(businessId, req.body);
+    try {
+      const io = getIO();
+      if (businessId) {
+        io.to(businessId.toString()).emit('business_tags_updated', newTag);
+      }
+      io.emit('business_tags_updated', { businessId, tag: newTag });
+    } catch (socketErr) {
+      // Socket not initialized or warn
+    }
+    return sendSuccess(res, 'Tạo thẻ nhãn mới thành công', newTag, 201);
   } catch (error) {
     return sendError(res, error.message, null, 400);
   }

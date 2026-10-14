@@ -2,7 +2,8 @@ import {
   getConversationsService,
   getMessagesService,
   sendMessageService,
-  toggleBotActiveService
+  toggleBotActiveService,
+  updateConversationTagsService
 } from '../services/conversation.service.js';
 
 export const getConversations = async (req, res, next) => {
@@ -56,6 +57,18 @@ export const sendMessage = async (req, res, next) => {
 export const toggleBot = async (req, res, next) => {
   try {
     const conversation = await toggleBotActiveService(req.params.id);
+    return res.status(200).json({
+      success: true,
+      data: conversation
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateConversationTags = async (req, res, next) => {
+  try {
+    const conversation = await updateConversationTagsService(req.params.id, req.body);
     return res.status(200).json({
       success: true,
       data: conversation

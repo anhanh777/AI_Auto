@@ -3,7 +3,8 @@ import {
   getConversations,
   getMessages,
   sendMessage,
-  toggleBot
+  toggleBot,
+  updateConversationTags
 } from '../controllers/conversation.controller.js';
 import { authenticate } from '../middlewares/auth.middleware.js';
 
@@ -15,5 +16,6 @@ conversationRouter.get('/', getConversations);
 conversationRouter.get('/:id/messages', getMessages);
 conversationRouter.post('/:id/messages', sendMessage);
 conversationRouter.patch('/:id/toggle-bot', toggleBot);
+conversationRouter.patch('/:id/tags', updateConversationTags);
 
 export default conversationRouter;
