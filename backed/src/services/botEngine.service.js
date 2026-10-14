@@ -90,11 +90,16 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken) => {
         form.append('message', JSON.stringify({ attachment: { type: 'image', payload: {} } }));
         form.append('filedata', new Blob([fileBuf], { type: mimeType }), path.basename(localFilePath));
 
-        await fetch(
+        const fbRes = await fetch(
           `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
           { method: 'POST', body: form }
         );
-        console.log(`[Facebook Send API] Đã gửi file ảnh local đến PSID ${senderPsid}`);
+        const fbData = await fbRes.json().catch(() => ({}));
+        if (!fbRes.ok || fbData.error) {
+          console.warn('[Facebook Send API Error]', fbData.error || fbData);
+        } else {
+          console.log(`[Facebook Send API] Đã gửi file ảnh local đến PSID ${senderPsid}:`, fbData);
+        }
       } else {
         console.warn(`[Facebook Send API] File ảnh không tồn tại: ${localFilePath}`);
       }

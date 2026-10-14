@@ -97,7 +97,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
 
     // B. Danh mục sản phẩm đang mở bán kèm tồn kho
     Product.find({ business_id, status: 'ACTIVE' })
-      .select('product_name sku base_price sale_price stock_available variants_json ai_selling_points description')
+      .select('product_name sku base_price sale_price stock_available variants_json ai_selling_points description image_urls')
       .limit(60)
       .lean(),
 
@@ -227,10 +227,10 @@ ${chatHistoryText}
 
 === NGUYÊN TẮC GIAO TIẾP VÀ TƯ VẤN (TUYỆT ĐỐI TUÂN THỦ) ===
 1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH:
-   - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào":
-     + Niềm nở giới thiệu đặc điểm nổi bật, chất liệu, phom dáng và mức giá ưu đãi.
-     + Trích xuất link ảnh sản phẩm từ thông tin kho ở trên vào trường "image_urls" để gửi ảnh cho khách ngắm.
-     + Hỏi khéo màu sắc khách thích hoặc chiều cao + cân nặng để tư vấn size.
+   - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào", "xem hình ảnh của từng sản phẩm":
+     + Niềm nở giới thiệu đặc điểm nổi bật, thiết kế và mức giá ưu đãi của các sản phẩm.
+     + BẮT BUỘC: Nếu trong thông tin sản phẩm ở trên có link URL ở trường "Ảnh sản phẩm", hãy trích xuất chính xác các đường link URL đó vào mảng "image_urls" của JSON. Tuyệt đối KHÔNG NÓI "shop chưa có ảnh" hay "chưa có ảnh sẵn" nếu trong kho có đường link ảnh!
+     + Hỏi khéo mẫu hoặc màu sắc mà khách ưng ý nhất để tư vấn sâu hơn.
      + TUYỆT ĐỐI KHÔNG tự tiện chọn size (như tự ý gán Size M), KHÔNG nói "đã giữ hàng", KHÔNG đòi số điện thoại khi khách chỉ muốn xem mẫu!
 2. GIAI ĐOẠN 2 - TƯ VẤN SIZE & MÀU THEO CHIỀU CAO CÂN NẶNG:
    - Khi khách gửi chiều cao cân nặng (vd: 1m70 65kg, cao 1m65 55kg...):
