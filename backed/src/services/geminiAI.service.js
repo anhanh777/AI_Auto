@@ -19,6 +19,75 @@ const genAI = apiKey && apiKey !== 'your_gemini_api_key_here' ? new GoogleGenera
 const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 /**
+ * Hàm phân tích và làm sạch Tên người nhận và Địa chỉ giao hàng từ tin nhắn
+ */
+export const extractNameAndCleanAddress = (text = '', defaultCustomerName = '') => {
+  if (!text) return { extractedName: defaultCustomerName || 'Khách hàng', cleanAddress: '' };
+
+  // 1. Tách số điện thoại trước
+  const phoneMatch = text.match(/(0[3|5|7|8|9][0-9]{8})\b/);
+  const phone = phoneMatch ? phoneMatch[0] : '';
+
+  let workingText = text;
+  if (phone) {
+    workingText = workingText.replace(phone, '').trim();
+  }
+
+  // 2. Tìm tên xưng hô trong tin nhắn
+  let extractedName = '';
+  const nameRegexes = [
+    /(?:mình là|tên là|tên tớ là|tên em là|tên e là|tên tôi là|tên:|người nhận:?|giao cho:?)\s+([A-ZÀ-Ỹa-zà-ỹ\s]+?)(?:[,.\n]|\s+sđt|\s+sdt|\s+ở|\s+địa chỉ|\s+về|$)/i,
+    /(?:anh|chị)\s+([A-ZÀ-Ỹa-zà-ỹ]+)(?:\s+lấy|\s+sđt|\s+sdt|\s+ở|\s+địa chỉ|\s+về|,|\.|$)/i
+  ];
+
+  for (const rg of nameRegexes) {
+    const m = workingText.match(rg);
+    if (m && m[1]) {
+      const cand = m[1].trim();
+      if (!['khách hàng', 'shop', 'mình', 'em', 'anh', 'chị'].includes(cand.toLowerCase()) && cand.length >= 2) {
+        extractedName = cand;
+        break;
+      }
+    }
+  }
+
+  // Nếu trong câu không xưng tên riêng -> Lấy tên thật từ tài khoản Facebook của khách
+  if (!extractedName && defaultCustomerName && defaultCustomerName !== 'Khách hàng Facebook') {
+    extractedName = defaultCustomerName;
+  }
+  if (!extractedName) extractedName = 'Khách hàng';
+
+  // 3. Tìm và làm sạch địa chỉ
+  let cleanAddress = '';
+  const locIndex = workingText.search(/\b(về|đến|ở|tại|địa chỉ(?:\s*là)?:?|đ\/c:?)\s+/i);
+  if (locIndex !== -1) {
+    cleanAddress = workingText.slice(locIndex).replace(/^(về|đến|ở|tại|địa chỉ(?:\s*là)?:?|đ\/c:?)\s+/i, '');
+  } else {
+    // Bỏ phần mở đầu thông dụng như: "cho mình lấy 1 hũ...", "ship cho mình..."
+    cleanAddress = workingText.replace(/^(cho mình lấy|cho em lấy|cho anh lấy|mình muốn mua|đặt hàng|mua|ship)\s+[^,]+/i, '').trim();
+  }
+
+  // Cắt bỏ phần tên nếu tên nằm trong đoạn địa chỉ
+  if (extractedName && extractedName !== defaultCustomerName && extractedName !== 'Khách hàng') {
+    cleanAddress = cleanAddress.replace(new RegExp('(?:mình là|tên là|tên tớ là|tên em là|tên:|anh|chị)?\\s*' + extractedName, 'i'), '');
+  }
+
+  // Cắt bỏ các từ phụ cuối câu (nhé, nha, sđt, sdt, số đt...)
+  cleanAddress = cleanAddress
+    .replace(/[,.\s-]+(cho|mình|nhé|nha|ạ|sđt|sdt|số đt|đt|alo|liên hệ|call)[:\s]*$/i, '')
+    .replace(/[,.\s-]+(nhé|nha|ạ|sđt|sdt|số đt|đt)[:\s]*$/i, '')
+    .replace(/^[,.\s-]+/, '')
+    .replace(/[,.\s-]+$/, '')
+    .trim();
+
+  if (cleanAddress.length > 0) {
+    cleanAddress = cleanAddress.charAt(0).toUpperCase() + cleanAddress.slice(1);
+  }
+
+  return { extractedName, cleanAddress, phone };
+};
+
+/**
  * 1. Tổng hợp dữ liệu RAG Context (Knowledge Base + Sản phẩm còn hàng + Cấu hình AI + Lịch sử chat)
  */
 export const buildRAGContext = async ({ business_id, conversation_id, channel_id = null }) => {
@@ -48,10 +117,8 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
       : []
   ]);
 
-  // Đảo lại lịch sử theo thứ tự thời gian cũ -> mới
   const sortedHistory = recentMessages.reverse();
 
-  // Chuẩn hóa danh mục sản phẩm thành text tóm tắt
   const productContextText = products.map((p) => {
     const price = p.sale_price || p.base_price;
     const variantsStr = Array.isArray(p.variants_json) && p.variants_json.length > 0
@@ -60,12 +127,10 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
     return `- [SKU: ${p.sku}] ${p.product_name} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''}`;
   }).join('\n');
 
-  // Chuẩn hóa tri thức shop
   const knowledgeContextText = knowledgeList.map((k) => {
     return `- [${k.category}] ${k.title}: ${k.content}`;
   }).join('\n');
 
-  // Chuẩn hóa lịch sử chat
   const chatHistoryText = sortedHistory.map((m) => {
     const role = m.sender_type === 'CUSTOMER' ? 'Khách hàng' : 'Nhân viên/Bot';
     return `${role}: ${m.content}`;
@@ -96,7 +161,8 @@ export const consultWithGeminiAI = async ({
   conversation_id,
   customer_id,
   messageText,
-  channel_id = null
+  channel_id = null,
+  customerName = ''
 }) => {
   // A. Nạp ngữ cảnh RAG
   const ragContext = await buildRAGContext({ business_id, conversation_id, channel_id });
@@ -125,14 +191,17 @@ export const consultWithGeminiAI = async ({
       messageText,
       aiConfig,
       rawProducts,
-      chatHistoryText
+      chatHistoryText,
+      defaultCustomerName: customerName
     });
   }
 
   // D. Xây dựng System Prompt chuyên biệt cho Tư vấn & Chốt đơn
+  const fallbackCustomerName = customerName || 'Khách hàng';
   const systemInstruction = `
 Bạn là ${aiConfig.bot_name || 'Trợ lý AI tư vấn bán hàng'}, đại diện cho cửa hàng.
 Phong cách giao tiếp của bạn: ${aiConfig.ai_persona_tone || 'FRIENDLY, LỊCH SỰ, CHU ĐÁO VÀ CHUYÊN NGHIỆP'}.
+Tên tài khoản người chat (Facebook): "${fallbackCustomerName}".
 Lời căn dặn của chủ shop: "${aiConfig.system_prompt || ''}"
 
 === THÔNG TIN SẢN PHẨM & TỒN KHO THỰC TẾ (RAG) ===
@@ -147,9 +216,11 @@ ${chatHistoryText}
 === NHIỆM VỤ CỦA BẠN ===
 1. Trả lời tin nhắn mới nhất của khách hàng một cách tự nhiên, lễ phép, tư vấn chính xác size, màu sắc, ưu đãi dựa trên dữ liệu sản phẩm ở trên. KHÔNG bịa đặt sản phẩm không có trong danh sách.
 2. NHẬN DIỆN VÀ BÓC TÁCH ĐƠN HÀNG (Order Extraction):
-   - Nếu khách hàng có ý định đặt mua (ví dụ để lại thông tin: mua hàng, tên, sđt, địa chỉ, số lượng, size, màu):
-   - Hãy bóc tách chi tiết: tên người nhận, số điện thoại, địa chỉ nhận hàng, mã SKU/tên sản phẩm, size, màu, số lượng.
-   - Nếu khách mới chỉ nói muốn mua mà thiếu thông tin (ví dụ chưa cho SĐT hoặc địa chỉ), hãy trả lời khéo léo để xin nốt thông tin còn thiếu.
+   - Nếu khách hàng có ý định đặt mua:
+     + "customer_name": Nếu khách tự xưng tên trong tin nhắn (ví dụ: 'mình là Tuấn', 'tên Lan', 'anh Hải'), lấy tên đó. Nếu khách KHÔNG xưng tên riêng, hãy điền "${fallbackCustomerName}". TUYỆT ĐỐI KHÔNG điền chữ "Khách hàng" nếu đã có tên "${fallbackCustomerName}".
+     + "phone": Số điện thoại 10 số sạch của khách.
+     + "shipping_address": Địa chỉ giao hàng thực tế sạch (số nhà, đường, ngõ, phường, quận, tỉnh), loại bỏ các câu mở đầu ('cho mình lấy 1 áo về...') và các từ phụ ('nhé', 'sđt').
+     + "items": Danh sách sản phẩm mua, phân loại size, màu, số lượng.
 3. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
    - Nếu khách yêu cầu gặp người thật, khiếu nại gay gắt hoặc tức giận, đặt "handover_to_staff": true.
 
@@ -161,7 +232,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
   "order_data": null hoặc {
     "customer_name": "Tên khách hàng",
     "phone": "Số điện thoại 10 số sạch",
-    "shipping_address": "Địa chỉ giao hàng đầy đủ",
+    "shipping_address": "Địa chỉ giao hàng sạch sẽ",
     "items": [
       {
         "sku": "Mã SKU của sản phẩm",
@@ -203,32 +274,38 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
     };
   } catch (apiErr) {
     console.error('[Gemini API Call Error]', apiErr.message);
-    // Khi gọi API Gemini thất bại (hết quota, mạng chập chờn...), dùng Fallback
     return generateSmartFallbackResponse({
       messageText,
       aiConfig,
       rawProducts,
-      chatHistoryText
+      chatHistoryText,
+      defaultCustomerName: customerName
     });
   }
 };
 
 /**
  * 3. Bộ mô phỏng AI thông minh (Smart Fallback Engine) khi chưa có API Key
- * Sử dụng Regex + Heuristic NLP để tự động phát hiện số điện thoại, địa chỉ và đơn hàng
+ * Sử dụng Heuristic NLP nâng cao bóc tách tên thật, SĐT và địa chỉ sạch
  */
-const generateSmartFallbackResponse = ({ messageText, aiConfig, rawProducts, chatHistoryText }) => {
+const generateSmartFallbackResponse = ({
+  messageText,
+  aiConfig,
+  rawProducts,
+  chatHistoryText,
+  defaultCustomerName = ''
+}) => {
   const text = (messageText || '').trim();
   const lower = text.toLowerCase();
 
-  // Phát hiện SĐT Việt Nam (10 số bắt đầu bằng 03, 05, 07, 08, 09)
-  const phoneMatch = text.match(/(0[3|5|7|8|9][0-9]{8})\b/);
-  const phone = phoneMatch ? phoneMatch[0] : '';
+  // Bóc tách tên, địa chỉ sạch và SĐT qua bộ phân tích
+  const { extractedName, cleanAddress, phone } = extractNameAndCleanAddress(text, defaultCustomerName);
 
   // Phát hiện từ khóa địa chỉ
   const hasAddress = lower.includes('số') || lower.includes('ngõ') || lower.includes('đường') ||
     lower.includes('phường') || lower.includes('quận') || lower.includes('hà nội') ||
-    lower.includes('hcm') || lower.includes('tp') || lower.includes('thị trấn') || lower.includes('thôn');
+    lower.includes('hcm') || lower.includes('tp') || lower.includes('thị trấn') || lower.includes('thôn') ||
+    cleanAddress.length > 5;
 
   // Khớp sản phẩm gần nhất trong kho
   let matchedProduct = null;
@@ -244,13 +321,14 @@ const generateSmartFallbackResponse = ({ messageText, aiConfig, rawProducts, cha
   // A. Trường hợp khách để lại SĐT và địa chỉ -> Chốt đơn
   if (phone && (hasAddress || lower.includes('ship') || lower.includes('lấy') || lower.includes('đặt'))) {
     const p = matchedProduct || rawProducts[0];
+    const customerDisplayName = extractedName && extractedName !== 'Khách hàng' ? `anh/chị ${extractedName}` : 'anh/chị';
     return {
-      reply: `Dạ em cảm ơn anh/chị đã để lại thông tin đặt hàng ạ! Em đã ghi nhận đơn hàng ${p ? `"${p.product_name}"` : 'sản phẩm'} với số điện thoại ${phone}. Chuyên viên của shop sẽ liên hệ xác nhận đơn và giao hàng cho anh/chị sớm nhất nhé!`,
+      reply: `Dạ em cảm ơn ${customerDisplayName} đã để lại thông tin đặt hàng ạ! Em đã ghi nhận đơn hàng ${p ? `"${p.product_name}"` : 'sản phẩm'} giao về "${cleanAddress || 'địa chỉ của mình'}" với số điện thoại ${phone}. Chuyên viên của shop sẽ liên hệ xác nhận đơn và giao hàng sớm nhất nhé!`,
       is_order_intent: true,
       order_data: {
-        customer_name: 'Khách hàng',
+        customer_name: extractedName || 'Khách hàng',
         phone,
-        shipping_address: text.replace(phone, '').trim(),
+        shipping_address: cleanAddress || text.replace(phone, '').trim(),
         items: p
           ? [
               {
@@ -320,13 +398,19 @@ export const processGeminiAIForMessage = async ({
       return { handled: false, reason: 'STAFF_TAKEN_OVER' };
     }
 
-    // 1. Phân tích qua Gemini AI
+    // Lấy tên thật của khách từ tài khoản Facebook
+    const customerFbName = conversation.customer_id?.full_name && conversation.customer_id.full_name !== 'Khách hàng Facebook'
+      ? conversation.customer_id.full_name
+      : '';
+
+    // 1. Phân tích qua Gemini AI (truyền customerName để AI biết tên thật)
     const aiResult = await consultWithGeminiAI({
       business_id,
       channel_id,
       conversation_id,
       customer_id,
-      messageText
+      messageText,
+      customerName: customerFbName
     });
 
     let finalReply = aiResult.reply || 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';
@@ -337,6 +421,13 @@ export const processGeminiAIForMessage = async ({
       try {
         const orderInfo = aiResult.order_data;
         const itemsToCreate = [];
+
+        // Xác định tên chuẩn xác của khách hàng:
+        // 1. Tên do khách xưng trong câu chat -> 2. Tên tài khoản Facebook thật -> 3. Fallback "Khách hàng"
+        let finalCustomerName = orderInfo.customer_name;
+        if (!finalCustomerName || finalCustomerName === 'Khách hàng' || finalCustomerName === 'null') {
+          finalCustomerName = customerFbName || 'Khách hàng';
+        }
 
         // Tìm kiếm chính xác ID và giá sản phẩm trong DB
         if (Array.isArray(orderInfo.items) && orderInfo.items.length > 0) {
@@ -369,8 +460,8 @@ export const processGeminiAIForMessage = async ({
               business_id,
               channel_id: channel_id || null,
               customer_id: customer_id || null,
-              customer_name: orderInfo.customer_name || 'Khách hàng',
-              shipping_customer_name: orderInfo.customer_name || 'Khách hàng',
+              customer_name: finalCustomerName,
+              shipping_customer_name: finalCustomerName,
               customer_phone: orderInfo.phone,
               shipping_phone: orderInfo.phone,
               shipping_address: orderInfo.shipping_address || 'Địa chỉ đang cập nhật',
@@ -383,7 +474,7 @@ export const processGeminiAIForMessage = async ({
             null
           );
 
-          console.log(`[Gemini AI] 🛒 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG THÀNH CÔNG: Mã #${createdOrder.order_code}`);
+          console.log(`[Gemini AI] 🛒 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG THÀNH CÔNG: Mã #${createdOrder.order_code} (Khách: ${finalCustomerName})`);
           finalReply += `\n\n(Dạ em đã tạo đơn hàng thành công với mã #${createdOrder.order_code}. Shop sẽ sớm liên hệ xác nhận và giao hàng ạ!)`;
         }
       } catch (orderErr) {
@@ -413,16 +504,26 @@ export const processGeminiAIForMessage = async ({
     conversation.last_message_at = new Date();
     await conversation.save();
 
-    // 5. Cập nhật thông tin khách hàng nếu AI bóc tách được SĐT
-    if (aiResult.order_data?.phone && customer_id) {
-      await Customer.findByIdAndUpdate(customer_id, {
-        $set: {
-          phone: aiResult.order_data.phone,
-          phone_number: aiResult.order_data.phone,
-          shipping_address: aiResult.order_data.shipping_address || undefined
-        },
-        $addToSet: { tags: 'Khách để lại SĐT' }
-      });
+    // 5. Cập nhật thông tin khách hàng: SĐT, Địa chỉ, và Tên thật nếu khách có xưng tên riêng
+    if (customer_id) {
+      const updateFields = {};
+      if (aiResult.order_data?.phone) {
+        updateFields.phone = aiResult.order_data.phone;
+        updateFields.phone_number = aiResult.order_data.phone;
+      }
+      if (aiResult.order_data?.shipping_address) {
+        updateFields.shipping_address = aiResult.order_data.shipping_address;
+      }
+      if (aiResult.order_data?.customer_name && aiResult.order_data.customer_name !== 'Khách hàng') {
+        updateFields.full_name = aiResult.order_data.customer_name;
+      }
+
+      if (Object.keys(updateFields).length > 0) {
+        await Customer.findByIdAndUpdate(customer_id, {
+          $set: updateFields,
+          $addToSet: { tags: 'Khách để lại SĐT' }
+        });
+      }
     }
 
     // 6. Phát Socket.IO cho màn hình LiveChat
