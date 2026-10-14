@@ -18,7 +18,7 @@ dotenv.config();
 
 const apiKey = process.env.GEMINI_API_KEY || '';
 const genAI = apiKey && apiKey !== 'your_gemini_api_key_here' ? new GoogleGenerativeAI(apiKey) : null;
-const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
+const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 /**
  * Hàm phân tích và làm sạch Tên người nhận và Địa chỉ giao hàng từ tin nhắn
