@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { aiConfigService } from '../../services/aiConfig.service.js';
 import { botScenarioService } from '../../services/botScenario.service.js';
+import { uploadService } from '../../services/upload.service.js';
 import {
   Bot,
   Sparkles,
@@ -25,7 +26,10 @@ import {
   Send,
   HelpCircle,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Image as ImageIcon,
+  Upload,
+  Paperclip
 } from 'lucide-react';
 
 const BotAutoPage = () => {
@@ -69,11 +73,40 @@ const BotAutoPage = () => {
     keywords: [],
     action_type: 'REPLY_TEXT',
     response_content: '',
+    image_url: '',
     tag_to_add: '',
     priority: 0,
     is_active: true
   });
   const [keywordInput, setKeywordInput] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Xử lý chọn và upload ảnh từ máy tính cho kịch bản
+  const handleImageFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      showToast('error', 'Vui lòng chọn file định dạng hình ảnh (JPG, PNG, WEBP, GIF)');
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      const res = await uploadService.uploadSingle(file, 'bot');
+      const uploadedPath = res?.data?.path || res?.data?.url || res?.path || res?.url;
+      if (uploadedPath) {
+        setScenarioForm((prev) => ({ ...prev, image_url: uploadedPath }));
+        showToast('success', 'Đã tải ảnh đính kèm thành công');
+      }
+    } catch (err) {
+      showToast('error', err.message || 'Lỗi khi tải ảnh lên');
+    } finally {
+      setUploadingImage(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // 3. STATE THỬ NGHIỆM SANDBOX / SIMULATOR
   const [simMessage, setSimMessage] = useState('');
@@ -215,6 +248,7 @@ const BotAutoPage = () => {
         keywords: item.keywords || [],
         action_type: item.action_type || 'REPLY_TEXT',
         response_content: item.response_content || '',
+        image_url: item.image_url || '',
         tag_to_add: item.tag_to_add || '',
         priority: item.priority || 0,
         is_active: item.is_active !== undefined ? item.is_active : true
@@ -227,6 +261,7 @@ const BotAutoPage = () => {
         keywords: [],
         action_type: 'REPLY_TEXT',
         response_content: '',
+        image_url: '',
         tag_to_add: '',
         priority: 0,
         is_active: true
@@ -552,10 +587,30 @@ const BotAutoPage = () => {
                         </td>
 
                         {/* Câu trả lời */}
-                        <td className="py-3.5 px-4 max-w-[260px]">
-                          <p className="truncate text-slate-700 dark:text-slate-300 text-[11px]" title={sc.response_content}>
-                            {sc.response_content || '—'}
-                          </p>
+                        <td className="py-3.5 px-4 max-w-[280px]">
+                          <div className="flex items-center space-x-2">
+                            {sc.image_url && (
+                              <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800">
+                                <img
+                                  src={sc.image_url}
+                                  alt="attachment"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-slate-700 dark:text-slate-300 text-[11px]" title={sc.response_content}>
+                                {sc.response_content || (sc.image_url ? '[Chỉ gửi ảnh đính kèm]' : '—')}
+                              </p>
+                              {sc.image_url && (
+                                <span className="text-[10px] text-blue-600 dark:text-blue-400 font-medium flex items-center space-x-1 mt-0.5">
+                                  <ImageIcon size={10} />
+                                  <span>Có đính kèm ảnh</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
                         </td>
 
                         {/* Hành động */}
@@ -1001,6 +1056,87 @@ const BotAutoPage = () => {
                     onChange={(e) => setScenarioForm({ ...scenarioForm, response_content: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                   />
+                </div>
+
+                {/* Hình ảnh đính kèm (Ảnh bảng size, Voucher, QR chuyển khoản...) */}
+                <div className="space-y-2.5 p-3.5 bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <div className="flex items-center justify-between">
+                    <label className="text-slate-700 dark:text-slate-300 font-bold flex items-center space-x-1.5">
+                      <ImageIcon size={14} className="text-blue-600" />
+                      <span>Hình ảnh đính kèm (Ảnh bảng size, Voucher, QR...):</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">Tùy chọn</span>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleImageFileChange}
+                    accept="image/*"
+                    className="hidden"
+                  />
+
+                  {/* Nút bấm tải ảnh lên & ô nhập URL */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {uploadingImage ? (
+                        <>
+                          <RefreshCw size={13} className="animate-spin" />
+                          <span>Đang tải ảnh...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload size={13} />
+                          <span>Tải ảnh từ máy tính</span>
+                        </>
+                      )}
+                    </button>
+
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Hoặc dán link ảnh trực tiếp: https://..."
+                        value={scenarioForm.image_url}
+                        onChange={(e) => setScenarioForm({ ...scenarioForm, image_url: e.target.value })}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Preview ảnh nếu có */}
+                  {scenarioForm.image_url && (
+                    <div className="flex items-center space-x-3 p-2.5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 animate-fadeIn">
+                      <div className="w-14 h-14 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100 dark:bg-slate-800">
+                        <img
+                          src={scenarioForm.image_url}
+                          alt="Preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.target.src = 'https://placehold.co/100x100?text=Lỗi+ảnh'; }}
+                        />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate">
+                          Đã chọn ảnh đính kèm
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate font-mono mt-0.5" title={scenarioForm.image_url}>
+                          {scenarioForm.image_url}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setScenarioForm({ ...scenarioForm, image_url: '' })}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-slate-700 rounded-lg transition shrink-0 cursor-pointer"
+                        title="Gỡ ảnh này"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Tự động gắn Tag khách hàng */}

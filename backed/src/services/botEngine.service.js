@@ -1,7 +1,13 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { Conversation, Message, Customer, Channel } from '../models/index.js';
 import { matchIncomingMessageToScenario } from './botScenario.service.js';
 import { getIO } from '../config/socket.config.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 /**
  * Xử lý tự động phản hồi tin nhắn của khách hàng dựa trên Kịch bản của Chủ shop
@@ -92,18 +98,72 @@ export const processBotEngineForMessage = async ({
 
         // E. Gửi tin nhắn thực tế về Facebook Messenger của khách qua Meta Graph API
         if (pageToken && senderPsid) {
-          try {
-            await axios.post(
-              `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-              {
-                recipient: { id: senderPsid },
-                message: { text: replyContent }
-              },
-              { timeout: 7000 }
-            );
-            console.log(`[Facebook Send API] Bot đã gửi kịch bản "${matchedScenario.scenario_name}" đến PSID ${senderPsid}`);
-          } catch (fbSendErr) {
-            console.warn('[Facebook Send Bot Reply Warn]', fbSendErr.response?.data?.error?.message || fbSendErr.message);
+          // 1. Gửi tin nhắn văn bản
+          if (replyContent) {
+            try {
+              await axios.post(
+                `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+                {
+                  recipient: { id: senderPsid },
+                  message: { text: replyContent }
+                },
+                { timeout: 7000 }
+              );
+              console.log(`[Facebook Send API] Bot đã gửi kịch bản "${matchedScenario.scenario_name}" đến PSID ${senderPsid}`);
+            } catch (fbSendErr) {
+              console.warn('[Facebook Send Bot Reply Warn]', fbSendErr.response?.data?.error?.message || fbSendErr.message);
+            }
+          }
+
+          // 2. Gửi hình ảnh đính kèm nếu có
+          if (matchedScenario.image_url) {
+            try {
+              const imgUrl = matchedScenario.image_url;
+              if (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) {
+                // Link ảnh công khai trên Internet
+                await axios.post(
+                  `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+                  {
+                    recipient: { id: senderPsid },
+                    message: {
+                      attachment: {
+                        type: 'image',
+                        payload: { url: imgUrl, is_reusable: true }
+                      }
+                    }
+                  },
+                  { timeout: 10000 }
+                );
+                console.log(`[Facebook Send API] Bot đã gửi hình ảnh kịch bản URL đến PSID ${senderPsid}`);
+              } else {
+                // File cục bộ trên máy tính/server trong /uploads/
+                const uploadsIndex = imgUrl.indexOf('/uploads/');
+                const relPath = uploadsIndex !== -1 ? imgUrl.substring(uploadsIndex + '/uploads/'.length) : imgUrl;
+                const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
+
+                if (fs.existsSync(localFilePath)) {
+                  const fileBuf = fs.readFileSync(localFilePath);
+                  const ext = path.extname(localFilePath).toLowerCase();
+                  let mimeType = 'image/jpeg';
+                  if (ext === '.png') mimeType = 'image/png';
+                  else if (ext === '.webp') mimeType = 'image/webp';
+                  else if (ext === '.gif') mimeType = 'image/gif';
+
+                  const form = new FormData();
+                  form.append('recipient', JSON.stringify({ id: senderPsid }));
+                  form.append('message', JSON.stringify({ attachment: { type: 'image', payload: {} } }));
+                  form.append('filedata', new Blob([fileBuf], { type: mimeType }), path.basename(localFilePath));
+
+                  await fetch(
+                    `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+                    { method: 'POST', body: form }
+                  );
+                  console.log(`[Facebook Send API] Bot đã gửi file ảnh local đến PSID ${senderPsid}`);
+                }
+              }
+            } catch (imgErr) {
+              console.warn('[Facebook Send Bot Image Warn]', imgErr.message);
+            }
           }
         }
       }
