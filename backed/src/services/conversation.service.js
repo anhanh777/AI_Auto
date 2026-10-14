@@ -2,12 +2,86 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { Conversation, Message, Customer, Order, OrderDetail } from '../models/index.js';
+import { Conversation, Message, Customer, Order, OrderDetail, Product } from '../models/index.js';
 import { getIO } from '../config/socket.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadBaseDir = path.resolve(__dirname, '../../uploads');
+
+export const computeConversationTags = ({
+  currentTags = [],
+  customerPhone = null,
+  activeOrders = [],
+  activeOrderDetails = [],
+  allProductsMap = new Map()
+}) => {
+  const nextTags = [];
+
+  // 1. Số điện thoại (>= 10 chữ số)
+  const cleanPhone = customerPhone ? String(customerPhone).replace(/\D/g, '') : '';
+  if (cleanPhone.length >= 10) {
+    nextTags.push('Có SĐT');
+  }
+
+  // 2. Trạng thái Đơn hàng & Sản phẩm
+  if (activeOrders.length > 0) {
+    nextTags.push('Đã đặt hàng');
+    if (activeOrders.length > 1) {
+      nextTags.push('Mua lại');
+    } else {
+      nextTags.push('Khách mới');
+    }
+
+    // Thêm các sản phẩm thuộc các đơn hàng còn hiệu lực (từ cả OrderDetail và order_items)
+    const orderProductNames = [
+      ...activeOrderDetails.map((d) => (d.product_name || '').trim()),
+      ...activeOrders.flatMap((o) => (o.order_items || []).map((it) => (it.product_name || it.name || '').trim()))
+    ].filter(Boolean);
+
+    for (const pName of orderProductNames) {
+      if (!nextTags.includes(pName)) {
+        nextTags.push(pName);
+      }
+    }
+  } else {
+    // Không còn đơn hàng nào hoạt động -> gán Khách mới
+    nextTags.push('Khách mới');
+  }
+
+  // Tập hợp các tên sản phẩm active (để lọc thẻ sản phẩm cũ của đơn đã xóa)
+  const activeProductSet = new Set([
+    ...activeOrderDetails.map((d) => (d.product_name || '').trim().toLowerCase()),
+    ...activeOrders.flatMap((o) => (o.order_items || []).map((it) => (it.product_name || it.name || '').trim().toLowerCase()))
+  ].filter(Boolean));
+
+  // 3. Giữ lại thẻ thủ công do nhân viên tự gán, đồng thời gỡ thẻ hệ thống cũ & thẻ sản phẩm đã xóa
+  for (const tag of currentTags || []) {
+    const trimmed = (tag || '').trim();
+    if (!trimmed) continue;
+    const lower = trimmed.toLowerCase();
+
+    // Bỏ qua nhãn hệ thống (đã được tính toán lại chính xác ở trên)
+    if (['có sđt', 'đã đặt hàng', 'khách mới', 'mua lại'].includes(lower)) {
+      continue;
+    }
+
+    // Nếu nhãn là tên một sản phẩm trong cửa hàng:
+    if (allProductsMap.has(lower)) {
+      // Chỉ giữ nếu sản phẩm đó vẫn còn nằm trong đơn hàng active!
+      if (activeProductSet.has(lower) && !nextTags.includes(trimmed)) {
+        nextTags.push(trimmed);
+      }
+    } else {
+      // Thẻ tùy chỉnh nhân viên gán (VIP, Khách quen, Khó tính, Ưu tiên...) -> luôn giữ lại
+      if (!nextTags.includes(trimmed)) {
+        nextTags.push(trimmed);
+      }
+    }
+  }
+
+  return nextTags;
+};
 
 export const getConversationsService = async ({ business_id, channel_id, search, tag }) => {
   const query = {};
@@ -23,73 +97,73 @@ export const getConversationsService = async ({ business_id, channel_id, search,
   // Tự động kiểm tra và đồng bộ thẻ nhãn dựa trên dữ liệu thực tế (Phone, Order, Product)
   if (conversations.length > 0) {
     try {
-      const customerIds = conversations.map(c => c.customer_id?._id).filter(Boolean);
-      const convIds = conversations.map(c => c._id);
+      const customerIds = conversations.map((c) => c.customer_id?._id).filter(Boolean);
+      const convIds = conversations.map((c) => c._id);
 
-      const orders = await Order.find({
-        $or: [
-          { customer_id: { $in: customerIds } },
-          { conversation_id: { $in: convIds } }
-        ]
-      }).lean();
+      const prodFilter = business_id ? { business_id } : {};
+      const [allProducts, orders] = await Promise.all([
+        Product.find(prodFilter).select('product_name sku').lean(),
+        Order.find({
+          $or: [
+            { customer_id: { $in: customerIds } },
+            { conversation_id: { $in: convIds } }
+          ],
+          order_status: { $nin: ['CANCELLED'] },
+          status: { $nin: ['CANCELLED'] }
+        }).lean()
+      ]);
+
+      const allProductsMap = new Map();
+      allProducts.forEach((p) => {
+        if (p.product_name) allProductsMap.set(p.product_name.trim().toLowerCase(), p.product_name.trim());
+        if (p.sku) allProductsMap.set(p.sku.trim().toLowerCase(), p.sku.trim());
+      });
 
       let orderDetails = [];
       if (orders.length > 0) {
-        orderDetails = await OrderDetail.find({ order_id: { $in: orders.map(o => o._id) } }).lean();
+        orderDetails = await OrderDetail.find({ order_id: { $in: orders.map((o) => o._id) } }).lean();
       }
 
       for (const conv of conversations) {
-        let currentTags = Array.isArray(conv.tags) ? [...conv.tags] : [];
-        let changed = false;
-
-        // 1. Kiểm tra SĐT
-        const phone = conv.customer_id?.phone || conv.order_draft?.phone;
-        if (phone && String(phone).replace(/\D/g, '').length >= 10) {
-          if (!currentTags.includes('Có SĐT')) {
-            currentTags.push('Có SĐT');
-            changed = true;
-          }
-        }
-
-        // 2. Kiểm tra Đơn hàng & Sản phẩm
-        const custOrders = orders.filter(o =>
+        const custOrders = orders.filter((o) =>
           (o.customer_id && String(o.customer_id) === String(conv.customer_id?._id)) ||
           (o.conversation_id && String(o.conversation_id) === String(conv._id))
         );
+        const cOrderIds = custOrders.map((o) => String(o._id));
+        const custDetails = orderDetails.filter((d) => cOrderIds.includes(String(d.order_id)));
 
-        if (custOrders.length > 0 || conv.order_draft?.status === 'ORDER_CREATED') {
-          if (!currentTags.includes('Đã đặt hàng')) {
-            currentTags.push('Đã đặt hàng');
-            changed = true;
-          }
-
-          if (custOrders.length > 1) {
-            if (!currentTags.includes('Mua lại')) {
-              currentTags.push('Mua lại');
-              currentTags = currentTags.filter(t => t !== 'Khách mới');
-              changed = true;
-            }
-          }
-
-          const cOrderIds = custOrders.map(o => String(o._id));
-          const cDetails = orderDetails.filter(d => cOrderIds.includes(String(d.order_id)));
-          for (const d of cDetails) {
-            const pName = (d.product_name || '').trim();
-            if (pName && !currentTags.includes(pName)) {
-              currentTags.push(pName);
-              changed = true;
-            }
-          }
-        } else {
-          if (!currentTags.includes('Khách mới') && !currentTags.includes('Mua lại')) {
-            currentTags.push('Khách mới');
-            changed = true;
-          }
+        let draftReset = false;
+        if (custOrders.length === 0 && conv.order_draft?.status === 'ORDER_CREATED') {
+          conv.order_draft.status = 'CANCELLED';
+          draftReset = true;
         }
 
-        if (changed) {
-          conv.tags = currentTags;
-          Conversation.updateOne({ _id: conv._id }, { $set: { tags: currentTags } }).catch(() => {});
+        const nextTags = computeConversationTags({
+          currentTags: conv.tags || [],
+          customerPhone: conv.customer_id?.phone || (conv.order_draft?.status !== 'CANCELLED' ? conv.order_draft?.phone : null),
+          activeOrders: custOrders,
+          activeOrderDetails: custDetails,
+          allProductsMap
+        });
+
+        const isSame =
+          Array.isArray(conv.tags) &&
+          conv.tags.length === nextTags.length &&
+          conv.tags.every((t, i) => t === nextTags[i]);
+
+        if (!isSame || draftReset) {
+          conv.tags = nextTags;
+          Conversation.updateOne(
+            { _id: conv._id },
+            { $set: { tags: nextTags, ...(draftReset ? { 'order_draft.status': 'CANCELLED' } : {}) } }
+          ).catch(() => {});
+
+          if (conv.customer_id?._id) {
+            Customer.updateOne(
+              { _id: conv.customer_id._id },
+              { $set: { tags: nextTags, customer_tags: nextTags } }
+            ).catch(() => {});
+          }
         }
       }
     } catch (syncErr) {
@@ -324,122 +398,96 @@ export const updateConversationTagsService = async (conversationId, { action = '
 };
 
 /**
- * Tự động phân tích và gán thẻ dựa trên dữ liệu (Phone, Order, Product, Customer History)
+ * Đồng bộ hai chiều toàn diện thẻ nhãn theo dữ liệu thực tế (True State Synchronization):
+ * - Nếu không còn đơn hàng nào (do xóa hoặc hủy đơn) -> tự động GỠ "Đã đặt hàng", GỠ "Mua lại", GỠ thẻ sản phẩm của đơn đã xóa, và gắn lại "Khách mới".
+ * - Nếu có đơn hàng -> tự động GÁN "Đã đặt hàng", trích xuất sản phẩm, phân loại Mua lại / Khách mới.
+ * - SĐT: Có SĐT -> GÁN "Có SĐT", không có -> GỠ "Có SĐT".
  */
-export const autoTagConversationService = async (conversationId, {
-  hasPhone,
-  phone,
-  orderCreated,
-  productName,
-  customerId
-} = {}) => {
+export const syncConversationTagsFromData = async (conversationId) => {
   try {
     const conversation = await Conversation.findById(conversationId)
       .populate('customer_id')
       .populate('channel_id');
     if (!conversation) return null;
 
-    let currentTags = Array.isArray(conversation.tags) ? [...conversation.tags] : [];
-    let changed = false;
+    const businessId = conversation.business_id;
+    const customer = conversation.customer_id;
 
-    // 1. Tự động gán nhãn "Có SĐT" khi phát hiện SĐT hợp lệ
-    const detectedPhone = phone || conversation.customer_id?.phone || conversation.order_draft?.phone;
-    if (hasPhone || (detectedPhone && String(detectedPhone).trim().length >= 10)) {
-      if (!currentTags.includes('Có SĐT')) {
-        currentTags.push('Có SĐT');
-        changed = true;
-      }
-    }
+    // 1. Lấy danh sách sản phẩm của Business để phân biệt thẻ sản phẩm
+    const allProducts = await Product.find({ business_id: businessId }).select('product_name sku').lean();
+    const allProductsMap = new Map();
+    allProducts.forEach((p) => {
+      if (p.product_name) allProductsMap.set(p.product_name.trim().toLowerCase(), p.product_name.trim());
+      if (p.sku) allProductsMap.set(p.sku.trim().toLowerCase(), p.sku.trim());
+    });
 
-    // 2. Tự động gán nhãn "Đã đặt hàng" & Tên sản phẩm từ Order
-    const existingOrders = await Order.find({
+    // 2. Lấy danh sách đơn hàng KHÔNG BỊ HỦY của khách/hội thoại này
+    const activeOrders = await Order.find({
       $or: [
         { conversation_id: conversation._id },
-        { customer_id: conversation.customer_id?._id }
-      ]
-    }).sort({ created_at: -1 }).lean();
+        ...(customer?._id ? [{ customer_id: customer._id }] : [])
+      ],
+      order_status: { $nin: ['CANCELLED'] },
+      status: { $nin: ['CANCELLED'] }
+    }).lean();
 
-    if (orderCreated || conversation.order_draft?.status === 'ORDER_CREATED' || existingOrders.length > 0) {
-      if (!currentTags.includes('Đã đặt hàng')) {
-        currentTags.push('Đã đặt hàng');
-        changed = true;
-      }
+    const activeOrderIds = activeOrders.map((o) => o._id);
+    const activeDetails = activeOrders.length > 0
+      ? await OrderDetail.find({ order_id: { $in: activeOrderIds } }).lean()
+      : [];
 
-      // Trích xuất tên sản phẩm từ chi tiết đơn hàng
-      if (existingOrders.length > 0) {
-        const orderIds = existingOrders.map((o) => o._id);
-        const details = await OrderDetail.find({ order_id: { $in: orderIds } }).lean();
-        for (const d of details) {
-          const pName = (d.product_name || '').trim();
-          if (pName && !currentTags.includes(pName)) {
-            currentTags.push(pName);
-            changed = true;
-          }
-        }
-      }
+    // Nếu không còn đơn hàng nào hoạt động, reset order_draft.status nếu trước đó đã là ORDER_CREATED
+    let draftStatusChanged = false;
+    if (activeOrders.length === 0 && conversation.order_draft?.status === 'ORDER_CREATED') {
+      conversation.order_draft.status = 'CANCELLED';
+      draftStatusChanged = true;
     }
 
-    // 3. Tự động gán nhãn Tên sản phẩm khách quan tâm / đặt
-    const targetProduct = productName || conversation.order_draft?.product_name;
-    if (targetProduct && typeof targetProduct === 'string' && targetProduct.trim()) {
-      const cleanProdTag = targetProduct.trim();
-      if (!currentTags.includes(cleanProdTag)) {
-        currentTags.push(cleanProdTag);
-        changed = true;
-      }
-    }
+    const nextTags = computeConversationTags({
+      currentTags: conversation.tags || [],
+      customerPhone: customer?.phone || (conversation.order_draft?.status !== 'CANCELLED' ? conversation.order_draft?.phone : null),
+      activeOrders,
+      activeOrderDetails: activeDetails,
+      allProductsMap
+    });
 
-    // 4. Tự động phân loại "Khách mới" / "Mua lại" dựa trên lịch sử đơn hàng
-    const cId = customerId || conversation.customer_id?._id;
-    if (cId) {
-      const pastOrdersCount = await Order.countDocuments({
-        customer_id: cId,
-        status: { $in: ['COMPLETED', 'DELIVERED', 'CONFIRMED', 'PENDING'] }
+    conversation.tags = nextTags;
+    if (draftStatusChanged) {
+      conversation.markModified('order_draft');
+    }
+    await conversation.save();
+
+    if (customer?._id) {
+      await Customer.findByIdAndUpdate(customer._id, {
+        $set: { tags: nextTags, customer_tags: nextTags }
       });
-
-      if (pastOrdersCount > 1 || (pastOrdersCount >= 1 && !orderCreated)) {
-        if (!currentTags.includes('Mua lại')) {
-          currentTags.push('Mua lại');
-          currentTags = currentTags.filter((t) => t !== 'Khách mới');
-          changed = true;
-        }
-      } else if (pastOrdersCount === 0) {
-        if (!currentTags.includes('Khách mới')) {
-          currentTags.push('Khách mới');
-          changed = true;
-        }
-      }
     }
 
-    if (changed) {
-      conversation.tags = currentTags;
-      await conversation.save();
-
-      if (conversation.customer_id) {
-        await Customer.findByIdAndUpdate(conversation.customer_id._id, {
-          $set: { tags: currentTags, customer_tags: currentTags }
-        });
+    // Bắn Socket.IO cập nhật real-time ngay
+    try {
+      const io = getIO();
+      if (businessId) {
+        io.to(businessId.toString()).emit('conversation_updated', conversation);
       }
-
-      // Phát Real-time qua Socket.IO
-      try {
-        const io = getIO();
-        if (conversation.business_id) {
-          io.to(conversation.business_id.toString()).emit('conversation_updated', conversation);
-        }
-        io.emit('conversation_updated', conversation);
-        io.emit('conversation_tags_updated', {
-          conversation_id: conversation._id,
-          tags: currentTags
-        });
-      } catch (socketErr) {
-        // Socket warn ignored
-      }
+      io.emit('conversation_updated', conversation);
+      io.emit('conversation_tags_updated', {
+        conversation_id: conversation._id,
+        tags: nextTags
+      });
+    } catch (sockErr) {
+      // Ignored
     }
 
     return conversation;
   } catch (err) {
-    console.warn('[AutoTag Error]', err.message);
+    console.warn('[SyncConversationTagsFromData Error]', err.message);
     return null;
   }
+};
+
+/**
+ * Tự động phân tích và gán thẻ dựa trên dữ liệu (Phone, Order, Product, Customer History)
+ */
+export const autoTagConversationService = async (conversationId, options = {}) => {
+  return await syncConversationTagsFromData(conversationId);
 };

@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
-import { Order, OrderDetail, Product, Customer, Inventory } from '../models/index.js';
+import { Order, OrderDetail, Product, Customer, Inventory, Conversation } from '../models/index.js';
 import { getPagination } from '../helpers/pagination.helper.js';
 import { getIO } from '../config/socket.config.js';
-import { autoTagConversationService } from './conversation.service.js';
+import { autoTagConversationService, syncConversationTagsFromData } from './conversation.service.js';
 
 /**
  * 1. Lấy danh sách Đơn hàng (Hỗ trợ lọc theo trạng thái, kênh bán, tìm kiếm, ngày tháng)
@@ -390,14 +390,21 @@ export const createOrderService = async (data, userId) => {
     console.warn('[Socket Order Warn]', sockErr.message);
   }
 
-  // Tự động gán nhãn "Đã đặt hàng" cho cuộc trò chuyện nếu tạo đơn từ chat
-  if (data.conversation_id) {
-    autoTagConversationService(data.conversation_id, {
-      orderCreated: true,
-      customerId: customer?._id,
-      hasPhone: Boolean(shippingPhone),
-      phone: shippingPhone
-    }).catch(() => {});
+  // Tự động gán nhãn "Đã đặt hàng" & thẻ sản phẩm cho cuộc trò chuyện liên quan
+  try {
+    const convIdsToSync = new Set();
+    if (data.conversation_id) convIdsToSync.add(data.conversation_id.toString());
+    if (customer?._id) {
+      const custConvs = await Conversation.find({ customer_id: customer._id }).select('_id');
+      for (const cc of custConvs) {
+        convIdsToSync.add(cc._id.toString());
+      }
+    }
+    for (const cId of convIdsToSync) {
+      await syncConversationTagsFromData(cId);
+    }
+  } catch (syncErr) {
+    console.warn('[Sync Tags After Create Order Warning]', syncErr.message);
   }
 
   return order;
@@ -525,11 +532,32 @@ export const updateOrderStatusService = async (id, newStatus, business_id, userI
     console.warn('[Socket Order Update Warn]', sockErr.message);
   }
 
+  // Tự động đồng bộ hai chiều thẻ hội thoại khi đổi trạng thái đơn hàng (đặc biệt khi hủy đơn CANCELLED)
+  try {
+    const convIdsToSync = new Set();
+    if (order.conversation_id) convIdsToSync.add(order.conversation_id.toString());
+    if (order.customer_id) {
+      const relatedConvs = await Conversation.find({ customer_id: order.customer_id }).select('_id order_draft');
+      for (const rc of relatedConvs) {
+        convIdsToSync.add(rc._id.toString());
+        if (newStatus === 'CANCELLED' && rc.order_draft && rc.order_draft.status === 'ORDER_CREATED') {
+          rc.order_draft.status = 'CANCELLED';
+          await rc.save();
+        }
+      }
+    }
+    for (const cId of convIdsToSync) {
+      await syncConversationTagsFromData(cId);
+    }
+  } catch (syncErr) {
+    console.warn('[Sync Tags After Order Status Update Warning]', syncErr.message);
+  }
+
   return order;
 };
 
 /**
- * 6. Xóa đơn hàng
+ * 6. Xóa đơn hàng (Kèm hoàn tồn kho, giảm số đơn của khách và đồng bộ gỡ thẻ hội thoại LiveChat ngay lập tức)
  */
 export const deleteOrderService = async (id, business_id) => {
   const filter = { _id: id };
@@ -538,9 +566,65 @@ export const deleteOrderService = async (id, business_id) => {
   const order = await Order.findOne(filter);
   if (!order) throw new Error('Không tìm thấy đơn hàng để xóa');
 
-  // Xóa các chi tiết đơn hàng
+  const customerId = order.customer_id;
+  const conversationId = order.conversation_id;
+  const bId = order.business_id;
+
+  // Hoàn tồn kho khả dụng nếu đơn chưa hoàn tất/chưa giao
+  const orderStatus = order.order_status || order.status;
+  if (!['COMPLETED', 'DELIVERED', 'CANCELLED'].includes(orderStatus)) {
+    for (const item of order.order_items || []) {
+      if (item.product_id) {
+        try {
+          await Product.findByIdAndUpdate(item.product_id, {
+            $inc: { stock_available: item.quantity || 1 }
+          });
+        } catch (e) {}
+      }
+    }
+  }
+
+  // Giảm total_orders_count của khách nếu có
+  if (customerId) {
+    try {
+      await Customer.findByIdAndUpdate(customerId, {
+        $inc: { total_orders_count: -1 }
+      });
+    } catch (e) {}
+  }
+
+  // Xóa các chi tiết đơn hàng và đơn hàng
   await OrderDetail.deleteMany({ order_id: order._id });
   await Order.findByIdAndDelete(order._id);
+
+  // Tìm tất cả cuộc trò chuyện liên quan để đồng bộ lại nhãn ngay lập tức (gỡ Đã đặt hàng, gỡ thẻ sản phẩm đã xóa)
+  try {
+    const convIdsToSync = new Set();
+    if (conversationId) convIdsToSync.add(conversationId.toString());
+    if (customerId) {
+      const relatedConvs = await Conversation.find({ customer_id: customerId }).select('_id order_draft');
+      for (const rc of relatedConvs) {
+        convIdsToSync.add(rc._id.toString());
+        if (rc.order_draft && rc.order_draft.status === 'ORDER_CREATED') {
+          rc.order_draft.status = 'CANCELLED';
+          await rc.save();
+        }
+      }
+    }
+
+    for (const cId of convIdsToSync) {
+      await syncConversationTagsFromData(cId);
+    }
+
+    // Bắn Socket thông báo đơn hàng đã bị xóa
+    const io = getIO();
+    if (bId) {
+      io.to(bId.toString()).emit('order_deleted', { order_id: id });
+    }
+    io.emit('order_deleted', { order_id: id });
+  } catch (syncErr) {
+    console.warn('[Sync Tags After Order Delete Warning]', syncErr.message);
+  }
 
   return { message: 'Đã xóa đơn hàng thành công' };
 };
