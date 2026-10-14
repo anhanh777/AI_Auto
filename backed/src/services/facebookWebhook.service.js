@@ -119,30 +119,46 @@ export const handleWebhookPayloadService = async (body) => {
     const pageToken = channel.page_access_token || channel.access_token;
 
     for (const event of messagingEvents) {
-      // Chỉ xử lý tin nhắn do khách gửi (loại bỏ echo và delivery receipt)
-      if (!event.message) continue;
-      if (event.message.is_echo) continue;
+      // Hỗ trợ cả tin nhắn (message) và nút tương tác/Bắt đầu (postback) của khách
+      if (!event.message && !event.postback) continue;
+      if (event.message?.is_echo) continue;
 
       const senderPsid = event.sender?.id;
       if (!senderPsid || senderPsid === pageId) continue;
 
-      // Chống lặp tin nhắn từ Meta Webhook Retry (Idempotency check qua mid)
-      const metaMessageId = event.message.mid;
+      // Chống lặp tin nhắn từ Meta Webhook Retry (Idempotency check qua mid hoặc postback key)
+      const metaMessageId = event.message?.mid || (event.postback ? `postback_${senderPsid}_${event.timestamp}` : null);
       if (metaMessageId) {
         const existingMsg = await Message.findOne({ external_message_id: metaMessageId });
         if (existingMsg) {
-          console.log(`[Facebook Webhook] ⏩ Bỏ qua tin nhắn trùng lặp từ Meta (mid: ${metaMessageId})`);
+          console.log(`[Facebook Webhook] ⏩ Bỏ qua sự kiện trùng lặp từ Meta (id: ${metaMessageId})`);
           continue;
         }
       }
 
-      const messageText = event.message.text || '';
-      const attachments = (event.message.attachments || []).map((att) => ({
-        type: att.type === 'image' ? 'image' : 'file',
+      let messageText = '';
+      if (event.message?.text) {
+        messageText = event.message.text;
+      } else if (event.postback) {
+        messageText = event.postback.title || event.postback.payload || 'Bắt đầu';
+      } else if (event.message?.quick_reply?.payload) {
+        messageText = event.message.quick_reply.payload;
+      }
+
+      // Xử lý tệp đính kèm, ảnh, nhãn dán Facebook
+      const attachments = (event.message?.attachments || []).map((att) => ({
+        type: att.type === 'image' || att.type === 'sticker' ? 'image' : (att.type || 'file'),
         url: att.payload?.url || ''
       })).filter((a) => a.url);
 
-      if (!messageText && attachments.length === 0) continue;
+      // Nếu khách gửi Like thumb hoặc Sticker mà không có text
+      if (!messageText && attachments.length === 0) {
+        if (event.message?.sticker_id) {
+          messageText = '👍';
+        } else {
+          continue;
+        }
+      }
 
       try {
         // A. Tìm hoặc tạo Khách hàng (Customer)
@@ -240,7 +256,10 @@ export const handleWebhookPayloadService = async (body) => {
           io.to(conversation._id.toString()).emit('new_message', savedMessage);
 
           // Phát sự kiện cập nhật danh sách hội thoại của toàn bộ cửa hàng/kênh
-          io.to(channel.business_id.toString()).emit('conversation_updated', populatedConv);
+          if (channel.business_id) {
+            io.to(channel.business_id.toString()).emit('conversation_updated', populatedConv);
+          }
+          io.emit('conversation_updated', populatedConv);
 
           // Phát quảng bá toàn hệ thống nếu client chưa join room cụ thể
           io.emit('new_incoming_message', {

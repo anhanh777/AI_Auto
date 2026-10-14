@@ -448,9 +448,15 @@ const LiveChatPage = () => {
   useEffect(() => {
     if (!socket) return;
 
-    // Tham gia phòng của cuộc hội thoại đang chọn
+    // Tham gia phòng của cuộc hội thoại, phòng business và phòng channel
     if (selectedConv?._id) {
       socket.emit('join_conversation', selectedConv._id);
+    }
+    if (activeBusiness?._id) {
+      socket.emit('join_business', activeBusiness._id);
+    }
+    if (activeChannel?._id) {
+      socket.emit('join_channel', activeChannel._id);
     }
 
     const handleNewMessage = (msg) => {
@@ -550,7 +556,7 @@ const LiveChatPage = () => {
       socket.off('conversation_tags_updated', handleConversationTagsUpdated);
       socket.off('business_tags_updated', handleBusinessTagsUpdated);
     };
-  }, [selectedConv?._id, activeChannel?._id]);
+  }, [selectedConv?._id, activeChannel?._id, activeBusiness?._id]);
 
   // 4. Gửi tin nhắn (hỗ trợ văn bản, hình ảnh, tài liệu đính kèm và deduplicate message)
   const handleSendMessage = async (e) => {

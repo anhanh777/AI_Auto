@@ -19,8 +19,24 @@ export const initSocket = (server) => {
     console.log(`[Socket.IO] Client connected: ${socket.id}`);
 
     socket.on('join_conversation', (conversationId) => {
-      socket.join(conversationId);
-      console.log(`[Socket.IO] Socket ${socket.id} joined conversation ${conversationId}`);
+      if (conversationId) {
+        socket.join(conversationId.toString());
+        console.log(`[Socket.IO] Socket ${socket.id} joined conversation ${conversationId}`);
+      }
+    });
+
+    socket.on('join_business', (businessId) => {
+      if (businessId) {
+        socket.join(businessId.toString());
+        console.log(`[Socket.IO] Socket ${socket.id} joined business ${businessId}`);
+      }
+    });
+
+    socket.on('join_channel', (channelId) => {
+      if (channelId) {
+        socket.join(channelId.toString());
+        console.log(`[Socket.IO] Socket ${socket.id} joined channel ${channelId}`);
+      }
     });
 
     socket.on('disconnect', () => {
