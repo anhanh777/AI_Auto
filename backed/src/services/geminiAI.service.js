@@ -1126,7 +1126,21 @@ export const processGeminiAIForMessage = async ({
     }
 
     // 4. Lưu câu trả lời của AI vào Collection messages
-    const attachments = (aiResult.image_urls || []).map((url) => ({
+    const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
+    const normalizedImageUrls = (aiResult.image_urls || []).map((url) => {
+      if (!url) return '';
+      let resUrl = url;
+      if (resUrl.includes('localhost:5000') || resUrl.includes('127.0.0.1:5000')) {
+        resUrl = resUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1):5000/g, backendUrl);
+      } else if (resUrl.startsWith('/uploads/')) {
+        resUrl = `${backendUrl}${resUrl}`;
+      }
+      return resUrl;
+    }).filter(Boolean);
+
+    aiResult.image_urls = normalizedImageUrls;
+
+    const attachments = normalizedImageUrls.map((url) => ({
       type: 'image',
       url
     }));

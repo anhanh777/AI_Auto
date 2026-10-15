@@ -52,29 +52,47 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
   if (!imgUrl || !senderPsid || !pageToken) return;
   try {
     let fbMid = null;
-    const isPublicHttpUrl = (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) &&
-      !imgUrl.includes('localhost') &&
-      !imgUrl.includes('127.0.0.1');
+    const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
+    let normalizedUrl = imgUrl;
+
+    if (normalizedUrl.includes('localhost:5000') || normalizedUrl.includes('127.0.0.1:5000')) {
+      normalizedUrl = normalizedUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1):5000/g, backendUrl);
+    } else if (normalizedUrl.startsWith('/uploads/')) {
+      normalizedUrl = `${backendUrl}${normalizedUrl}`;
+    }
+
+    const isPublicHttpUrl = (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) &&
+      !normalizedUrl.includes('localhost') &&
+      !normalizedUrl.includes('127.0.0.1');
+
+    let sendSuccess = false;
 
     if (isPublicHttpUrl) {
-      // Link ảnh công khai trên Internet
-      const res = await axios.post(
-        `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
-        {
-          recipient: { id: senderPsid },
-          message: {
-            attachment: {
-              type: 'image',
-              payload: { url: imgUrl, is_reusable: true }
+      // 1. Thử gửi qua URL công khai trước (nhanh và tiết kiệm băng thông)
+      try {
+        const res = await axios.post(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+          {
+            recipient: { id: senderPsid },
+            message: {
+              attachment: {
+                type: 'image',
+                payload: { url: normalizedUrl, is_reusable: true }
+              }
             }
-          }
-        },
-        { timeout: 10000 }
-      );
-      fbMid = res.data?.message_id;
-      console.log(`[Facebook Send API] Đã gửi hình ảnh URL đến PSID ${senderPsid}`, fbMid ? `(mid: ${fbMid})` : '');
-    } else {
-      // File cục bộ trên máy tính/server trong /uploads/
+          },
+          { timeout: 12000 }
+        );
+        fbMid = res.data?.message_id;
+        sendSuccess = true;
+        console.log(`[Facebook Send API] Đã gửi hình ảnh URL đến PSID ${senderPsid}`, fbMid ? `(mid: ${fbMid})` : '');
+      } catch (urlErr) {
+        console.warn(`[Facebook Send API Warn] Gửi ảnh bằng URL (${normalizedUrl}) không thành công:`, urlErr.response?.data || urlErr.message);
+      }
+    }
+
+    // 2. Nếu gửi bằng URL thất bại hoặc là file local, nạp file nhị phân từ thư mục uploads để gửi trực tiếp
+    if (!sendSuccess) {
       const uploadsIndex = imgUrl.indexOf('/uploads/');
       const relPath = uploadsIndex !== -1 ? imgUrl.substring(uploadsIndex + '/uploads/'.length) : imgUrl;
       const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
@@ -101,7 +119,7 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
           console.warn('[Facebook Send API Error]', fbData.error || fbData);
         } else {
           fbMid = fbData.message_id;
-          console.log(`[Facebook Send API] Đã gửi file ảnh local đến PSID ${senderPsid}:`, fbData);
+          console.log(`[Facebook Send API] Đã gửi file ảnh local nhị phân đến PSID ${senderPsid}:`, fbData);
         }
       } else {
         console.warn(`[Facebook Send API] File ảnh không tồn tại: ${localFilePath}`);
@@ -116,7 +134,7 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
         sender_type: 'AI_BOT',
         sender_id: null,
         content: '[Hình ảnh sản phẩm]',
-        attachments: [{ type: 'image', url: imgUrl }],
+        attachments: [{ type: 'image', url: normalizedUrl }],
         external_message_id: fbMid,
         is_read: true
       });

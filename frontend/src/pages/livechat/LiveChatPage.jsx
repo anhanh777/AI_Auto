@@ -10,6 +10,7 @@ import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { uploadService } from '../../services/upload.service.js';
 import { socket } from '../../utils/socket.js';
+import { resolveMediaUrl } from '../../utils/media.js';
 import {
   Search,
   ChevronDown,
@@ -1715,15 +1716,17 @@ const LiveChatPage = () => {
                               {msg.attachments.map((att, attIdx) => {
                                 const isSticker = att.type === 'sticker';
                                 const isImg = att.type === 'image' || att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
+                                const mediaUrl = resolveMediaUrl(att.url);
 
                                 if (isSticker) {
                                   return (
                                     <div key={attIdx} className="my-1">
                                       <img
-                                        src={att.url}
+                                        src={mediaUrl}
                                         alt={att.name || 'Nhãn dán'}
                                         className="w-24 h-24 sm:w-28 sm:h-28 object-contain hover:scale-105 transition-transform"
                                         title={att.name || 'Nhãn dán'}
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                       />
                                     </div>
                                   );
@@ -1732,18 +1735,19 @@ const LiveChatPage = () => {
                                   return (
                                     <img
                                       key={attIdx}
-                                      src={att.url}
+                                      src={mediaUrl}
                                       alt="Attachment"
-                                      onClick={() => window.open(att.url, '_blank')}
+                                      onClick={() => window.open(mediaUrl, '_blank')}
                                       className="max-w-[240px] max-h-[220px] rounded-xl object-cover cursor-pointer hover:opacity-90 shadow-xs border border-black/10 dark:border-white/10"
                                       title="Bấm để mở ảnh kích thước gốc"
+                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                     />
                                   );
                                 }
                                 return (
                                   <a
                                     key={attIdx}
-                                    href={att.url}
+                                    href={mediaUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[11px] transition ${

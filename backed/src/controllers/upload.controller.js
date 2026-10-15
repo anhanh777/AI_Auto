@@ -13,8 +13,11 @@ export const uploadSingleImage = (req, res) => {
     // Đường dẫn tương đối phục vụ qua express.static
     const relativePath = `/uploads/${folderType}/${req.file.filename}`;
 
-    // Tạo Full URL đầy đủ
-    const fullUrl = `${req.protocol}://${req.get('host')}${relativePath}`;
+    // Tạo Full URL đầy đủ (đảm bảo luôn dùng https khi chạy production / proxy)
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const baseUrl = process.env.BACKEND_URL || `${proto}://${host}`;
+    const fullUrl = `${baseUrl}${relativePath}`;
 
     return sendSuccess(res, 'Tải ảnh lên thành công', {
       filename: req.file.filename,
@@ -39,9 +42,13 @@ export const uploadMultipleImages = (req, res) => {
     }
 
     const folderType = req.query.folder || 'general';
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.get('host');
+    const baseUrl = process.env.BACKEND_URL || `${proto}://${host}`;
+
     const uploadedFiles = req.files.map((file) => {
       const relativePath = `/uploads/${folderType}/${file.filename}`;
-      const fullUrl = `${req.protocol}://${req.get('host')}${relativePath}`;
+      const fullUrl = `${baseUrl}${relativePath}`;
 
       return {
         filename: file.filename,

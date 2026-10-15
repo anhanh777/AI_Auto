@@ -9,6 +9,7 @@ import { uploadService } from '../../services/upload.service.js';
 import { generateSku, generateSlug } from '../../utils/slug.utils.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import MediaPickerModal from '../../components/modals/MediaPickerModal.jsx';
+import { resolveMediaUrl } from '../../utils/media.js';
 import {
   Package,
   Plus,
@@ -936,7 +937,7 @@ const ProductListPage = () => {
                     ) : (
                       products.map((prod) => {
                         const hasSale = prod.sale_price !== null && prod.sale_price !== undefined && prod.sale_price < prod.base_price;
-                        const mainImage = prod.image_urls?.[0] || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
+                        const mainImage = resolveMediaUrl(prod.image_urls?.[0]) || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
                         const creatorName = prod.created_by?.full_name || 'Anh Trần';
                         const creatorAvatar = prod.created_by?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60';
                         const isChecked = selectedProductIds.includes(prod._id);
@@ -1196,7 +1197,7 @@ const ProductListPage = () => {
                             <div className="flex items-center space-x-3">
                               {cat.image_url ? (
                                 <img
-                                  src={cat.image_url}
+                                  src={resolveMediaUrl(cat.image_url)}
                                   alt={cat.category_name}
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
                                 />
@@ -1348,7 +1349,7 @@ const ProductListPage = () => {
                         const actorRole = actor?.role_name || 'Thành viên';
                         const prodImg =
                           prod?.image_urls && prod.image_urls.length > 0
-                            ? prod.image_urls[0]
+                            ? resolveMediaUrl(prod.image_urls[0])
                             : null;
 
                         // Badge kiểu hành động
