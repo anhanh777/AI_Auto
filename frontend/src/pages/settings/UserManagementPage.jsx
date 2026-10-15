@@ -207,17 +207,30 @@ const UserManagementPage = () => {
   };
 
   // Từ chối yêu cầu tham gia
-  const handleRejectRequest = async (requestId) => {
-    if (!window.confirm('Bạn có chắc chắn muốn từ chối yêu cầu tham gia này?')) return;
-    try {
-      const res = await businessService.rejectJoinRequest(requestId, 'Từ chối bởi Quản trị viên');
-      if (res.success) {
-        showToast('success', res.message || 'Đã từ chối yêu cầu tham gia');
-        fetchJoinRequests();
+  const handleRejectRequest = (requestId) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Từ chối yêu cầu tham gia',
+      message: 'Bạn có chắc chắn muốn từ chối yêu cầu tham gia cửa hàng này?',
+      confirmText: 'Từ chối',
+      cancelText: 'Hủy bỏ',
+      type: 'warning',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await businessService.rejectJoinRequest(requestId, 'Từ chối bởi Quản trị viên');
+          if (res.success) {
+            showToast('success', res.message || 'Đã từ chối yêu cầu tham gia');
+            fetchJoinRequests();
+          }
+        } catch (err) {
+          showToast('error', err.message || 'Lỗi khi từ chối yêu cầu');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi từ chối yêu cầu');
-    }
+    });
   };
 
 

@@ -5,6 +5,7 @@ import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { channelService } from '../../services/channel.service.js';
 import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   MessageSquare,
   Package,
@@ -28,6 +29,16 @@ const BusinessHomePage = () => {
   const [channels, setChannels] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [showConnectModal, setShowConnectModal] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Tải danh sách Channels của Business hiện tại
   const fetchChannels = async () => {
@@ -49,17 +60,30 @@ const BusinessHomePage = () => {
     fetchChannels();
   }, [activeBusiness?._id]);
 
-  const handleDeleteChannel = async (channelId, channelName) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa Fanpage "${channelName}" khỏi hệ thống?`)) return;
-    try {
-      const res = await channelService.deleteChannel(channelId);
-      if (res.success) {
-        showToast('success', 'Đã xóa kênh Fanpage thành công');
-        fetchChannels();
+  const handleDeleteChannel = (channelId, channelName) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa kết nối Fanpage',
+      message: `Bạn có chắc chắn muốn ngắt kết nối và xóa Fanpage "${channelName}" khỏi hệ thống?`,
+      confirmText: 'Xóa Fanpage',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await channelService.deleteChannel(channelId);
+          if (res.success) {
+            showToast('success', 'Đã xóa kênh Fanpage thành công');
+            fetchChannels();
+          }
+        } catch (error) {
+          showToast('error', error.message || 'Lỗi khi xóa kênh');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (error) {
-      showToast('error', error.message || 'Lỗi khi xóa kênh');
-    }
+    });
   };
 
   if (!activeBusiness) {
@@ -242,10 +266,17 @@ const BusinessHomePage = () => {
 
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-400">Trạng thái:</span>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>Sẵn sàng tiếp nhận tin nhắn</span>
-                      </span>
+                      {ch.token_valid === false ? (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold text-[10px] flex items-center space-x-1" title={ch.token_error || 'Token Fanpage hết hạn'}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                          <span>Token hết hạn</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span>Sẵn sàng tiếp nhận tin nhắn</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -262,6 +293,20 @@ const BusinessHomePage = () => {
                       <MessageSquare size={14} />
                       <span>Xem Tin Nhắn Fanpage</span>
                     </button>
+                    {ch.token_valid === false && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowConnectModal(true);
+                        }}
+                        className="py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer shadow-sm shrink-0"
+                        title="Kết nối lại Fanpage để gia hạn Token"
+                      >
+                        <RefreshCw size={13} />
+                        <span>Kết nối lại</span>
+                      </button>
+                    )}
                   </div>
                 </div>
             ))}
@@ -275,6 +320,19 @@ const BusinessHomePage = () => {
         onClose={() => setShowConnectModal(false)}
         businessId={activeBusiness._id}
         onChannelCreated={() => fetchChannels()}
+      />
+
+      {/* MODAL XÁC NHẬN XÓA FANPAGE THAY THẾ WINDOW.CONFIRM */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
       />
     </div>
   );

@@ -18,8 +18,8 @@ import {
 } from 'lucide-react';
 
 const LoginPage = () => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -207,16 +207,6 @@ const LoginPage = () => {
             >
               Đăng ký ngay
             </Link>
-          </div>
-
-          {/* Gợi ý tài khoản kiểm thử */}
-          <div className="mt-6 p-4 bg-slate-100 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs text-slate-600 dark:text-slate-400 space-y-1">
-            <p className="font-bold text-slate-700 dark:text-slate-200 flex items-center space-x-1">
-              <CheckCircle2 size={14} className="text-emerald-500" />
-              <span>Tài khoản kiểm thử mẫu:</span>
-            </p>
-            <p>• Admin: <code className="text-blue-600 font-mono font-bold">admin</code> / <code className="text-blue-600 font-mono">admin123</code></p>
-            <p>• Nhân viên: <code className="text-blue-600 font-mono font-bold">staff01</code> / <code className="text-blue-600 font-mono">staff123</code></p>
           </div>
         </div>
 

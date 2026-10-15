@@ -13,8 +13,20 @@ import {
   Edit2,
   FileText,
   Tag,
-  X
+  X,
+  FileSpreadsheet
 } from 'lucide-react';
+import ImportKnowledgeModal from '../../components/modals/ImportKnowledgeModal.jsx';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
+
+const DEFAULT_CATEGORIES = [
+  'Thông tin chung',
+  'Chính sách vận chuyển & Phí ship',
+  'Chính sách đổi trả & Bảo hành',
+  'Bảng hướng dẫn chọn size',
+  'Khuyến mãi & Ưu đãi',
+  'Câu hỏi thường gặp'
+];
 
 const KnowledgeBasePage = () => {
   const { activeBusiness } = useBusiness();
@@ -25,10 +37,22 @@ const KnowledgeBasePage = () => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
   const [form, setForm] = useState({
     title: '',
-    category: 'GENERAL',
+    category: DEFAULT_CATEGORIES[0],
     content: '',
     keywords: ''
   });
@@ -42,9 +66,8 @@ const KnowledgeBasePage = () => {
         search: search || undefined,
         category: categoryFilter || undefined
       });
-      if (res.success && Array.isArray(res.data)) {
-        setItems(res.data);
-      }
+      const dataList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+      setItems(dataList);
     } catch (err) {
       console.error('Lỗi khi tải kho tri thức:', err);
     } finally {
@@ -56,43 +79,134 @@ const KnowledgeBasePage = () => {
     fetchKnowledge();
   }, [activeBusiness?._id, search, categoryFilter]);
 
-  const handleCreate = async (e) => {
+  // Gom các danh mục độc nhất của shop
+  const customCategoriesFromItems = React.useMemo(() => {
+    const setCats = new Set();
+    items.forEach((it) => {
+      const c = it.category;
+      if (
+        c &&
+        !DEFAULT_CATEGORIES.includes(c) &&
+        !['SHIPPING', 'RETURN_POLICY', 'SIZE_GUIDE', 'PROMOTION', 'FAQ', 'GENERAL'].includes(c)
+      ) {
+        setCats.add(c);
+      }
+    });
+    return Array.from(setCats);
+  }, [items]);
+
+  // Bộ lọc danh mục động theo thực tế dữ liệu của shop
+  const filterCategories = React.useMemo(() => {
+    const cats = new Set();
+    items.forEach((it) => {
+      if (it.category) cats.add(it.category);
+    });
+    return Array.from(cats);
+  }, [items]);
+
+  const handleOpenCreate = () => {
+    setEditingId(null);
+    setForm({ title: '', category: DEFAULT_CATEGORIES[0], content: '', keywords: '' });
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (item) => {
+    setEditingId(item._id);
+    const rawCat = item.category || 'Thông tin chung';
+    const mapped =
+      rawCat === 'SHIPPING'
+        ? 'Chính sách vận chuyển & Phí ship'
+        : rawCat === 'RETURN_POLICY'
+        ? 'Chính sách đổi trả & Bảo hành'
+        : rawCat === 'SIZE_GUIDE'
+        ? 'Bảng hướng dẫn chọn size'
+        : rawCat === 'PROMOTION'
+        ? 'Khuyến mãi & Ưu đãi'
+        : rawCat === 'FAQ'
+        ? 'Câu hỏi thường gặp'
+        : rawCat === 'GENERAL'
+        ? 'Thông tin chung'
+        : rawCat;
+
+    setForm({
+      title: item.title || '',
+      category: mapped,
+      content: item.content || '',
+      keywords: Array.isArray(item.keywords) ? item.keywords.join(', ') : (item.keywords || '')
+    });
+    setShowModal(true);
+  };
+
+  const handleSave = async (e) => {
     e.preventDefault();
     if (!form.title.trim() || !form.content.trim()) return;
+
     try {
       setCreating(true);
       const kw = form.keywords
         ? form.keywords.split(',').map((k) => k.trim()).filter(Boolean)
         : [];
-      const res = await knowledgeService.createKnowledge({
-        ...form,
-        keywords: kw,
-        business_id: activeBusiness._id
-      });
-      if (res.success) {
-        showToast('success', 'Đã thêm tài liệu tri thức cho AI!');
+
+      let res;
+      if (editingId) {
+        res = await knowledgeService.updateKnowledge(editingId, {
+          ...form,
+          keywords: kw,
+          business_id: activeBusiness._id
+        });
+      } else {
+        res = await knowledgeService.createKnowledge({
+          ...form,
+          keywords: kw,
+          business_id: activeBusiness._id
+        });
+      }
+
+      if (res?.success || res?._id || res?.data?._id) {
+        showToast(
+          'success',
+          editingId
+            ? 'Đã cập nhật tài liệu tri thức thành công!'
+            : 'Đã thêm tài liệu tri thức cho AI thành công!'
+        );
         setShowModal(false);
-        setForm({ title: '', category: 'GENERAL', content: '', keywords: '' });
+        setEditingId(null);
+        setForm({ title: '', category: DEFAULT_CATEGORIES[0], content: '', keywords: '' });
         fetchKnowledge();
+      } else {
+        throw new Error(res?.message || 'Không thể lưu tài liệu');
       }
     } catch (err) {
-      showToast('error', err.message || 'Lỗi khi lưu');
+      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi lưu tài liệu');
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDelete = async (id, title) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa tài liệu "${title}"?`)) return;
-    try {
-      const res = await knowledgeService.deleteKnowledge(id, activeBusiness._id);
-      if (res.success) {
-        showToast('success', 'Đã xóa tài liệu tri thức');
-        fetchKnowledge();
+  const handleDelete = (id, title) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa tài liệu tri thức',
+      message: `Bạn có chắc chắn muốn xóa tài liệu "${title}" khỏi kho tri thức của AI?`,
+      confirmText: 'Xóa tài liệu',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await knowledgeService.deleteKnowledge(id, activeBusiness._id);
+          if (res?.success !== false) {
+            showToast('success', 'Đã xóa tài liệu tri thức');
+            fetchKnowledge();
+          }
+        } catch (err) {
+          showToast('error', err.response?.data?.message || err.message || 'Lỗi khi xóa');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa');
-    }
+    });
   };
 
   const getCategoryLabel = (cat) => {
@@ -107,8 +221,10 @@ const KnowledgeBasePage = () => {
         return '🎁 Khuyến mãi & Voucher';
       case 'FAQ':
         return '❓ Câu hỏi thường gặp';
-      default:
+      case 'GENERAL':
         return '📑 Thông tin chung';
+      default:
+        return cat ? `🏷️ ${cat}` : '📑 Thông tin chung';
     }
   };
 
@@ -131,14 +247,24 @@ const KnowledgeBasePage = () => {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow transition cursor-pointer shrink-0"
-        >
-          <Plus size={16} />
-          <span>+ Thêm tài liệu tri thức</span>
-        </button>
+        <div className="flex items-center space-x-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+          >
+            <FileSpreadsheet size={16} className="text-emerald-600" />
+            <span>Nhập từ file</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleOpenCreate}
+            className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow transition cursor-pointer"
+          >
+            <Plus size={16} />
+            <span>Thêm tài liệu tri thức</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}
@@ -156,26 +282,35 @@ const KnowledgeBasePage = () => {
 
         {/* Category Pills */}
         <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar">
-          {[
-            { id: '', label: 'Tất cả' },
-            { id: 'SHIPPING', label: 'Vận chuyển' },
-            { id: 'RETURN_POLICY', label: 'Đổi trả' },
-            { id: 'FAQ', label: 'FAQ' },
-            { id: 'GENERAL', label: 'Chung' }
-          ].map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setCategoryFilter(cat.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
-                categoryFilter === cat.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+              categoryFilter === ''
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+            }`}
+          >
+            Tất cả ({items.length})
+          </button>
+          {filterCategories.map((cat) => {
+            const count = items.filter((it) => it.category === cat).length;
+            return (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategoryFilter(categoryFilter === cat ? '' : cat)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center space-x-1.5 ${
+                  categoryFilter === cat
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
+                }`}
+              >
+                <span>{getCategoryLabel(cat)}</span>
+                <span className="opacity-75 text-[10px]">({count})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -192,12 +327,21 @@ const KnowledgeBasePage = () => {
           <p className="text-xs text-slate-400">
             Nạp các chính sách đổi trả, ship hàng hoặc câu hỏi thường gặp để AI tự động tư vấn
           </p>
-          <button
-            onClick={() => setShowModal(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow hover:bg-blue-700"
-          >
-            + Nạp tài liệu tri thức đầu tiên
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+            <button
+              onClick={handleOpenCreate}
+              className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold shadow hover:bg-blue-700 cursor-pointer"
+            >
+              + Nạp tài liệu tri thức đầu tiên
+            </button>
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 dark:hover:bg-slate-650 cursor-pointer"
+            >
+              <FileSpreadsheet size={16} className="text-emerald-600" />
+              <span>Nhập từ file Excel / CSV</span>
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -211,14 +355,24 @@ const KnowledgeBasePage = () => {
                   <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 text-[10px] font-extrabold border border-blue-200 dark:border-blue-800">
                     {getCategoryLabel(item.category)}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(item._id, item.title)}
-                    className="p-1 text-slate-300 hover:text-rose-500 rounded-lg transition"
-                    title="Xóa tài liệu"
-                  >
-                    <Trash2 size={15} />
-                  </button>
+                  <div className="flex items-center space-x-1">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEdit(item)}
+                      className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                      title="Chỉnh sửa tài liệu"
+                    >
+                      <Edit2 size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item._id, item.title)}
+                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 transition cursor-pointer"
+                      title="Xóa tài liệu"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug line-clamp-2">
@@ -249,22 +403,25 @@ const KnowledgeBasePage = () => {
         </div>
       )}
 
-      {/* Modal Thêm tài liệu */}
+      {/* Modal Thêm / Chỉnh sửa tài liệu */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-700 relative text-slate-800 dark:text-slate-100">
             <button
-              onClick={() => setShowModal(false)}
+              onClick={() => {
+                setShowModal(false);
+                setEditingId(null);
+              }}
               className="absolute top-4 right-4 p-1 text-slate-400 hover:text-slate-600 dark:hover:text-white"
             >
               <X size={20} />
             </button>
             <h3 className="text-lg font-bold mb-4 flex items-center space-x-2">
               <Brain className="text-blue-600" />
-              <span>Thêm Tài Liệu Tri Thức Mới</span>
+              <span>{editingId ? 'Chỉnh Sửa Tài Liệu Tri Thức' : 'Thêm Tài Liệu Tri Thức Mới'}</span>
             </h3>
 
-            <form onSubmit={handleCreate} className="space-y-3.5">
+            <form onSubmit={handleSave} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold mb-1">Tiêu đề tài liệu *</label>
                 <input
@@ -284,12 +441,22 @@ const KnowledgeBasePage = () => {
                   onChange={(e) => setForm({ ...form, category: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none"
                 >
-                  <option value="GENERAL">📑 Thông tin chung</option>
-                  <option value="SHIPPING">🚚 Chính sách vận chuyển & Phí ship</option>
-                  <option value="RETURN_POLICY">🔄 Chính sách đổi trả & Bảo hành</option>
-                  <option value="SIZE_GUIDE">📏 Bảng hướng dẫn chọn size</option>
-                  <option value="PROMOTION">🎁 Khuyến mãi & Ưu đãi</option>
-                  <option value="FAQ">❓ Câu hỏi thường gặp</option>
+                  <optgroup label="Danh mục phổ biến">
+                    {DEFAULT_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {customCategoriesFromItems.length > 0 && (
+                    <optgroup label="Danh mục riêng của shop">
+                      {customCategoriesFromItems.map((c) => (
+                        <option key={c} value={c}>
+                          🏷️ {c}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -319,7 +486,10 @@ const KnowledgeBasePage = () => {
               <div className="flex justify-end space-x-2 pt-3 border-t border-slate-100 dark:border-slate-700">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditingId(null);
+                  }}
                   className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 rounded-xl"
                 >
                   Hủy
@@ -329,13 +499,34 @@ const KnowledgeBasePage = () => {
                   disabled={creating}
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow disabled:opacity-50"
                 >
-                  {creating ? 'Đang lưu...' : 'Lưu tài liệu'}
+                  {creating ? 'Đang lưu...' : (editingId ? 'Cập nhật tài liệu' : 'Lưu tài liệu')}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Modal nhập file Excel/CSV */}
+      <ImportKnowledgeModal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        businessId={activeBusiness?._id}
+        onImportSuccess={() => fetchKnowledge()}
+      />
+
+      {/* Modal xác nhận xóa thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

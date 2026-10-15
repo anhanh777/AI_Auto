@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { mediaService } from '../../services/media.service.js';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Image as ImageIcon,
   UploadCloud,
@@ -56,6 +57,16 @@ const MediaLibraryPage = () => {
   const [editingAsset, setEditingAsset] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [deletingBulk, setDeletingBulk] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Upload Form State
   const [uploadFiles, setUploadFiles] = useState([]);
@@ -194,39 +205,62 @@ const MediaLibraryPage = () => {
   };
 
   // Xóa 1 ảnh
-  const handleDeleteSingle = async (id, name) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa ảnh "${name}" khỏi kho?`)) return;
-
-    try {
-      const res = await mediaService.deleteMedia(id, activeBusiness._id);
-      if (res.success) {
-        showToast('success', 'Đã xóa ảnh thành công');
-        setSelectedIds((prev) => prev.filter((item) => item !== id));
-        fetchMedia();
+  const handleDeleteSingle = (id, name) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa tệp hình ảnh',
+      message: `Bạn có chắc chắn muốn xóa ảnh "${name}" khỏi kho media?`,
+      confirmText: 'Xóa ảnh',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await mediaService.deleteMedia(id, activeBusiness._id);
+          if (res.success) {
+            showToast('success', 'Đã xóa ảnh thành công');
+            setSelectedIds((prev) => prev.filter((item) => item !== id));
+            fetchMedia();
+          }
+        } catch (err) {
+          showToast('error', err.message || 'Lỗi khi xóa ảnh');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa ảnh');
-    }
+    });
   };
 
   // Xóa hàng loạt
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Bạn có chắc muốn xóa ${selectedIds.length} ảnh đã chọn khỏi kho?`)) return;
-
-    try {
-      setDeletingBulk(true);
-      const res = await mediaService.bulkDeleteMedia(selectedIds, activeBusiness._id);
-      if (res.success) {
-        showToast('success', res.message || `Đã xóa ${selectedIds.length} ảnh`);
-        setSelectedIds([]);
-        fetchMedia();
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa nhiều hình ảnh',
+      message: `Bạn có chắc muốn xóa vĩnh viễn ${selectedIds.length} ảnh đã chọn khỏi kho media?`,
+      confirmText: `Xóa ${selectedIds.length} ảnh`,
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setDeletingBulk(true);
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await mediaService.bulkDeleteMedia(selectedIds, activeBusiness._id);
+          if (res.success) {
+            showToast('success', res.message || `Đã xóa ${selectedIds.length} ảnh`);
+            setSelectedIds([]);
+            fetchMedia();
+          }
+        } catch (err) {
+          showToast('error', err.message || 'Lỗi khi xóa nhiều ảnh');
+        } finally {
+          setDeletingBulk(false);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa nhiều ảnh');
-    } finally {
-      setDeletingBulk(false);
-    }
+    });
   };
 
   // Toggle tick chọn
@@ -915,6 +949,19 @@ const MediaLibraryPage = () => {
           </div>
         </div>
       )}
+
+      {/* Modal xác nhận xóa ảnh thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

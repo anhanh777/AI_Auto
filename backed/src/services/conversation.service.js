@@ -179,12 +179,47 @@ export const getConversationsService = async ({ business_id, channel_id, search,
     );
   }
 
+  // Tự động kiểm tra và làm sạch unread_count: nếu tin nhắn cuối cùng là của Shop/Bot AI thì không còn tin tồn đọng
+  if (conversations.length > 0) {
+    for (const conv of conversations) {
+      if (conv.unread_count > 0) {
+        try {
+          const lastMsg = await Message.findOne({ conversation_id: conv._id }).sort({ created_at: -1 }).select('sender_type').lean();
+          if (lastMsg && (lastMsg.sender_type === 'AI_BOT' || lastMsg.sender_type === 'STAFF')) {
+            conv.unread_count = 0;
+            Conversation.updateOne({ _id: conv._id }, { $set: { unread_count: 0 } }).catch(() => {});
+          }
+        } catch (e) {}
+      }
+    }
+  }
+
   return conversations;
 };
 
 export const getMessagesService = async (conversationId) => {
-  const messages = await Message.find({ conversation_id: conversationId })
-    .sort({ created_at: 1 });
+  const [messages] = await Promise.all([
+    Message.find({ conversation_id: conversationId }).sort({ created_at: 1 }),
+    // Đánh dấu tất cả tin nhắn trong hội thoại là đã đọc
+    Message.updateMany(
+      { conversation_id: conversationId, is_read: false },
+      { $set: { is_read: true } }
+    ),
+    // Reset unread_count về 0 trong Conversation
+    Conversation.findByIdAndUpdate(
+      conversationId,
+      { $set: { unread_count: 0 } }
+    )
+  ]);
+
+  try {
+    const io = getIO();
+    if (io) {
+      io.to(conversationId.toString()).emit('conversation_read', { conversation_id: conversationId });
+      io.emit('conversation_updated', { _id: conversationId, unread_count: 0 });
+    }
+  } catch (sockErr) {}
+
   return messages;
 };
 
@@ -194,7 +229,8 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
     sender_type,
     sender_id,
     content,
-    attachments
+    attachments,
+    is_read: true
   });
 
   const updatedConv = await Conversation.findByIdAndUpdate(
@@ -202,7 +238,8 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
     {
       last_message_content: content,
       last_message_text: content,
-      last_message_at: new Date()
+      last_message_at: new Date(),
+      unread_count: 0
     },
     { new: true }
   ).populate('channel_id').populate('customer_id');
@@ -228,7 +265,23 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
             );
             console.log(`[Facebook Send API] Đã gửi tin nhắn văn bản đến khách hàng (PSID: ${recipientPsid})`);
           } catch (textErr) {
-            console.warn('[Facebook Send Text Warn]', textErr.response?.data?.error?.message || textErr.message);
+            const fbErrMsg = textErr.response?.data?.error?.message || textErr.message;
+            const fbErrCode = textErr.response?.data?.error?.code;
+            console.error(`[Facebook Send Text Error ${fbErrCode || ''}]`, fbErrMsg);
+
+            message.metadata = {
+              ...message.metadata,
+              send_status: 'FAILED',
+              error_code: fbErrCode,
+              error_message: fbErrCode === 190
+                ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
+                : fbErrMsg
+            };
+            await message.save();
+
+            if (fbErrCode === 190 && updatedConv.channel_id?._id) {
+              await Channel.findByIdAndUpdate(updatedConv.channel_id._id, { is_connected: false });
+            }
           }
         }
 

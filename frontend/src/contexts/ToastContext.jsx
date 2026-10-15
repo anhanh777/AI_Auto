@@ -7,7 +7,21 @@ export const ToastProvider = ({ children }) => {
   const [toasts, setToasts] = useState([]);
 
   // Hàm hiển thị Toast phản hồi tức thì cho thao tác người dùng (CRUD)
-  const showToast = useCallback((type, message, duration = 3000) => {
+  const showToast = useCallback((arg1, arg2, duration = 3000) => {
+    let type = 'info';
+    let message = '';
+    const knownTypes = ['success', 'error', 'warning', 'info'];
+
+    if (knownTypes.includes(arg1)) {
+      type = arg1;
+      message = arg2;
+    } else if (knownTypes.includes(arg2)) {
+      type = arg2;
+      message = arg1;
+    } else {
+      message = String(arg1 || '');
+    }
+
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, type, message }]);
 

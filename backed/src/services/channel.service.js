@@ -9,12 +9,125 @@ export const getChannelsService = async (businessId) => {
   const channels = await Channel.find(filter)
     .populate('business_id', 'business_name code logo_url')
     .sort({ created_at: -1 });
-  return channels;
+
+  // Kiểm tra tính hợp lệ của token cho các kênh Facebook
+  const channelsWithStatus = await Promise.all(
+    channels.map(async (ch) => {
+      const chObj = ch.toObject ? ch.toObject() : { ...ch };
+      const token = ch.page_access_token || ch.access_token;
+      if (!token) {
+        chObj.token_valid = false;
+        chObj.token_error = 'Chưa có Token';
+        return chObj;
+      }
+      try {
+        const checkRes = await fetch(`https://graph.facebook.com/v19.0/me?fields=id&access_token=${token}`);
+        const checkData = await checkRes.json();
+        if (checkData.id) {
+          chObj.token_valid = true;
+          if (!ch.is_connected) {
+            await Channel.findByIdAndUpdate(ch._id, { is_connected: true });
+            chObj.is_connected = true;
+          }
+        } else {
+          chObj.token_valid = false;
+          chObj.token_error = checkData.error?.message || 'Token hết hạn hoặc không hợp lệ';
+          if (ch.is_connected) {
+            await Channel.findByIdAndUpdate(ch._id, { is_connected: false });
+            chObj.is_connected = false;
+          }
+        }
+      } catch (err) {
+        chObj.token_valid = false;
+        chObj.token_error = err.message;
+      }
+      return chObj;
+    })
+  );
+
+  return channelsWithStatus;
+};
+
+/**
+ * Tự động kiểm tra và nâng cấp lên Token vĩnh viễn (Never Expires) cho Fanpage Facebook
+ */
+export const resolvePermanentPageToken = async ({ access_token, user_access_token, page_id, page_name }) => {
+  const appId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
+  const appSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+  if (!appId || !appSecret) return access_token;
+
+  let candidateUserToken = user_access_token || null;
+
+  // Nếu chưa có candidateUserToken, kiểm tra xem access_token có phải là USER token không
+  if (!candidateUserToken && access_token) {
+    try {
+      const debugRes = await fetch(`https://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${appId}|${appSecret}`);
+      const debugData = await debugRes.json();
+      if (debugData?.data?.type === 'USER') {
+        candidateUserToken = access_token;
+      }
+    } catch (e) {}
+  }
+
+  if (candidateUserToken) {
+    try {
+      // Đổi sang Long-lived User Token (hạn 60 ngày)
+      const exRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${candidateUserToken}`);
+      const exData = await exRes.json();
+      if (exData.access_token) {
+        // Lấy Page Token VĨNH VIỄN (expires_at: 0) từ /me/accounts
+        const accRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${exData.access_token}`);
+        const accData = await accRes.json();
+        const targetPage = (accData.data || []).find((p) => p.id === page_id);
+        if (targetPage?.access_token) {
+          console.log(`[Facebook Channel] Đã tự động nâng cấp sang Token Vĩnh Viễn cho Page: ${page_name || page_id} (${page_id})`);
+          return targetPage.access_token;
+        }
+      }
+    } catch (tokenErr) {
+      console.warn('[Facebook Token Auto-Exchange Warn]', tokenErr.message);
+    }
+  }
+
+  return access_token;
 };
 
 export const createChannelService = async (data, userId) => {
+  let finalToken = data.access_token || data.page_access_token;
+  if (data.page_id && finalToken) {
+    finalToken = await resolvePermanentPageToken({
+      access_token: finalToken,
+      user_access_token: data.user_access_token,
+      page_id: data.page_id,
+      page_name: data.page_name
+    });
+  }
+
+  // Kiểm tra xem Channel đã tồn tại chưa để cập nhật thay vì tạo trùng
+  let existingChannel = await Channel.findOne({
+    business_id: data.business_id,
+    page_id: data.page_id
+  });
+
+  if (existingChannel) {
+    existingChannel.page_name = data.page_name || existingChannel.page_name;
+    existingChannel.page_access_token = finalToken;
+    existingChannel.access_token = finalToken;
+    if (data.avatar_url) existingChannel.avatar_url = data.avatar_url;
+    if (data.operating_mode) existingChannel.operating_mode = data.operating_mode;
+    existingChannel.is_connected = true;
+    existingChannel.is_active = true;
+    existingChannel.updated_by = userId;
+    await existingChannel.save();
+    return existingChannel;
+  }
+
   const newChannel = new Channel({
     ...data,
+    page_access_token: finalToken,
+    access_token: finalToken,
+    is_connected: true,
+    is_active: true,
     created_by: userId
   });
   await newChannel.save();
@@ -22,6 +135,20 @@ export const createChannelService = async (data, userId) => {
 };
 
 export const updateChannelService = async (channelId, data) => {
+  if (data.access_token || data.page_access_token) {
+    const rawToken = data.access_token || data.page_access_token;
+    const existing = await Channel.findById(channelId);
+    if (existing) {
+      const permanentToken = await resolvePermanentPageToken({
+        access_token: rawToken,
+        user_access_token: data.user_access_token,
+        page_id: existing.page_id,
+        page_name: existing.page_name
+      });
+      data.access_token = permanentToken;
+      data.page_access_token = permanentToken;
+    }
+  }
   const updated = await Channel.findByIdAndUpdate(channelId, data, { new: true });
   if (!updated) {
     throw new Error('Không tìm thấy kênh cần cập nhật');
@@ -83,41 +210,17 @@ export const getFacebookPagesFromTokenService = async (userAccessToken) => {
 };
 
 export const connectFacebookPageService = async (data, userId) => {
-  const { business_id, page_id, page_name, access_token, avatar_url, operating_mode } = data;
+  const { business_id, page_id, page_name, access_token, user_access_token, avatar_url, operating_mode } = data;
   if (!business_id || !page_id || !page_name) {
     throw new Error('business_id, page_id và page_name là bắt buộc');
   }
 
-  let finalPageToken = access_token;
-  const appId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
-  const appSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
-
-  // Tự động kiểm tra và nâng cấp lên Token vĩnh viễn (Never Expires) cho mọi Page mới thêm vào
-  if (access_token && appId && appSecret) {
-    try {
-      const debugRes = await fetch(`https://graph.facebook.com/debug_token?input_token=${access_token}&access_token=${appId}|${appSecret}`);
-      const debugData = await debugRes.json();
-      const tokenType = debugData?.data?.type;
-
-      if (tokenType === 'USER') {
-        // Đổi sang Long-lived User Token
-        const exRes = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=${appId}&client_secret=${appSecret}&fb_exchange_token=${access_token}`);
-        const exData = await exRes.json();
-        if (exData.access_token) {
-          // Lấy Page Token vĩnh viễn từ /me/accounts
-          const accRes = await fetch(`https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token&access_token=${exData.access_token}`);
-          const accData = await accRes.json();
-          const targetPage = (accData.data || []).find((p) => p.id === page_id);
-          if (targetPage?.access_token) {
-            finalPageToken = targetPage.access_token;
-            console.log(`[Facebook Channel] Đã tự động nâng cấp sang Token Vĩnh Viễn cho Page: ${page_name} (${page_id})`);
-          }
-        }
-      }
-    } catch (tokenErr) {
-      console.warn('[Facebook Token Auto-Exchange Warn]', tokenErr.message);
-    }
-  }
+  const finalPageToken = await resolvePermanentPageToken({
+    access_token,
+    user_access_token,
+    page_id,
+    page_name
+  });
 
   // Thử đăng ký webhook subscribed_apps nếu có token
   if (finalPageToken) {
@@ -153,8 +256,8 @@ export const connectFacebookPageService = async (data, userId) => {
       page_name,
       platform: 'facebook',
       avatar_url: avatar_url || '',
-      page_access_token: access_token || '',
-      access_token: access_token || '',
+      page_access_token: finalPageToken || access_token || '',
+      access_token: finalPageToken || access_token || '',
       operating_mode: operating_mode || 'AI_AUTO',
       is_connected: true,
       is_active: true,

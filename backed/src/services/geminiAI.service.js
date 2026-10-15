@@ -6,7 +6,8 @@ import {
   Message,
   Conversation,
   Customer,
-  Channel
+  Channel,
+  Order
 } from '../models/index.js';
 import { createOrderService } from './order.service.js';
 import { autoTagConversationService } from './conversation.service.js';
@@ -138,13 +139,23 @@ export const extractNameAndCleanAddress = (text = '', defaultCustomerName = '') 
 /**
  * 1. Tổng hợp dữ liệu RAG Context (Knowledge Base + Sản phẩm còn hàng + Cấu hình AI + Lịch sử chat)
  */
-export const buildRAGContext = async ({ business_id, conversation_id, channel_id = null }) => {
+export const buildRAGContext = async ({ business_id, conversation_id, customer_id = null, channel_id = null }) => {
   if (!business_id) throw new Error('business_id là bắt buộc');
 
-  const [aiConfig, products, knowledgeList, recentMessages] = await Promise.all([
-    // A. Cấu hình AI của Business
-    AIConfig.findOne({ business_id, channel_id: channel_id || null }).lean(),
+  const orderQueryConditions = [];
+  if (conversation_id) orderQueryConditions.push({ conversation_id });
+  if (customer_id) orderQueryConditions.push({ customer_id });
 
+  // A. Cấu hình AI của Business (ưu tiên channel_id, nếu không có fallback về business default)
+  let aiConfig = await AIConfig.findOne({ business_id, channel_id: channel_id || null }).lean();
+  if (!aiConfig && channel_id) {
+    aiConfig = await AIConfig.findOne({ business_id, channel_id: null }).lean();
+  }
+  if (!aiConfig) {
+    aiConfig = await AIConfig.findOne({ business_id }).lean();
+  }
+
+  const [products, knowledgeList, recentMessages, recentOrders] = await Promise.all([
     // B. Danh mục sản phẩm đang mở bán kèm tồn kho
     Product.find({ business_id, status: 'ACTIVE' })
       .select('product_name sku base_price sale_price stock_available variants_json ai_selling_points description image_urls')
@@ -161,6 +172,17 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
       ? Message.find({ conversation_id })
           .sort({ created_at: -1 })
           .limit(8)
+          .lean()
+      : [],
+
+    // E. Các đơn hàng gần đây của khách hàng hoặc phiên chat (để AI tra cứu trạng thái đơn hàng khi khách hỏi)
+    orderQueryConditions.length > 0
+      ? Order.find({
+          business_id,
+          $or: orderQueryConditions
+        })
+          .sort({ created_at: -1 })
+          .limit(3)
           .lean()
       : []
   ]);
@@ -185,19 +207,47 @@ export const buildRAGContext = async ({ business_id, conversation_id, channel_id
     return `${role}: ${m.content}`;
   }).join('\n');
 
+  const ordersContextText = Array.isArray(recentOrders) && recentOrders.length > 0
+    ? recentOrders.map((o) => {
+        const items = (o.order_items || []).map((it) => `${it.product_name} x ${it.quantity}`).join(', ');
+        const statusMap = {
+          PENDING: 'Chờ xác nhận',
+          CONFIRMED: 'Đã xác nhận',
+          SHIPPING: 'Đang giao hàng',
+          DELIVERED: 'Đã giao thành công',
+          COMPLETED: 'Hoàn thành',
+          CANCELLED: 'Đã hủy'
+        };
+        const stName = statusMap[o.order_status] || o.order_status;
+        return `- Mã đơn: #${o.order_code} | Trạng thái: ${stName} | Sản phẩm: ${items} | Người nhận: ${o.shipping_customer_name || o.customer_name} | SĐT: ${o.shipping_phone || o.customer_phone} | Địa chỉ: ${o.shipping_address} | Tổng tiền: ${(o.total_amount || 0).toLocaleString('vi-VN')} VND | Ngày đặt: ${new Date(o.created_at).toLocaleString('vi-VN')}`;
+      }).join('\n')
+    : 'Khách hàng này hiện chưa có đơn hàng nào trước đó.';
+
+  const resolvedSystemPrompt = (aiConfig?.system_prompt && aiConfig.system_prompt.trim())
+    ? aiConfig.system_prompt.trim()
+    : 'Bạn là chuyên viên tư vấn bán hàng thông minh, nhiệt tình và chu đáo. Hãy chào đón khách hàng, giải đáp chi tiết thông tin sản phẩm và hỗ trợ đặt hàng lịch sự, nhanh chóng.';
+
+  const resolvedWelcomeMessage = (aiConfig?.welcome_message && aiConfig.welcome_message.trim())
+    ? aiConfig.welcome_message.trim()
+    : 'Dạ shop xin chào bạn ạ! Bạn đang quan tâm đến mẫu sản phẩm nào để shop hỗ trợ tư vấn ngay cho mình nhé?';
+
   return {
-    aiConfig: aiConfig || {
-      bot_name: 'Trợ lý AI',
-      ai_persona_tone: 'FRIENDLY',
-      system_prompt: 'Bạn là chuyên viên tư vấn bán hàng chuyên nghiệp, tận tâm và chu đáo.',
-      welcome_message: 'Dạ shop xin chào bạn ạ!',
-      guardrail_blocklist: ['lừa đảo', 'hoàn tiền gấp', 'hàng giả', 'đối thủ'],
-      smart_delay_seconds: 2,
-      auto_order_extraction: true
+    aiConfig: {
+      bot_name: aiConfig?.bot_name || 'AI Assistant',
+      ai_persona_tone: aiConfig?.ai_persona_tone || 'FRIENDLY',
+      system_prompt: resolvedSystemPrompt,
+      welcome_message: resolvedWelcomeMessage,
+      guardrail_blocklist: Array.isArray(aiConfig?.guardrail_blocklist) && aiConfig.guardrail_blocklist.length > 0
+        ? aiConfig.guardrail_blocklist
+        : ['chửi bậy', 'lừa đảo', 'hoàn tiền gấp', 'hàng giả', 'đối thủ'],
+      smart_delay_seconds: aiConfig?.smart_delay_seconds || 3,
+      auto_order_extraction: aiConfig?.auto_order_extraction !== undefined ? aiConfig.auto_order_extraction : true
     },
     productContextText: productContextText || 'Hiện tại chưa có sản phẩm nào trong kho.',
     knowledgeContextText: knowledgeContextText || 'Chưa có tài liệu FAQ bổ sung.',
     chatHistoryText: chatHistoryText || 'Đây là tin nhắn đầu tiên của khách.',
+    ordersContextText: ordersContextText,
+    recentOrders: recentOrders || [],
     rawProducts: products
   };
 };
@@ -219,8 +269,8 @@ export const consultWithGeminiAI = async ({
   customerImageUrls = []
 }) => {
   // A. Nạp ngữ cảnh RAG
-  const ragContext = await buildRAGContext({ business_id, conversation_id, channel_id });
-  const { aiConfig, productContextText, knowledgeContextText, chatHistoryText, rawProducts } = ragContext;
+  const ragContext = await buildRAGContext({ business_id, conversation_id, customer_id, channel_id });
+  const { aiConfig, productContextText, knowledgeContextText, chatHistoryText, ordersContextText, rawProducts } = ragContext;
 
   // B. Kiểm tra Guardrail từ khóa cấm từ cấu hình chủ shop
   const blocklist = Array.isArray(aiConfig.guardrail_blocklist) ? aiConfig.guardrail_blocklist : [];
@@ -246,6 +296,7 @@ export const consultWithGeminiAI = async ({
       aiConfig,
       rawProducts,
       chatHistoryText,
+      ordersContextText,
       defaultCustomerName: customerName,
       existingDraft: orderDraft,
       customerImageUrls
@@ -254,17 +305,31 @@ export const consultWithGeminiAI = async ({
 
   // D. Xây dựng System Prompt chuyên biệt cho Tư vấn & Chốt đơn đa bước
   const fallbackCustomerName = customerName || 'Khách hàng';
+
+  const PERSONA_TONE_MAP = {
+    FRIENDLY: `Thân thiện, gần gũi, ấm áp nhưng luôn giữ chuẩn mực bán hàng lịch sự. Xưng "shop" hoặc "em", gọi khách là "bạn" hoặc gọi theo tên khách (ví dụ "Dạ ${fallbackCustomerName} ơi...", "bạn ${fallbackCustomerName}"). Luôn dạ/thưa lễ phép, sử dụng emoji nhẹ nhàng (✨, ❤️, 😊).`,
+    PROFESSIONAL: `Chuyên nghiệp, chuẩn mực, trang trọng. Xưng "shop" hoặc "chúng tôi", gọi khách là "Quý khách" hoặc "anh/chị". Trả lời súc tích, mạch lạc, chính xác, không dùng từ lóng.`,
+    POLITE: `Lịch sự, nhã nhặn, tôn trọng khách hàng tối đa. Xưng "em" hoặc "shop", gọi "anh/chị" hoặc "bạn". Luôn bắt đầu bằng lời chào kính trọng và kết thúc bằng lời cảm ơn.`,
+    GENZ: `Tươi vui, năng động, đáng yêu. Xưng "shop" hoặc "em", gọi khách là "bạn ơi" hoặc "bạn ${fallbackCustomerName}".`,
+    ENTHUSIASTIC: `Nhiệt huyết, hào hứng, tốc độ phản hồi nhanh, chủ động giải đáp chi tiết và gợi ý đặt hàng ngay.`
+  };
+
+  const toneInstruction = PERSONA_TONE_MAP[aiConfig.ai_persona_tone] || PERSONA_TONE_MAP.FRIENDLY;
+
   const systemInstruction = `
 Bạn là ${aiConfig.bot_name || 'Trợ lý AI tư vấn bán hàng'}, đại diện cho cửa hàng.
-Phong cách giao tiếp của bạn: ${aiConfig.ai_persona_tone || 'FRIENDLY, LỊCH SỰ, CHU ĐÁO VÀ CHUYÊN NGHIỆP'}.
+Phong cách & Giọng điệu của bạn: ${toneInstruction}
 Tên tài khoản người chat (Facebook): "${fallbackCustomerName}".
-Lời căn dặn của chủ shop: "${aiConfig.system_prompt || ''}"
+Lời căn dặn của chủ shop: "${aiConfig.system_prompt || 'Bạn là chuyên viên tư vấn bán hàng thông minh, nhiệt tình và chu đáo. Hãy chào đón khách hàng, giải đáp chi tiết thông tin sản phẩm và hỗ trợ đặt hàng lịch sự, nhanh chóng.'}"
 
 === THÔNG TIN SẢN PHẨM & TỒN KHO THỰC TẾ (RAG) ===
 ${productContextText}
 
 === CHÍNH SÁCH BÁN HÀNG & KHO TRI THỨC (FAQ) ===
 ${knowledgeContextText}
+
+=== THÔNG TIN ĐƠN HÀNG GẦN NHẤT CỦA KHÁCH HÀNG (RAG) ===
+${ordersContextText || 'Khách hàng này hiện chưa có đơn hàng nào trước đó.'}
 
 === TRẠNG THÁI GIỎ HÀNG TẠM THỜI (ORDER DRAFT HIỆN TẠI) ===
 - Sản phẩm đã chọn: ${orderDraft?.product_name || 'Chưa chọn'}
@@ -277,11 +342,20 @@ ${knowledgeContextText}
 === LỊCH SỬ HỘI THOẠI GẦN ĐÂY ===
 ${chatHistoryText}
 
-=== NGUYÊN TẮC GIAO TIẾP VÀ TƯ VẤN (TUYỆT ĐỐI TUÂN THỦ) ===
+=== NGUYÊN TẮC GIAO TIẾP VÀ XƯNG HÔ (TUYỆT ĐỐI BẮT BUỘC TUÂN THỦ) ===
+0. NGUYÊN TẮC XƯNG HÔ VÀ LỜI NÓI (CỰC KỲ QUAN TRỌNG):
+   - Shop luôn xưng là "shop" hoặc "em".
+   - Gọi khách hàng là "bạn", hoặc gọi theo tên tài khoản của khách (ví dụ: "Dạ ${fallbackCustomerName} ơi...", "Dạ bạn ${fallbackCustomerName}..."), hoặc xưng "anh/chị".
+   - TUYỆT ĐỐI NGHIÊM CẤM gọi khách bằng các từ ngữ suồng sã, kỳ quặc hoặc phản cảm như: "vợ", "chồng", "vợ/chồng", "vk", "ck", "vợ iu", "chồng iu", "ông xã", "bà xã", "người đẹp", "mình ơi". Tuyệt đối KHÔNG BAO GIỜ được xưng hô "vợ/chồng" với khách trong mọi tình huống!
+   - KHI KHÁCH PHẢN HỒI NGẮN GỌN (như "ok shop", "cảm ơn", "vâng", "dạ", "chào shop", "okie", "tks shop"):
+     + Nếu đơn hàng vừa được tạo thành công: Chỉ cần đáp lại chân thành, ngắn gọn và lịch sự: "Dạ vâng ạ, cảm ơn ${fallbackCustomerName} đã tin tưởng ủng hộ shop! Chúc bạn một ngày thật nhiều niềm vui nhé! ❤️".
+     + TUYỆT ĐỐI KHÔNG hỏi lại thông tin nhận hàng, KHÔNG xin lại SĐT/Địa chỉ, và KHÔNG tạo thêm đơn hàng mới khi khách chỉ nói câu xác nhận/cảm ơn thông thường!
+
 1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH:
    - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào", "xem hình ảnh của từng sản phẩm":
      + Niềm nở giới thiệu đặc điểm nổi bật, thiết kế và mức giá ưu đãi của các sản phẩm.
      + BẮT BUỘC: Nếu trong thông tin sản phẩm ở trên có link URL ở trường "Ảnh sản phẩm", hãy trích xuất chính xác các đường link URL đó vào mảng "image_urls" của JSON. Tuyệt đối KHÔNG NÓI "shop chưa có ảnh" hay "chưa có ảnh sẵn" nếu trong kho có đường link ảnh!
+     + CỰC KỲ QUAN TRỌNG: TUYỆT ĐỐI KHÔNG VIẾT các đường link URL ảnh (như http://..., localhost:5000..., /uploads/...) vào trong nội dung văn bản "reply"! Hãy để văn bản tự nhiên, lịch sự (Ví dụ: "Dạ shop gửi bạn xem hình ảnh mẫu bên dưới nha!"). Mọi đường link URL ảnh CHỈ ĐƯỢC PHÉP đặt vào mảng "image_urls" của JSON, hệ thống sẽ tự động chuyển thành hình ảnh thực tế gửi sang Facebook cho khách!
      + Hỏi khéo mẫu hoặc màu sắc mà khách ưng ý nhất để tư vấn sâu hơn.
      + TUYỆT ĐỐI KHÔNG tự tiện chọn size (như tự ý gán Size M), KHÔNG nói "đã giữ hàng", KHÔNG đòi số điện thoại khi khách chỉ muốn xem mẫu!
 2. GIAI ĐOẠN 2 - TƯ VẤN SIZE & MÀU THEO CHIỀU CAO CÂN NẶNG:
@@ -292,9 +366,14 @@ ${chatHistoryText}
    - CHỈ KHI khách nói rõ muốn mua (vd: "lấy mình 1 cái...", "đặt 1 cái size L màu đen", "ship cho mình"):
      + Nếu đã rõ Size và Màu: Xác nhận giữ hàng và xin Số điện thoại nhận hàng.
      + Nếu chưa rõ Size hoặc Màu: Hỏi nốt size/màu còn thiếu trước khi xin SĐT.
-4. GIAI ĐOẠN 4 - THU THẬP SĐT & ĐỊA CHỈ (CHECKOUT):
-   - Khi khách cho SĐT -> Xác nhận lưu SĐT và xin Địa chỉ nhận hàng cụ thể (Số nhà, đường, phường/xã, quận/huyện, tỉnh/TP).
-   - Khi khách cho Địa chỉ cụ thể -> Đủ thông tin thì đặt "is_order_intent": true và viết lời cảm ơn, tóm tắt đơn hàng rõ ràng.
+4. GIAI ĐOẠN 4 - THU THẬP & THẨM ĐỊNH SĐT + ĐỊA CHỈ (CHECKOUT):
+   - KIỂM TRA SỐ ĐIỆN THOẠI (BẮT BUỘC ĐÚNG 10 CHỮ SỐ):
+     + Số điện thoại di động Việt Nam hợp lệ phải có ĐÚNG 10 chữ số (bắt đầu bằng 03, 05, 07, 08, 09).
+     + Nếu khách nhập số điện thoại thừa số (như 11-14 số ví dụ 03938828282828), thiếu số (<10 số) hoặc số ảo lặp: TUYỆT ĐỐI KHÔNG XÁC NHẬN "đã ghi nhận SĐT"! Bắt buộc phải phản hồi lịch sự nhắc khách kiểm tra lại (Ví dụ: "Dạ số điện thoại của mình hình như chưa đúng định dạng 10 chữ số, anh/chị kiểm tra và nhắn lại giúp em nha!"). Đặt "is_order_intent": false.
+   - KIỂM TRA ĐỊA CHỈ NHẬN HÀNG:
+     + Địa chỉ hợp lệ phải có đủ thông tin để shipper có thể giao hàng (Số nhà, tên đường/ngõ/thôn/xóm kèm phường/xã, quận/huyện, tỉnh/TP).
+     + Nếu khách nhập địa chỉ trêu đùa, vu vơ hoặc quá chung chung (như "nhà bà nào", "ở nhà", "hà nội", "gần trường học"): Bắt buộc giữ lại số điện thoại (nếu hợp lệ) và nhẹ nhàng xin lại địa chỉ cụ thể chi tiết. Đặt "is_order_intent": false.
+   - CHỈ ĐẶT "is_order_intent": true KHI CẢ SĐT (CHUẨN 10 CHỮ SỐ) VÀ ĐỊA CHỈ (CỤ THỂ, GIAO HÀNG ĐƯỢC) ĐỀU HOÀN TOÀN ĐẦY ĐỦ! Khi đó mới tóm tắt đơn hàng và gửi lời cảm ơn.
 5. PHÁT HIỆN YÊU CẦU GẶP NHÂN VIÊN (Handover):
    - Nếu khách yêu cầu gặp người thật, khiếu nại gay gắt hoặc tức giận, đặt "handover_to_staff": true.
 6. NHẬN DIỆN SẢN PHẨM QUA HÌNH ẢNH (MULTIMODAL VISION):
@@ -303,11 +382,16 @@ ${chatHistoryText}
      + So sánh đối chiếu trực tiếp với Danh mục sản phẩm ở trên.
      + Khẳng định chính xác sản phẩm tương ứng trong kho (Ví dụ: "Dạ hình ảnh bạn vừa hỏi chính là mẫu [Tên sản phẩm] (SKU: [Mã SKU]) bên em đó ạ! Mẫu này có giá [Giá] VND...").
      + Trích xuất URL ảnh của sản phẩm này vào mảng "image_urls" của JSON trả về để tiếp tục hiển thị cho khách.
+7. TRA CỨU & KIỂM TRA ĐƠN HÀNG ĐÃ ĐẶT (ORDER INQUIRY):
+   - Khi khách hỏi "tôi cần biết thông tin đơn hàng vừa đặt", "kiểm tra đơn hàng", "đơn hàng của tôi", "khi nào giao hàng", "xem lại đơn hàng", "tôi đã đặt những gì", "tôi có đơn nào không", "xem tôi có đơn hàng nào":
+     + TUYỆT ĐỐI KHÔNG TẠO ĐƠN HÀNG MỚI! KHÔNG lấy câu hỏi này làm địa chỉ giao hàng! BẮT BUỘC đặt "is_order_intent": false và "order_data": null.
+     + QUY TẮC RAG CHÍNH XÁC: Bạn CHỈ ĐƯỢC báo thông tin đơn hàng nếu trong phần "=== THÔNG TIN ĐƠN HÀNG GẦN NHẤT CỦA KHÁCH HÀNG (RAG) ===" ở trên CÓ đơn hàng thực tế (#DH-...). Hãy báo rõ mã đơn, sản phẩm, địa chỉ, trạng thái.
+     + Nếu phần RAG ghi "Khách hàng này hiện chưa có đơn hàng nào trước đó", bạn BẮT BUỘC trả lời: "Dạ em kiểm tra trên hệ thống thì hiện tại anh/chị chưa có đơn hàng nào được ghi nhận ạ. Anh/chị có muốn tham khảo mẫu Lego nào để em hỗ trợ lên đơn cho mình không nha!". TUYỆT ĐỐI KHÔNG tự nhận vơ các câu chat cũ thành đơn hàng!
 
 === ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (JSON ONLY) ===
 Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdown code block) theo schema sau:
 {
-  "reply": "Nội dung tin nhắn bạn sẽ gửi lại cho khách hàng bằng tiếng Việt",
+  "reply": "Nội dung tin nhắn bạn sẽ gửi lại cho khách hàng bằng tiếng Việt (TUYỆT ĐỐI KHÔNG chứa đường link URL ảnh, link localhost hay /uploads/ ở đây)",
   "image_urls": ["Danh sách URL ảnh sản phẩm nếu khách hỏi xem mẫu/ảnh"],
   "is_order_intent": true | false,
   "order_data": null hoặc {
@@ -332,14 +416,6 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
 `;
 
   try {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.4
-      }
-    });
-
     // Chuyển đổi các hình ảnh khách gửi / khách trích dẫn thành Gemini Multimodal Parts
     const geminiImageParts = [];
     if (Array.isArray(customerImageUrls) && customerImageUrls.length > 0) {
@@ -351,13 +427,72 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
 
     const prompt = `${systemInstruction}\n\nTin nhắn mới từ khách hàng: "${messageText}"`;
     const contentPayload = geminiImageParts.length > 0 ? [prompt, ...geminiImageParts] : prompt;
-    const result = await model.generateContent(contentPayload);
-    const responseText = result.response.text();
+
+    // Cơ chế Multi-Model Fallback: Ưu tiên model chính, nếu gặp 429 hoặc lỗi sẽ chuyển tiếp model dự phòng
+    const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
+    const fallbackModelList = [primaryModel, 'gemini-2.5-flash'].filter((v, i, a) => a.indexOf(v) === i);
+
+    let responseText = null;
+    let lastError = null;
+
+    for (const mName of fallbackModelList) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: mName,
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.4
+          }
+        });
+        const result = await model.generateContent(contentPayload);
+        responseText = result.response.text();
+        if (responseText) break;
+      } catch (mErr) {
+        lastError = mErr;
+        console.warn(`[Gemini AI] Model ${mName} thất bại: ${mErr.message}, đang thử model tiếp theo...`);
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error('Không thể tạo phản hồi từ các model Gemini');
+    }
 
     const parsed = JSON.parse(responseText.trim());
+    let rawReply = parsed.reply || 'Dạ shop xin chào bạn! Shop có thể hỗ trợ gì cho bạn hôm nay ạ?';
+    let imageUrls = Array.isArray(parsed.image_urls) ? [...parsed.image_urls] : [];
+
+    // Tự động vớt các URL ảnh vô tình bị AI viết vào reply để đưa vào danh sách gửi đính kèm
+    const rawUrlMatches = rawReply.match(/https?:\/\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi) || [];
+    const uploadMatches = rawReply.match(/\/uploads\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi) || [];
+    for (const u of [...rawUrlMatches, ...uploadMatches]) {
+      if (!imageUrls.includes(u)) {
+        imageUrls.push(u);
+      }
+    }
+
+    // Làm sạch triệt để: loại bỏ link ảnh thô, link localhost, đường dẫn /uploads/ khỏi nội dung chat
+    let cleanedReply = rawReply
+      .replace(/https?:\/\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi, '')
+      .replace(/https?:\/\/localhost:\d+[^\s]*/gi, '')
+      .replace(/\/uploads\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi, '')
+      .replace(/\[\s*(?:hình|ảnh|link)\s*\]\([^\)]+\)/gi, '')
+      // Bộ lọc khử xưng hô lệch chuẩn (ngăn chặn hoàn toàn việc gọi khách là vợ/chồng)
+      .replace(/\b(?:dạ\s+)?vợ\/chồng[,.]?\s*/gi, 'Dạ bạn ơi, ')
+      .replace(/\bvợ\/chồng\b/gi, 'bạn')
+      .replace(/\b(?:vk\/ck|vợ chồng)\b/gi, 'bạn')
+      .replace(/\b(?:ông xã|bà xã)\b/gi, 'anh/chị')
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      .trim();
+
+    if (!cleanedReply) {
+      cleanedReply = imageUrls.length > 0
+        ? 'Dạ em gửi anh/chị xem hình ảnh thực tế của mẫu bên dưới nha! Anh/chị cần em tư vấn thêm màu hay size nào cứ nhắn em nhé.'
+        : 'Dạ shop xin chào bạn! Shop có thể hỗ trợ gì cho bạn hôm nay ạ?';
+    }
+
     return {
-      reply: parsed.reply || 'Dạ shop xin chào bạn! Shop có thể hỗ trợ gì cho bạn hôm nay ạ?',
-      image_urls: Array.isArray(parsed.image_urls) ? parsed.image_urls : [],
+      reply: cleanedReply,
+      image_urls: imageUrls,
       is_order_intent: Boolean(parsed.is_order_intent),
       order_data: parsed.order_data || null,
       missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
@@ -371,6 +506,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       aiConfig,
       rawProducts,
       chatHistoryText,
+      ordersContextText,
       defaultCustomerName: customerName,
       existingDraft: orderDraft,
       customerImageUrls
@@ -387,6 +523,7 @@ export const generateSmartFallbackResponse = ({
   aiConfig,
   rawProducts,
   chatHistoryText,
+  ordersContextText = '',
   defaultCustomerName = '',
   existingDraft = null,
   customerImageUrls = []
@@ -453,10 +590,10 @@ export const generateSmartFallbackResponse = ({
   }
 
   // Nếu không nhắc tên sản phẩm mới, kiểm tra xem có đang kế thừa từ giỏ hàng nháp không
-  if (!matchedProduct && existingDraft?.product_id) {
+  if (!matchedProduct && existingDraft?.product_id && existingDraft?.status !== 'ORDER_CREATED') {
     matchedProduct = rawProducts.find((p) => p._id.toString() === existingDraft.product_id.toString()) || null;
   }
-  if (!matchedProduct && (phone || cleanAddress) && existingDraft?.product_name) {
+  if (!matchedProduct && (phone || cleanAddress) && existingDraft?.product_name && existingDraft?.status !== 'ORDER_CREATED') {
     matchedProduct = rawProducts.find((p) => p.product_name === existingDraft.product_name) || null;
   }
   if (!matchedProduct && rawProducts.length > 0) {
@@ -481,7 +618,7 @@ export const generateSmartFallbackResponse = ({
   }
 
   // 3. Khớp số lượng
-  let quantity = existingDraft?.quantity || 1;
+  let quantity = (existingDraft?.status !== 'ORDER_CREATED' ? existingDraft?.quantity : 1) || 1;
   const qtyWithUnit = text.match(/\b(\d+)\s*(?:cái|chiếc|hộp|hũ|bộ|áo|quần|đôi|sp|tuýp)\b/i);
   const qtyWithAction = text.match(/(?:lấy|mua|đặt|ship|sl:?|số lượng:?)\s*(\d+)\b/i);
   const foundQty = qtyWithUnit ? Number(qtyWithUnit[1]) : (qtyWithAction ? Number(qtyWithAction[1]) : null);
@@ -504,11 +641,33 @@ export const generateSmartFallbackResponse = ({
     text.match(/(\d{2,3})\s*(?:kg|kí|cân)\s*[,.\s-]+\s*(?:cao\s*)?(\d{1,3}(?:m\d{1,2}|cm)?)/i);
   const isConsultingIntent = Boolean(heightWeightMatch) || /(?:size\s+gì|cỡ\s+gì|mặc\s+vừa|vừa\s+không|chọn\s+size|tư\s+vấn\s+size|có\s+màu\s+gì)/i.test(text);
 
-  // D. Ý định chốt mua hàng rõ ràng (chỉ bắt khi có từ hành động mua thực sự, có SĐT/Địa chỉ, hoặc đang trong quá trình đặt hàng slot-filling)
+  // D. Ý định tra cứu / hỏi thông tin đơn hàng đã đặt
+  const isOrderTrackingIntent = /(?:thông\s*tin\s*đơn|kiểm\s*tra\s*đơn|tra\s*cứu\s*đơn|đơn\s*(?:hàng\s*)?(?:vừa|đã)\s*đặt|đơn\s*của\s*(?:tôi|mình|em)|khi\s*nào\s*giao|bao\s*giờ\s*giao|tình\s*trạng\s*đơn|mã\s*đơn\s*hàng|xem\s*lại\s*đơn)/i.test(text);
+
+  // E. Ý định chốt mua hàng rõ ràng (chỉ bắt khi có từ hành động mua thực sự, có SĐT/Địa chỉ, hoặc đang trong quá trình đặt hàng slot-filling)
   const hasBuyingKeywords = /(?:mua|đặt\s+hàng|lấy\s+(?:\d+|cái|chiếc|áo|quần|size|màu|1|2|3|mẫu)|chốt|ship\s+(?:cho|về|1|2)|order|lấy\s+nhé|lấy\s+nha|mua\s+nhé|cho\s+mình\s+(?:\d+|1|2)\s+cái)/i.test(text);
-  const isSlotFillingActive = Boolean(existingDraft?.size) || existingDraft?.status === 'COLLECTING';
+  const isSlotFillingActive = (Boolean(existingDraft?.size) || existingDraft?.status === 'COLLECTING') && existingDraft?.status !== 'ORDER_CREATED';
   const hasContactInfo = Boolean(phoneValidation?.phone) || Boolean(cleanAddress);
-  const isBuyingIntent = (hasBuyingKeywords || hasContactInfo || isSlotFillingActive) && !isViewingIntent && !isConsultingIntent && !isPriceIntent;
+  const isBuyingIntent = (hasBuyingKeywords || hasContactInfo || isSlotFillingActive) && !isViewingIntent && !isConsultingIntent && !isPriceIntent && !isOrderTrackingIntent;
+
+  // --- TRƯỜNG HỢP 0: Khách tra cứu / hỏi thăm thông tin đơn hàng đã đặt ---
+  if (isOrderTrackingIntent) {
+    let orderInfoReply = '';
+    if (ordersContextText && !ordersContextText.includes('hiện chưa có đơn hàng nào')) {
+      orderInfoReply = `Dạ em xin gửi thông tin đơn hàng gần nhất của anh/chị ạ:\n${ordersContextText}\n\nShop đang chuẩn bị hàng cẩn thận để gửi cho mình sớm nhất nhé! Anh/chị cần thay đổi thông tin gì cứ báo shop nha!`;
+    } else {
+      orderInfoReply = 'Dạ hiện tại shop chưa ghi nhận đơn hàng nào của mình ạ. Anh/chị có muốn đặt mẫu nào không để em hỗ trợ lên đơn cho mình ngay nha!';
+    }
+
+    return {
+      reply: orderInfoReply,
+      image_urls: [],
+      is_order_intent: false,
+      order_data: null,
+      missing_fields: [],
+      handover_to_staff: false
+    };
+  }
 
   const currentProduct = matchedProduct;
   const hasVariants = currentProduct && Array.isArray(currentProduct.variants_json) && currentProduct.variants_json.length > 0;
@@ -795,6 +954,25 @@ export const processGeminiAIForMessage = async ({
     });
 
     let finalReply = aiResult.reply || 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';
+    // Lớp lọc bảo vệ kép (Deterministic Safety Guard): Khử mọi link ảnh thô, localhost, /uploads/
+    finalReply = finalReply
+      .replace(/https?:\/\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi, '')
+      .replace(/https?:\/\/localhost:\d+[^\s]*/gi, '')
+      .replace(/\/uploads\/[^\s]+?\.(?:jpg|jpeg|png|webp|gif)/gi, '')
+      .replace(/\[\s*(?:hình|ảnh|link)\s*\]\([^\)]+\)/gi, '')
+      // Bộ lọc khử xưng hô lệch chuẩn (ngăn chặn hoàn toàn việc gọi khách là vợ/chồng)
+      .replace(/\b(?:dạ\s+)?vợ\/chồng[,.]?\s*/gi, 'Dạ bạn ơi, ')
+      .replace(/\bvợ\/chồng\b/gi, 'bạn')
+      .replace(/\b(?:vk\/ck|vợ chồng)\b/gi, 'bạn')
+      .replace(/\b(?:ông xã|bà xã)\b/gi, 'anh/chị')
+      .replace(/\n\s*\n\s*\n+/g, '\n\n')
+      .trim();
+
+    if (!finalReply) {
+      finalReply = (Array.isArray(aiResult.image_urls) && aiResult.image_urls.length > 0)
+        ? 'Dạ em gửi anh/chị xem hình ảnh thực tế của mẫu bên dưới nha! Anh/chị cần em tư vấn thêm màu hay size nào cứ nhắn em nhé.'
+        : 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';
+    }
 
     // Cập nhật các slot mới thu thập được vào order_draft
     if (aiResult.order_data) {
@@ -816,8 +994,18 @@ export const processGeminiAIForMessage = async ({
       if (od.color !== undefined) conversation.order_draft.color = od.color;
       if (od.quantity) conversation.order_draft.quantity = od.quantity;
       if (od.price) conversation.order_draft.price = od.price;
-      if (od.phone) conversation.order_draft.phone = od.phone;
-      if (od.shipping_address) conversation.order_draft.shipping_address = od.shipping_address;
+      if (od.phone) {
+        const phoneVal = validateAndSanitizePhone(od.phone);
+        if (phoneVal.isValid) {
+          conversation.order_draft.phone = phoneVal.phone;
+        }
+      }
+      if (od.shipping_address) {
+        const addrVal = evaluateAddressQuality(od.shipping_address);
+        if (addrVal.quality === 'VALID' || addrVal.quality === 'VAGUE_AREA') {
+          conversation.order_draft.shipping_address = addrVal.cleanAddress;
+        }
+      }
       if (od.customer_name && od.customer_name !== 'Khách hàng') conversation.order_draft.customer_name = od.customer_name;
       if (od.customer_note) conversation.order_draft.customer_note = od.customer_note;
 
@@ -827,8 +1015,9 @@ export const processGeminiAIForMessage = async ({
 
     // 2. Kiểm tra thẩm định điều kiện chốt ĐƠN HÀNG (Validation Gate)
     let createdOrder = null;
-    const finalPhone = conversation.order_draft?.phone || aiResult.order_data?.phone;
-    const finalAddress = conversation.order_draft?.shipping_address || aiResult.order_data?.shipping_address;
+    const isDraftCollecting = conversation.order_draft?.status === 'COLLECTING';
+    const finalPhone = (isDraftCollecting ? conversation.order_draft?.phone : '') || aiResult.order_data?.phone;
+    const finalAddress = (isDraftCollecting ? conversation.order_draft?.shipping_address : '') || aiResult.order_data?.shipping_address;
 
     const phoneCheck = validateAndSanitizePhone(finalPhone || '');
     const addressCheck = evaluateAddressQuality(finalAddress || '');
@@ -910,10 +1099,19 @@ export const processGeminiAIForMessage = async ({
             finalReply += `\n\n(Dạ em đã tạo đơn hàng thành công với mã #${createdOrder.order_code}. Shop sẽ sớm liên hệ xác nhận và giao hàng ạ!)`;
           }
 
-          // Cập nhật trạng thái đơn nháp đã hoàn tất
-          if (conversation.order_draft) {
-            conversation.order_draft.status = 'ORDER_CREATED';
-          }
+          // Cập nhật trạng thái đơn nháp đã hoàn tất và reset các thông tin nhạy cảm để không bị tạo trùng đơn
+          conversation.order_draft = {
+            status: 'IDLE',
+            product_id: null,
+            product_name: '',
+            size: '',
+            color: '',
+            quantity: 1,
+            phone: '',
+            shipping_address: '',
+            last_order_id: createdOrder._id,
+            last_order_code: createdOrder.order_code
+          };
         }
       } catch (orderErr) {
         console.error('[Gemini AI Order Creation Error]', orderErr.message);
@@ -945,6 +1143,7 @@ export const processGeminiAIForMessage = async ({
     conversation.last_message_content = finalReply;
     conversation.last_message_text = finalReply;
     conversation.last_message_at = new Date();
+    conversation.unread_count = 0; // AI đã trả lời thành công cho khách hàng
     await conversation.save();
 
     // 5. Cập nhật thông tin khách hàng: SĐT, Địa chỉ, và Tên thật nếu khách có xưng tên riêng
@@ -1000,6 +1199,7 @@ export const processGeminiAIForMessage = async ({
 
     return {
       handled: true,
+      message_id: aiMessage._id,
       reply: finalReply,
       image_urls: aiResult.image_urls || [],
       order: createdOrder,

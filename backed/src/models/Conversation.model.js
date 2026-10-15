@@ -101,7 +101,7 @@ const conversationSchema = new mongoose.Schema(
       customer_note: { type: String, default: '' },
       status: {
         type: String,
-        enum: ['IDLE', 'COLLECTING', 'READY', 'ORDER_CREATED'],
+        enum: ['IDLE', 'COLLECTING', 'READY', 'ORDER_CREATED', 'CANCELLED'],
         default: 'IDLE'
       },
       updated_at: { type: Date, default: Date.now }

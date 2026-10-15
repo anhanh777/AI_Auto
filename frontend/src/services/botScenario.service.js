@@ -34,5 +34,34 @@ export const botScenarioService = {
   // Thử nghiệm kịch bản trong Sandbox / Simulator
   testMatchScenario: async (data) => {
     return await apiClient.post('/bot-scenarios/test-match', data);
+  },
+
+  // Xem trước file kịch bản Excel/CSV
+  previewScenarioFile: async (formData) => {
+    return await apiClient.post('/bot-scenarios/preview-file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
+  // Nhập kịch bản từ file Excel/CSV
+  importScenarios: async (formData) => {
+    return await apiClient.post('/bot-scenarios/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+
+  // Tải file mẫu Excel
+  downloadTemplate: async () => {
+    return await apiClient.get('/bot-scenarios/template', {
+      responseType: 'blob'
+    });
+  },
+
+  // Xuất danh sách kịch bản ra Excel
+  exportScenarios: async (params = {}) => {
+    return await apiClient.get('/bot-scenarios/export', {
+      params,
+      responseType: 'blob'
+    });
   }
 };

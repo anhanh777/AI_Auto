@@ -5,6 +5,8 @@ import { aiConfigService } from '../../services/aiConfig.service.js';
 import { botScenarioService } from '../../services/botScenario.service.js';
 import { uploadService } from '../../services/upload.service.js';
 import MediaPickerModal from '../../components/modals/MediaPickerModal.jsx';
+import ImportScenarioModal from '../../components/modals/ImportScenarioModal.jsx';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import {
   Bot,
   Sparkles,
@@ -31,7 +33,9 @@ import {
   Image as ImageIcon,
   Images,
   Upload,
-  Paperclip
+  Paperclip,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
 
 const BotAutoPage = () => {
@@ -46,14 +50,18 @@ const BotAutoPage = () => {
   const [savingConfig, setSavingConfig] = useState(false);
   const [loadingScenarios, setLoadingScenarios] = useState(true);
 
-  // 1. STATE CẤU HÌNH AI CỐT LÕI
+  // 1. CẤU HÌNH AI MẶC ĐỊNH & STATE CỐT LÕI
+  const DEFAULT_SYSTEM_PROMPT = 'Bạn là chuyên viên tư vấn bán hàng thông minh, nhiệt tình và chu đáo. Hãy chào đón khách hàng, giải đáp chi tiết thông tin sản phẩm dựa trên kho hàng thực tế và hỗ trợ đặt hàng lịch sự, nhanh chóng.';
+  const DEFAULT_WELCOME_MSG = 'Dạ shop xin chào bạn ạ! Bạn đang quan tâm đến mẫu sản phẩm nào để shop hỗ trợ tư vấn ngay cho mình nhé?';
+  const DEFAULT_GUARDRAILS = ['chửi bậy', 'lừa đảo', 'hoàn tiền gấp', 'hàng giả', 'đối thủ'];
+
   const [configForm, setConfigForm] = useState({
     bot_name: 'AI Assistant',
     model_name: 'gemini-1.5-flash',
     ai_persona_tone: 'FRIENDLY',
-    system_prompt: '',
-    welcome_message: '',
-    guardrail_blocklist: [],
+    system_prompt: DEFAULT_SYSTEM_PROMPT,
+    welcome_message: DEFAULT_WELCOME_MSG,
+    guardrail_blocklist: DEFAULT_GUARDRAILS,
     debounce_delay_seconds: 3,
     auto_order_extraction: true,
     is_active: true
@@ -67,6 +75,17 @@ const BotAutoPage = () => {
   const [isScenarioModalOpen, setIsScenarioModalOpen] = useState(false);
   const [editingScenario, setEditingScenario] = useState(null);
   const [scenarioSubmitting, setScenarioSubmitting] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Form kịch bản mới/sửa
   const [scenarioForm, setScenarioForm] = useState({
@@ -302,17 +321,24 @@ const BotAutoPage = () => {
     try {
       setLoadingConfig(true);
       const res = await aiConfigService.getAIConfig({ business_id: activeBusiness._id });
-      if (res.success && res.data) {
+      const data = res?.data || res;
+      if (data) {
+        const shopPrompt = activeBusiness?.business_name
+          ? `Bạn là chuyên viên tư vấn bán hàng thông minh, nhiệt tình và chu đáo của ${activeBusiness.business_name}. Hãy giải đáp chi tiết thông tin mẫu mã sản phẩm dựa trên kho hàng thực tế, tư vấn giá ưu đãi và hỗ trợ chốt đơn lịch sự, nhanh chóng.`
+          : DEFAULT_SYSTEM_PROMPT;
+
         setConfigForm({
-          bot_name: res.data.bot_name || 'AI Assistant',
-          model_name: res.data.model_name || 'gemini-1.5-flash',
-          ai_persona_tone: res.data.ai_persona_tone || 'FRIENDLY',
-          system_prompt: res.data.system_prompt || '',
-          welcome_message: res.data.welcome_message || '',
-          guardrail_blocklist: res.data.guardrail_blocklist || [],
-          debounce_delay_seconds: res.data.debounce_delay_seconds || 3,
-          auto_order_extraction: res.data.auto_order_extraction !== undefined ? res.data.auto_order_extraction : true,
-          is_active: res.data.is_active !== undefined ? res.data.is_active : true
+          bot_name: data.bot_name || 'AI Assistant',
+          model_name: data.model_name || 'gemini-1.5-flash',
+          ai_persona_tone: data.ai_persona_tone || 'FRIENDLY',
+          system_prompt: (data.system_prompt && data.system_prompt.trim()) ? data.system_prompt : shopPrompt,
+          welcome_message: (data.welcome_message && data.welcome_message.trim()) ? data.welcome_message : DEFAULT_WELCOME_MSG,
+          guardrail_blocklist: Array.isArray(data.guardrail_blocklist) && data.guardrail_blocklist.length > 0
+            ? data.guardrail_blocklist
+            : DEFAULT_GUARDRAILS,
+          debounce_delay_seconds: data.debounce_delay_seconds || 3,
+          auto_order_extraction: data.auto_order_extraction !== undefined ? data.auto_order_extraction : true,
+          is_active: data.is_active !== undefined ? data.is_active : true
         });
       }
     } catch (err) {
@@ -320,7 +346,7 @@ const BotAutoPage = () => {
     } finally {
       setLoadingConfig(false);
     }
-  }, [activeBusiness?._id]);
+  }, [activeBusiness?._id, activeBusiness?.business_name]);
 
   // Load Danh sách Kịch bản
   const fetchScenarios = useCallback(async () => {
@@ -350,6 +376,8 @@ const BotAutoPage = () => {
   useEffect(() => {
     fetchScenarios();
   }, [fetchScenarios]);
+
+
 
   // Lưu cấu hình AI
   const handleSaveAIConfig = async (e) => {
@@ -408,17 +436,30 @@ const BotAutoPage = () => {
   };
 
   // Xóa kịch bản
-  const handleDeleteScenario = async (id, name) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa kịch bản "${name}"?`)) return;
-    try {
-      const res = await botScenarioService.deleteScenario(id, activeBusiness._id);
-      if (res.success || res.message) {
-        showToast('success', 'Đã xóa kịch bản');
-        fetchScenarios();
+  const handleDeleteScenario = (id, name) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa kịch bản tự động',
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn kịch bản "${name}" khỏi hệ thống?`,
+      confirmText: 'Xóa kịch bản',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await botScenarioService.deleteScenario(id, activeBusiness._id);
+          if (res.success || res.message) {
+            showToast('success', 'Đã xóa kịch bản');
+            fetchScenarios();
+          }
+        } catch (err) {
+          showToast('error', err.message || 'Lỗi khi xóa kịch bản');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
+        }
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa kịch bản');
-    }
+    });
   };
 
   // Mở modal tạo / sửa kịch bản
@@ -590,14 +631,26 @@ const BotAutoPage = () => {
         {/* Nút hành động theo từng Tab */}
         <div className="flex items-center space-x-2 shrink-0">
           {activeTab === 'scenarios' && (
-            <button
-              type="button"
-              onClick={() => handleOpenScenarioModal()}
-              className="flex items-center space-x-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/25 transition cursor-pointer"
-            >
-              <Plus size={15} />
-              <span>Thêm kịch bản mới</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(true)}
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition cursor-pointer"
+                title="Nhập hàng loạt kịch bản từ file Excel hoặc CSV"
+              >
+                <FileSpreadsheet size={14} />
+                <span>Nhập từ file</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleOpenScenarioModal()}
+                className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/25 transition cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>Thêm kịch bản mới</span>
+              </button>
+            </div>
           )}
 
           {activeTab === 'ai_config' && (
@@ -708,14 +761,25 @@ const BotAutoPage = () => {
                     Chủ shop có thể tự tạo các kịch bản trả lời tự động cho các câu hỏi phổ biến như: Địa chỉ shop, Chính sách đổi trả, Bảng size, Mã giảm giá...
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleOpenScenarioModal()}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-600/20 inline-flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Plus size={14} />
-                  <span>Tạo kịch bản đầu tiên ngay</span>
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenScenarioModal()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-blue-600/20 inline-flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    <span>Tạo kịch bản thủ công</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsImportModalOpen(true)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-md shadow-emerald-600/20 inline-flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <FileSpreadsheet size={14} />
+                    <span>Nhập từ file Excel mẫu</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -930,13 +994,29 @@ const BotAutoPage = () => {
 
               {/* Lời chào mặc định khi mở chat */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Lời chào tự động khi khách mới mở hộp thoại chat:
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                    Lời chào tự động khi khách mới mở hộp thoại chat:
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfigForm((prev) => ({
+                        ...prev,
+                        welcome_message: DEFAULT_WELCOME_MSG
+                      }));
+                      showToast('info', 'Đã điền lời chào mẫu');
+                    }}
+                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer"
+                  >
+                    Điền mẫu chuẩn
+                  </button>
+                </div>
                 <textarea
                   rows={2}
                   value={configForm.welcome_message}
                   onChange={(e) => setConfigForm({ ...configForm, welcome_message: e.target.value })}
+                  placeholder={DEFAULT_WELCOME_MSG}
                   className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-white focus:ring-2 focus:ring-blue-600 focus:outline-none"
                 />
               </div>
@@ -949,7 +1029,25 @@ const BotAutoPage = () => {
                   <Sliders size={16} className="text-blue-600" />
                   <span>Prompt Chỉ Thị Gốc (System Instruction)</span>
                 </h3>
-                <span className="text-[11px] text-slate-400 font-mono">Google Gemini 1.5 Flash</span>
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shopPrompt = activeBusiness?.business_name
+                        ? `Bạn là chuyên viên tư vấn bán hàng thông minh, nhiệt tình và chu đáo của ${activeBusiness.business_name}. Hãy giải đáp chi tiết thông tin mẫu mã sản phẩm dựa trên kho hàng thực tế, tư vấn giá ưu đãi và hỗ trợ chốt đơn lịch sự, nhanh chóng.`
+                        : DEFAULT_SYSTEM_PROMPT;
+                      setConfigForm((prev) => ({
+                        ...prev,
+                        system_prompt: shopPrompt
+                      }));
+                      showToast('info', 'Đã điền gợi ý prompt mẫu cho cửa hàng');
+                    }}
+                    className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline font-bold cursor-pointer"
+                  >
+                    Gợi ý mẫu chuẩn
+                  </button>
+                  <span className="text-[11px] text-slate-400 font-mono">Google Gemini 1.5 Flash</span>
+                </div>
               </div>
               <p className="text-xs text-slate-400">
                 Chỉ dẫn hành vi, nguyên tắc tư vấn giá, quy định bảo mật và cách thuyết phục khách hàng cho AI
@@ -1614,6 +1712,27 @@ const BotAutoPage = () => {
           </div>
         </div>
       )}
+
+      {/* 8. MODAL: NHẬP KỊCH BẢN TỪ FILE EXCEL / CSV */}
+      <ImportScenarioModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        businessId={activeBusiness?._id}
+        onImportSuccess={() => fetchScenarios()}
+      />
+
+      {/* Modal xác nhận xóa kịch bản thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

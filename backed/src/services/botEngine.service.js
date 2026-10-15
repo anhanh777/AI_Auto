@@ -48,16 +48,17 @@ export const renderDynamicVariables = (templateText = '', context = {}) => {
 /**
  * Gửi hình ảnh qua Facebook Messenger (Hỗ trợ URL công khai trên mạng và file upload cục bộ trên server)
  */
-export const sendFacebookImage = async (imgUrl, senderPsid, pageToken) => {
+export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversationId = null) => {
   if (!imgUrl || !senderPsid || !pageToken) return;
   try {
+    let fbMid = null;
     const isPublicHttpUrl = (imgUrl.startsWith('http://') || imgUrl.startsWith('https://')) &&
       !imgUrl.includes('localhost') &&
       !imgUrl.includes('127.0.0.1');
 
     if (isPublicHttpUrl) {
       // Link ảnh công khai trên Internet
-      await axios.post(
+      const res = await axios.post(
         `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
         {
           recipient: { id: senderPsid },
@@ -70,7 +71,8 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken) => {
         },
         { timeout: 10000 }
       );
-      console.log(`[Facebook Send API] Đã gửi hình ảnh URL đến PSID ${senderPsid}`);
+      fbMid = res.data?.message_id;
+      console.log(`[Facebook Send API] Đã gửi hình ảnh URL đến PSID ${senderPsid}`, fbMid ? `(mid: ${fbMid})` : '');
     } else {
       // File cục bộ trên máy tính/server trong /uploads/
       const uploadsIndex = imgUrl.indexOf('/uploads/');
@@ -98,11 +100,26 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken) => {
         if (!fbRes.ok || fbData.error) {
           console.warn('[Facebook Send API Error]', fbData.error || fbData);
         } else {
+          fbMid = fbData.message_id;
           console.log(`[Facebook Send API] Đã gửi file ảnh local đến PSID ${senderPsid}:`, fbData);
         }
       } else {
         console.warn(`[Facebook Send API] File ảnh không tồn tại: ${localFilePath}`);
       }
+    }
+
+    // Lưu lại message chứa image và external_message_id vào DB để khi khách hàng quote/reply ảnh này,
+    // webhook có thể tìm thấy ngay theo reply_to.mid!
+    if (fbMid && conversationId) {
+      await Message.create({
+        conversation_id: conversationId,
+        sender_type: 'AI_BOT',
+        sender_id: null,
+        content: '[Hình ảnh sản phẩm]',
+        attachments: [{ type: 'image', url: imgUrl }],
+        external_message_id: fbMid,
+        is_read: true
+      });
     }
   } catch (imgErr) {
     console.warn('[Facebook Send Image Warn]', imgErr.message);
@@ -144,6 +161,7 @@ export const processBotEngineForMessage = async ({
     }
 
     const pageToken = channel?.page_access_token || channel?.access_token;
+    const targetPsid = senderPsid || conversation.customer_id?.psid;
 
     // 1. Quét tìm kịch bản của chủ shop khớp với tin nhắn
     const matchedScenario = await matchIncomingMessageToScenario({
@@ -205,6 +223,7 @@ export const processBotEngineForMessage = async ({
         conversation.last_message_content = replyContent || '[Hình ảnh đính kèm]';
         conversation.last_message_text = replyContent || '[Hình ảnh đính kèm]';
         conversation.last_message_at = new Date();
+        conversation.unread_count = 0; // Bot kịch bản đã trả lời thành công cho khách hàng
         await conversation.save();
 
         // D. Phát Socket.IO cho nhân viên đang trực chat nhìn thấy
@@ -217,27 +236,65 @@ export const processBotEngineForMessage = async ({
         }
 
         // E. Gửi tin nhắn thực tế về Facebook Messenger của khách qua Meta Graph API
-        if (pageToken && senderPsid) {
+        if (pageToken && targetPsid) {
           // 1. Gửi tin nhắn văn bản
           if (replyContent) {
             try {
               await axios.post(
                 `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
                 {
-                  recipient: { id: senderPsid },
+                  recipient: { id: targetPsid },
                   message: { text: replyContent }
                 },
                 { timeout: 7000 }
               );
-              console.log(`[Facebook Send API] Bot đã gửi kịch bản "${matchedScenario.scenario_name}" đến PSID ${senderPsid}`);
+              console.log(`[Facebook Send API] Bot đã gửi kịch bản "${matchedScenario.scenario_name}" đến PSID ${targetPsid}`);
             } catch (fbSendErr) {
-              console.warn('[Facebook Send Bot Reply Warn]', fbSendErr.response?.data?.error?.message || fbSendErr.message);
+              const fbErrMsg = fbSendErr.response?.data?.error?.message || fbSendErr.message;
+              const fbErrCode = fbSendErr.response?.data?.error?.code;
+              console.error(`[Facebook Send Bot Reply Error ${fbErrCode || ''}]`, fbErrMsg);
+
+              if (botMessage?._id) {
+                try {
+                  const updatedMsg = await Message.findByIdAndUpdate(
+                    botMessage._id,
+                    {
+                      $set: {
+                        metadata: {
+                          send_status: 'FAILED',
+                          error_code: fbErrCode,
+                          error_message: fbErrCode === 190
+                            ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
+                            : fbErrMsg
+                        }
+                      }
+                    },
+                    { new: true }
+                  );
+                  const io = getIO();
+                  if (io) io.to(conversation._id.toString()).emit('message_updated', updatedMsg);
+                } catch (uErr) {}
+              }
+
+              if (fbErrCode === 190 && channel_id) {
+                await Channel.findByIdAndUpdate(channel_id, { is_connected: false });
+                try {
+                  const io = getIO();
+                  if (io && business_id) {
+                    io.emit('channel:token_expired', {
+                      channel_id,
+                      page_name: channel?.page_name,
+                      error_message: 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
+                    });
+                  }
+                } catch (sErr) {}
+              }
             }
           }
 
           // 2. Gửi danh sách hình ảnh đính kèm (hỗ trợ nhiều ảnh/album)
           for (const imgUrl of allImages) {
-            await sendFacebookImage(imgUrl, senderPsid, pageToken);
+            await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation._id);
           }
         }
       }
@@ -257,26 +314,64 @@ export const processBotEngineForMessage = async ({
       channel_id,
       conversation_id,
       customer_id,
-      senderPsid,
+      senderPsid: targetPsid,
       messageText,
       customerImageUrls
     });
 
-    if (aiResult.handled && pageToken && senderPsid) {
+    if (aiResult.handled && pageToken && targetPsid) {
       if (aiResult.reply) {
         // Gửi câu trả lời của AI đến Facebook Messenger của khách qua Meta Graph Send API
         try {
           await axios.post(
             `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
             {
-              recipient: { id: senderPsid },
+              recipient: { id: targetPsid },
               message: { text: aiResult.reply }
             },
             { timeout: 8000 }
           );
-          console.log(`[Facebook Send API] AI Gemini đã gửi tin nhắn tư vấn thành công đến PSID ${senderPsid}`);
+          console.log(`[Facebook Send API] AI Gemini đã gửi tin nhắn tư vấn thành công đến PSID ${targetPsid}`);
         } catch (fbErr) {
-          console.warn('[Facebook Send AI Warn]', fbErr.response?.data?.error?.message || fbErr.message);
+          const fbErrMsg = fbErr.response?.data?.error?.message || fbErr.message;
+          const fbErrCode = fbErr.response?.data?.error?.code;
+          console.error(`[Facebook Send AI Error ${fbErrCode || ''}]`, fbErrMsg);
+
+          if (aiResult.message_id) {
+            try {
+              const updatedMsg = await Message.findByIdAndUpdate(
+                aiResult.message_id,
+                {
+                  $set: {
+                    metadata: {
+                      send_status: 'FAILED',
+                      error_code: fbErrCode,
+                      error_message: fbErrCode === 190
+                        ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
+                        : fbErrMsg
+                    }
+                  }
+                },
+                { new: true }
+              );
+              const io = getIO();
+              if (io) io.to(conversation_id.toString()).emit('message_updated', updatedMsg);
+            } catch (uErr) {}
+          }
+
+          if (fbErrCode === 190 && channel_id) {
+            await Channel.findByIdAndUpdate(channel_id, { is_connected: false });
+            try {
+              const io = getIO();
+              if (io && business_id) {
+                io.emit('channel:token_expired', {
+                  channel_id,
+                  page_name: channel?.page_name,
+                  error_message: 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
+                });
+              }
+            } catch (sErr) {}
+          }
         }
       }
 
@@ -284,7 +379,7 @@ export const processBotEngineForMessage = async ({
       if (Array.isArray(aiResult.image_urls) && aiResult.image_urls.length > 0) {
         const imagesToSend = aiResult.image_urls.slice(0, 3);
         for (const imgUrl of imagesToSend) {
-          await sendFacebookImage(imgUrl, senderPsid, pageToken);
+          await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation_id);
         }
       }
     }

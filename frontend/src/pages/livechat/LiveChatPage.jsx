@@ -7,6 +7,7 @@ import { channelService } from '../../services/channel.service.js';
 import { conversationService } from '../../services/conversation.service.js';
 import { businessService } from '../../services/business.service.js';
 import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { uploadService } from '../../services/upload.service.js';
 import { socket } from '../../utils/socket.js';
 import {
@@ -49,7 +50,8 @@ import {
   Clock,
   Mail,
   RotateCcw,
-  Filter
+  Filter,
+  AlertTriangle
 } from 'lucide-react';
 
 // Danh sách Thẻ Hệ Thống Căn Bản (Khởi tạo mặc định)
@@ -330,21 +332,45 @@ const LiveChatPage = () => {
     setSearchParams({});
   };
 
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
+
   // Xóa kênh Fanpage
-  const handleDeleteChannel = async (channelId, channelName) => {
-    if (!window.confirm(`Bạn có chắc muốn xóa Fanpage "${channelName}" khỏi hệ thống?`)) return;
-    try {
-      const res = await channelService.deleteChannel(channelId);
-      if (res.success) {
-        showToast('success', 'Đã xóa kênh Fanpage thành công');
-        if (activeChannel?._id === channelId) {
-          handleBackToChannelList();
+  const handleDeleteChannel = (channelId, channelName) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa kết nối Fanpage',
+      message: `Bạn có chắc chắn muốn ngắt kết nối và xóa Fanpage "${channelName}" khỏi hệ thống?`,
+      confirmText: 'Xóa Fanpage',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await channelService.deleteChannel(channelId);
+          if (res.success) {
+            showToast('success', 'Đã xóa kênh Fanpage thành công');
+            if (activeChannel?._id === channelId) {
+              handleBackToChannelList();
+            }
+            fetchChannels();
+          }
+        } catch (error) {
+          showToast('error', error.message || 'Lỗi khi xóa kênh');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
         }
-        fetchChannels();
       }
-    } catch (error) {
-      showToast('error', error.message || 'Lỗi khi xóa kênh');
-    }
+    });
   };
 
   // 2. Tải danh sách Cuộc trò chuyện theo Business & Channel
@@ -401,6 +427,12 @@ const LiveChatPage = () => {
         const res = await conversationService.getMessages(selectedConv._id);
         if (res.success && Array.isArray(res.data)) {
           setMessages(res.data);
+          // Đánh dấu hội thoại đã đọc trên danh sách bên trái
+          setConversations((prev) =>
+            prev.map((c) =>
+              c._id === selectedConv._id ? { ...c, unread_count: 0 } : c
+            )
+          );
         }
       } catch (err) {
         console.error('Lỗi khi tải tin nhắn:', err);
@@ -913,7 +945,7 @@ const LiveChatPage = () => {
                 className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-lg transition flex items-center space-x-2 cursor-pointer"
               >
                 <Plus size={16} />
-                <span>+ Kết nối Fanpage mới</span>
+                <span>Kết nối Fanpage mới</span>
               </button>
             </div>
           </div>
@@ -963,7 +995,7 @@ const LiveChatPage = () => {
                 className="px-5 py-2.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-xl text-xs font-bold shadow transition cursor-pointer inline-flex items-center space-x-2"
               >
                 <Plus size={16} />
-                <span>+ Kết nối Fanpage Facebook ngay</span>
+                <span>Kết nối Fanpage Facebook ngay</span>
               </button>
             </div>
           ) : (
@@ -1021,10 +1053,17 @@ const LiveChatPage = () => {
 
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-slate-400">Trạng thái:</span>
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>Sẵn sàng tiếp nhận tin nhắn</span>
-                      </span>
+                      {ch.token_valid === false ? (
+                        <span className="px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 font-bold text-[10px] flex items-center space-x-1" title={ch.token_error || 'Token Fanpage hết hạn'}>
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                          <span>Token hết hạn</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 font-bold text-[10px] flex items-center space-x-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span>Sẵn sàng tiếp nhận tin nhắn</span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1041,6 +1080,20 @@ const LiveChatPage = () => {
                       <MessageSquare size={14} />
                       <span>Xem Tin Nhắn Fanpage</span>
                     </button>
+                    {ch.token_valid === false && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowConnectModal(true);
+                        }}
+                        className="py-2.5 px-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer shadow-sm shrink-0"
+                        title="Kết nối lại Fanpage để gia hạn Token"
+                      >
+                        <RefreshCw size={13} />
+                        <span>Kết nối lại</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1087,7 +1140,18 @@ const LiveChatPage = () => {
                 AI
               </div>
             )}
-            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 ring-2 ring-white dark:ring-slate-900"></span>
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${
+                activeChannel?.token_valid === false || activeChannel?.is_connected === false
+                  ? 'bg-rose-500 animate-pulse'
+                  : 'bg-emerald-500'
+              }`}
+              title={
+                activeChannel?.token_valid === false || activeChannel?.is_connected === false
+                  ? 'Token Fanpage đã hết hạn! Bấm vào để kết nối lại'
+                  : 'Đang kết nối Facebook bình thường'
+              }
+            ></span>
           </div>
 
           {/* Dấu phân cách nhỏ */}
@@ -1385,7 +1449,12 @@ const LiveChatPage = () => {
               return (
                 <div
                   key={conv._id}
-                  onClick={() => setSelectedConv(conv)}
+                  onClick={() => {
+                    setSelectedConv(conv);
+                    setConversations((prev) =>
+                      prev.map((c) => (c._id === conv._id ? { ...c, unread_count: 0 } : c))
+                    );
+                  }}
                   className={`p-3.5 transition flex items-start space-x-3 cursor-pointer ${
                     isSelected
                       ? 'bg-blue-50/90 dark:bg-blue-950/50 border-l-4 border-[#1877F2]'
@@ -1554,6 +1623,26 @@ const LiveChatPage = () => {
                 </div>
               </div>
 
+              {/* Cảnh báo Token Fanpage hết hạn */}
+              {(activeChannel?.token_valid === false || activeChannel?.is_connected === false) && (
+                <div className="bg-rose-50 dark:bg-rose-950/60 border-b border-rose-200 dark:border-rose-900/60 px-4 py-2.5 flex items-center justify-between text-xs text-rose-700 dark:text-rose-300 shrink-0 z-10 animate-fadeIn">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <AlertTriangle size={16} className="text-rose-500 shrink-0" />
+                    <span className="truncate">
+                      <strong>Token Fanpage "{activeChannel?.page_name}" đã hết hạn:</strong> Tin nhắn trả lời sẽ không tới được Messenger của khách. Vui lòng kết nối lại để tiếp tục.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowConnectModal(true)}
+                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-xs shadow transition cursor-pointer shrink-0 ml-3 flex items-center space-x-1"
+                  >
+                    <RefreshCw size={12} />
+                    <span>Kết nối lại Fanpage</span>
+                  </button>
+                </div>
+              )}
+
               {/* Khung Tin Nhắn (Messages Stream) */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3.5 bg-[#f8fafc] dark:bg-[#0b1120] no-scrollbar flex flex-col">
                 {loadingMessages ? (
@@ -1670,12 +1759,22 @@ const LiveChatPage = () => {
                           )}
 
                           <div
-                            className={`text-[9px] mt-1 text-right ${
+                            className={`text-[9px] mt-1 text-right flex items-center justify-end space-x-1.5 ${
                               isStaff || isBot ? 'text-blue-100' : 'text-slate-400'
                             }`}
                           >
-                            {formatMsgTime(msg.created_at)}
+                            <span>{formatMsgTime(msg.created_at)}</span>
                           </div>
+
+                          {msg.metadata?.send_status === 'FAILED' && (
+                            <div
+                              className="flex items-center space-x-1 text-[10px] text-amber-200 mt-1 justify-end font-medium bg-rose-900/40 px-2 py-0.5 rounded-lg border border-rose-400/30"
+                              title={msg.metadata?.error_message || 'Không thể gửi đến Messenger'}
+                            >
+                              <AlertTriangle size={11} className="text-amber-300 shrink-0" />
+                              <span>Chưa gửi được sang Messenger (Token Fanpage hết hạn)</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -2167,6 +2266,19 @@ const LiveChatPage = () => {
         onClose={() => setShowConnectModal(false)}
         businessId={activeBusiness._id}
         onChannelCreated={() => fetchChannels()}
+      />
+
+      {/* Modal xác nhận xóa Fanpage thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
       />
     </div>
   );

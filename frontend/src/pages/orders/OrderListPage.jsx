@@ -5,6 +5,7 @@ import { orderService } from '../../services/order.service.js';
 import { channelService } from '../../services/channel.service.js';
 import { productService } from '../../services/product.service.js';
 import { customerService } from '../../services/customer.service.js';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { socket } from '../../utils/socket.js';
 import {
   ShoppingCart,
@@ -70,6 +71,16 @@ const OrderListPage = () => {
   const [cancelReason, setCancelReason] = useState('Khách đổi ý không muốn mua nữa');
   const [customCancelReason, setCustomCancelReason] = useState('');
   const [isSubmittingCancel, setIsSubmittingCancel] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
 
   // Modal tạo đơn thủ công
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -251,20 +262,33 @@ const OrderListPage = () => {
   };
 
   // Xóa đơn hàng
-  const handleDeleteOrder = async (id, code) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng #${code}?`)) return;
-    try {
-      const res = await orderService.deleteOrder(id, activeBusiness._id);
-      if (res.success || res.message) {
-        showToast('success', 'Đã xóa đơn hàng');
-        if (selectedOrder && selectedOrder._id === id) {
-          setSelectedOrder(null);
+  const handleDeleteOrder = (id, code) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa đơn hàng',
+      message: `Bạn có chắc chắn muốn xóa vĩnh viễn đơn hàng #${code} khỏi hệ thống?`,
+      confirmText: 'Xóa đơn hàng',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await orderService.deleteOrder(id, activeBusiness._id);
+          if (res.success || res.message) {
+            showToast('success', 'Đã xóa đơn hàng');
+            if (selectedOrder && selectedOrder._id === id) {
+              setSelectedOrder(null);
+            }
+            fetchOrders(false);
+          }
+        } catch (err) {
+          showToast('error', err.message || 'Lỗi khi xóa đơn hàng');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
         }
-        fetchOrders(false);
       }
-    } catch (err) {
-      showToast('error', err.message || 'Lỗi khi xóa đơn hàng');
-    }
+    });
   };
 
   // Mở modal tạo đơn thủ công
@@ -1534,6 +1558,19 @@ const OrderListPage = () => {
           </div>
         </div>
       )}
+
+      {/* Modal xác nhận xóa đơn hàng thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

@@ -67,3 +67,12 @@ export const upload = multer({
     fileSize: 10 * 1024 * 1024 // 10MB
   }
 });
+
+// 4. Multer Memory Storage (xử lý trực tiếp buffer trong RAM cho import Excel/CSV)
+export const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB
+  }
+});
+

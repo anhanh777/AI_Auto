@@ -288,8 +288,10 @@ export const handleWebhookPayloadService = async (body) => {
           }
         }
 
-        // Nếu khách hỏi về ảnh ("ảnh này", "hình này", "mẫu này") mà chưa có URL, tìm ảnh gần nhất trong cuộc trò chuyện
-        if (customerImageUrls.length === 0 && /(?:ảnh này|hình này|mẫu này|cái này|sản phẩm này|mẫu trong ảnh|hình trong tin nhắn)/i.test(messageText)) {
+        // Nếu khách hỏi về ảnh ("ảnh này", "hình này", "mẫu này", "đây là sản phẩm gì", v.v.) hoặc có swipe quote (replyToMid) mà chưa có URL, tìm ảnh gần nhất trong cuộc trò chuyện
+        const isAskingAboutImage = /(?:ảnh này|hình này|mẫu này|cái này|sản phẩm này|mẫu trong ảnh|hình trong tin nhắn|đây là gì|đây là mẫu gì|đây là sản phẩm gì|con này|bộ này|mô hình này|bộ lego này|cho tôi biết đây|mẫu nào|sản phẩm nào)/i.test(messageText);
+
+        if (customerImageUrls.length === 0 && (replyToMid || isAskingAboutImage)) {
           const lastImageMsg = await Message.findOne({
             conversation_id: conversation._id,
             _id: { $ne: savedMessage._id },
@@ -303,6 +305,10 @@ export const handleWebhookPayloadService = async (body) => {
               }
             }
           }
+        }
+
+        if (customerImageUrls.length > 0) {
+          console.log(`[Facebook Webhook] 📸 Nhận diện được ${customerImageUrls.length} ảnh cần AI Vision phân tích:`, customerImageUrls);
         }
 
         // G. Kích hoạt Bộ máy Bot tự động phản hồi theo kịch bản do Chủ shop cấu hình

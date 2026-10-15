@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { customerService } from '../../services/customer.service.js';
+import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { socket } from '../../utils/socket.js';
 import {
   Users,
@@ -72,6 +73,16 @@ const CustomerListPage = () => {
   const [selectedSource, setSelectedSource] = useState('');
   const [hasPhoneFilter, setHasPhoneFilter] = useState(''); // '' | 'yes' | 'no'
   const [sortBy, setSortBy] = useState('updated_at');
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Xác nhận xóa',
+    cancelText: 'Hủy bỏ',
+    type: 'danger',
+    loading: false,
+    onConfirm: () => {}
+  });
   const [page, setPage] = useState(1);
   const [copiedId, setCopiedId] = useState(null);
 
@@ -425,21 +436,34 @@ const CustomerListPage = () => {
     }
   };
 
-  const handleDelete = async (id, name) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa khách hàng "${name}" khỏi danh sách?`)) return;
-    try {
-      const res = await customerService.deleteCustomer(id, activeBusiness._id);
-      if (res.success) {
-        showToast('success', 'Đã xóa khách hàng thành công');
-        fetchCustomers();
-        fetchStats();
-        if (detailCustomer?._id === id) {
-          setDetailCustomer(null);
+  const handleDelete = (id, name) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Xóa thông tin khách hàng',
+      message: `Bạn có chắc chắn muốn xóa khách hàng "${name}" khỏi danh sách khách hàng của cửa hàng?`,
+      confirmText: 'Xóa khách hàng',
+      cancelText: 'Hủy bỏ',
+      type: 'danger',
+      loading: false,
+      onConfirm: async () => {
+        try {
+          setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          const res = await customerService.deleteCustomer(id, activeBusiness._id);
+          if (res.success) {
+            showToast('success', 'Đã xóa khách hàng thành công');
+            fetchCustomers();
+            fetchStats();
+            if (detailCustomer?._id === id) {
+              setDetailCustomer(null);
+            }
+          }
+        } catch (err) {
+          showToast('error', err.response?.data?.message || err.message || 'Lỗi khi xóa khách hàng');
+        } finally {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
         }
       }
-    } catch (err) {
-      showToast('error', err.response?.data?.message || err.message || 'Lỗi khi xóa khách hàng');
-    }
+    });
   };
 
   const getOrderStatusBadge = (status) => {
@@ -1459,6 +1483,19 @@ const CustomerListPage = () => {
           </div>
         </div>
       )}
+
+      {/* Modal xác nhận xóa khách hàng thay thế window.confirm */}
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        confirmText={confirmDialog.confirmText}
+        cancelText={confirmDialog.cancelText}
+        type={confirmDialog.type}
+        loading={confirmDialog.loading}
+      />
     </div>
   );
 };

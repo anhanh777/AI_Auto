@@ -87,6 +87,17 @@ export const evaluateAddressQuality = (rawAddress = '') => {
 
   let text = rawAddress.trim();
 
+  // Guard: Nếu chuỗi là câu hỏi tra cứu đơn hàng, thắc mắc thông tin đơn hoặc chào hỏi, TUYỆT ĐỐI không phải địa chỉ
+  const isQuestionOrInquiry = /(?:thông\s*tin\s*đơn|kiểm\s*tra\s*đơn|tra\s*cứu\s*đơn|đơn\s*(?:hàng\s*)?(?:vừa|đã)\s*đặt|đơn\s*của\s*(?:tôi|mình|em)|khi\s*nào\s*giao|bao\s*giờ\s*giao|hủy\s*đơn|đổi\s*địa\s*chỉ|tôi\s*cần\s*biết|cho\s*tôi\s*biết|tôi\s*muốn\s*hỏi)/i.test(text);
+  if (isQuestionOrInquiry) {
+    return {
+      quality: 'NONE',
+      cleanAddress: '',
+      customerNote: '',
+      feedbackMessage: ''
+    };
+  }
+
   // A. Tách ghi chú giao hàng nếu có (vd: "giao giờ hành chính", "gọi trước khi giao", "ship buổi chiều")
   let customerNote = '';
   const noteMatch = text.match(/(giao\s+(?:giờ|buổi|sáng|chiều|tối|ngày|hành chính)[^,.]*|gọi\s+trước\s+khi\s+giao|để\s+ở\s+cửa|để\s+bảo\s+vệ)/i);
@@ -118,12 +129,12 @@ export const evaluateAddressQuality = (rawAddress = '') => {
 
   const lower = text.toLowerCase();
 
-  // Kiểm tra yếu tố chi tiết (Số nhà, ngõ, đường, thôn, xóm...)
-  const hasMicro = /(?:số\s*\d+|\d+\s*[\/-]\s*\d+|ngõ|ngách|hẻm|đường|phố|thôn|xóm|ấp|bản|tổ|khu|chung cư|tòa|toà|ct\d|kđt|phòng)/i.test(lower) ||
+  // Kiểm tra yếu tố chi tiết (Số nhà, ngõ, đường, thôn, xóm...) có biên từ ngữ chuẩn xác
+  const hasMicro = /(?:số\s*\d+|\d+\s*[\/-]\s*\d+|\bngõ\b|\bngách\b|\bhẻm\b|\bđường\b|\bphố\b|(?:\b|\s)(?:thôn|xóm|ấp|bản|tổ|khu)(?:\b|\s|[,\./\-])|\bchung\s*cư\b|\btòa\b|\btoà\b|\bct\d\b|\bkđt\b|\bphòng\b)/i.test(lower) ||
     /^\d+[a-zA-Z]?\s+/.test(lower); // Bắt đầu bằng số nhà (vd: "25 Cầu Giấy")
 
   // Kiểm tra yếu tố hành chính (Phường, xã, quận, huyện, tỉnh/thành phố)
-  const hasMacro = /(?:phường|xã|thị trấn|quận|huyện|thị xã|tp|thành phố|tỉnh|hà nội|hcm|hồ chí minh|đà nẵng|hải phòng|cần thơ|bình dương|đồng nai|quảng ninh|thái bình|nam định|hải dương|bắc ninh)/i.test(lower);
+  const hasMacro = /(?:\bphường\b|\bxã\b|\bthị\s*trấn\b|\bquận\b|\bhuyện\b|\bthị\s*xã\b|\btp\b|\bthành\s*phố\b|\btỉnh\b|\bhà\s*nội\b|\bhcm\b|\bhồ\s*chí\s*minh\b|\bđà\s*nẵng\b|\bhải\s*phòng\b|\bcần\s*thơ\b|\bbình\s*dương\b|\bđồng\s*nai\b|\bquảng\s*ninh\b|\bthái\s*bình\b|\bnam\s*định\b|\bhải\s*dương\b|\bbắc\s*ninh\b)/i.test(lower);
 
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 

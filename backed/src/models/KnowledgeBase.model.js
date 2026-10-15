@@ -15,8 +15,8 @@ const knowledgeBaseSchema = new mongoose.Schema(
     },
     category: {
       type: String,
-      enum: ['SHIPPING', 'RETURN_POLICY', 'SIZE_GUIDE', 'PROMOTION', 'FAQ', 'GENERAL'],
-      default: 'GENERAL'
+      trim: true,
+      default: 'Thông tin chung'
     },
     content: {
       type: String,

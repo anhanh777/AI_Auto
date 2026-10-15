@@ -138,6 +138,7 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
         page_id: page.page_id,
         page_name: page.page_name,
         access_token: page.access_token,
+        user_access_token: fbUser?.accessToken || '',
         avatar_url: page.avatar_url,
         operating_mode: mode
       };
