@@ -429,8 +429,8 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
     const contentPayload = geminiImageParts.length > 0 ? [prompt, ...geminiImageParts] : prompt;
 
     // Cơ chế Multi-Model Fallback: Ưu tiên model chính, nếu gặp 429 hoặc lỗi sẽ chuyển tiếp model dự phòng
-    const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
-    const fallbackModelList = [primaryModel, 'gemini-2.5-flash'].filter((v, i, a) => a.indexOf(v) === i);
+    const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const fallbackModelList = [primaryModel, 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash-lite'].filter((v, i, a) => a.indexOf(v) === i);
 
     let responseText = null;
     let lastError = null;

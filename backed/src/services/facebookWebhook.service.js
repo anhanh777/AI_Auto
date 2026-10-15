@@ -312,6 +312,13 @@ export const handleWebhookPayloadService = async (body) => {
         }
 
         // G. Kích hoạt Bộ máy Bot tự động phản hồi theo kịch bản do Chủ shop cấu hình
+        // Chỉ coi là tin nhắn đầu tiên nếu trong cuộc trò chuyện này chưa từng có tin nhắn nào trước đó
+        const previousMessagesCount = await Message.countDocuments({
+          conversation_id: conversation._id,
+          _id: { $ne: savedMessage._id }
+        });
+        const isFirstMessage = previousMessagesCount === 0;
+
         processBotEngineForMessage({
           business_id: channel.business_id,
           channel_id: channel._id,
@@ -320,7 +327,7 @@ export const handleWebhookPayloadService = async (body) => {
           senderPsid,
           messageText,
           customerImageUrls,
-          isFirstMessage: (conversation.unread_count || 0) <= 1
+          isFirstMessage
         }).catch((botErr) => {
           console.warn('[Bot Execution Error]', botErr.message);
         });
