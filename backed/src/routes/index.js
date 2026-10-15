@@ -49,5 +49,6 @@ rootRouter.use('/knowledge', knowledgeRouter);
 rootRouter.use('/analytics', analyticsRouter);
 rootRouter.use('/notifications', notificationRouter);
 rootRouter.use('/webhooks', webhookRouter);
+rootRouter.use('/webhook', webhookRouter);
 
 export default rootRouter;

@@ -7,7 +7,9 @@ import {
 const webhookRouter = Router();
 
 // Facebook Webhook Verification & Event Ingestion
-// URL: /api/v1/webhooks/facebook (Công khai, không yêu cầu JWT vì Meta gọi đến)
+// Hỗ trợ cả / và /facebook (Công khai, không yêu cầu JWT vì Meta gọi đến)
+webhookRouter.get('/', verifyFacebookWebhook);
+webhookRouter.post('/', handleFacebookWebhook);
 webhookRouter.get('/facebook', verifyFacebookWebhook);
 webhookRouter.post('/facebook', handleFacebookWebhook);
 
