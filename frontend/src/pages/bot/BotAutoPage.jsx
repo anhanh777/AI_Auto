@@ -391,6 +391,7 @@ const BotAutoPage = () => {
       });
       if (res.success) {
         showToast('success', `Đã lưu cấu hình AI Bot cho ${activeBusiness.business_name}`);
+        fetchAIConfig();
       }
     } catch (err) {
       showToast('error', err.message || 'Lỗi khi lưu cấu hình');

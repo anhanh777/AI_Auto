@@ -662,6 +662,13 @@ const LiveChatPage = () => {
       const res = await conversationService.toggleBot(selectedConv._id);
       if (res.success && res.data) {
         setSelectedConv(res.data);
+        setConversations((prev) =>
+          prev.map((c) =>
+            (c._id || c.id) === (res.data._id || res.data.id)
+              ? { ...c, is_bot_active: res.data.is_bot_active }
+              : c
+          )
+        );
         showToast('info', `Đã ${res.data.is_bot_active ? 'bật' : 'tạm dừng'} AI Bot cho khách hàng này`);
       }
     } catch (err) {
