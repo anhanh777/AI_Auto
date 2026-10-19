@@ -26,3 +26,45 @@ export const resolveMediaUrl = (url) => {
 
   return url;
 };
+
+/**
+ * Chuẩn hóa Avatar Kênh / Fanpage / Doanh nghiệp
+ * Đảm bảo kênh Facebook luôn dùng permanent Graph API link để không bao giờ bị lỗi 403 Forbidden do token CDN hết hạn
+ */
+export const resolveChannelAvatar = (channel, business = null) => {
+  if (!channel && !business) return '';
+
+  // 1. Kênh Facebook có page_id -> Dùng Graph API URL vĩnh viễn
+  if (channel?.page_id) {
+    return `https://graph.facebook.com/${channel.page_id}/picture?type=large`;
+  }
+
+  // 2. Kênh có avatar_url
+  if (channel?.avatar_url) {
+    if (channel.avatar_url.includes('scontent.') && channel.avatar_url.includes('fbcdn.net') && channel.page_id) {
+      return `https://graph.facebook.com/${channel.page_id}/picture?type=large`;
+    }
+    return resolveMediaUrl(channel.avatar_url);
+  }
+
+  // 3. Fallback sang logo của business
+  if (business?.logo_url) {
+    return resolveMediaUrl(business.logo_url);
+  }
+
+  return '';
+};
+
+/**
+ * Lấy 2 chữ cái viết tắt của tên (để làm Avatar Fallback sang trọng khi không có ảnh hoặc ảnh lỗi)
+ */
+export const getInitials = (name, fallback = 'AI') => {
+  if (!name || typeof name !== 'string') return fallback;
+  const clean = name.trim();
+  if (!clean) return fallback;
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 1) {
+    return words[0].substring(0, 2).toUpperCase();
+  }
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+};

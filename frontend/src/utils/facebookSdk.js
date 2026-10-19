@@ -128,7 +128,7 @@ export const getDirectFacebookPages = async () => {
             page_name: p.name,
             access_token: p.access_token,
             category: p.category,
-            avatar_url: p.picture?.data?.url || '',
+            avatar_url: p.id ? `https://graph.facebook.com/${p.id}/picture?type=large` : (p.picture?.data?.url || ''),
             tasks: p.tasks || []
           }));
           resolve(pages);

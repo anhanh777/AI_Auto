@@ -527,6 +527,10 @@ const MainLayout = () => {
                 <img
                   src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                   alt={user?.full_name}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                  }}
                   className="w-8 h-8 rounded-full object-cover border-2 border-blue-400/80 shadow"
                 />
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-[#17234e] absolute bottom-0 right-0"></span>
@@ -542,6 +546,10 @@ const MainLayout = () => {
                     <img
                       src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                       alt={user?.full_name}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                      }}
                       className="w-12 h-12 rounded-full object-cover border-2 border-blue-500 shadow-sm"
                     />
                     <span className="w-3 h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800 absolute bottom-0 right-0"></span>

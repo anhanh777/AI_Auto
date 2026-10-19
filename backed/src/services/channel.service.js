@@ -202,7 +202,7 @@ export const getFacebookPagesFromTokenService = async (userAccessToken) => {
     page_name: page.name,
     access_token: page.access_token,
     category: page.category,
-    avatar_url: page.picture?.data?.url || '',
+    avatar_url: page.id ? `https://graph.facebook.com/${page.id}/picture?type=large` : (page.picture?.data?.url || ''),
     tasks: page.tasks || []
   }));
 
@@ -214,6 +214,10 @@ export const connectFacebookPageService = async (data, userId) => {
   if (!business_id || !page_id || !page_name) {
     throw new Error('business_id, page_id và page_name là bắt buộc');
   }
+
+  const finalAvatarUrl = page_id
+    ? `https://graph.facebook.com/${page_id}/picture?type=large`
+    : (avatar_url || '');
 
   const finalPageToken = await resolvePermanentPageToken({
     access_token,
@@ -243,7 +247,7 @@ export const connectFacebookPageService = async (data, userId) => {
       channel.page_access_token = finalPageToken;
       channel.access_token = finalPageToken;
     }
-    if (avatar_url) channel.avatar_url = avatar_url;
+    channel.avatar_url = finalAvatarUrl;
     if (operating_mode) channel.operating_mode = operating_mode;
     channel.is_connected = true;
     channel.is_active = true;
@@ -255,7 +259,7 @@ export const connectFacebookPageService = async (data, userId) => {
       page_id,
       page_name,
       platform: 'facebook',
-      avatar_url: avatar_url || '',
+      avatar_url: finalAvatarUrl,
       page_access_token: finalPageToken || access_token || '',
       access_token: finalPageToken || access_token || '',
       operating_mode: operating_mode || 'AI_AUTO',

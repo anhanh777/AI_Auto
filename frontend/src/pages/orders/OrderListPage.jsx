@@ -7,6 +7,7 @@ import { productService } from '../../services/product.service.js';
 import { customerService } from '../../services/customer.service.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { socket } from '../../utils/socket.js';
+import { resolveChannelAvatar } from '../../utils/media.js';
 import {
   ShoppingCart,
   Search,
@@ -735,11 +736,15 @@ const OrderListPage = () => {
                       <td className="py-3.5 px-4">
                         {channel ? (
                           <div className="flex items-center space-x-2">
-                            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs">
-                              {channel.avatar_url ? (
+                            <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-xs overflow-hidden">
+                              {resolveChannelAvatar(channel) ? (
                                 <img
-                                  src={channel.avatar_url}
+                                  src={resolveChannelAvatar(channel)}
                                   alt={channel.page_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.style.display = 'none';
+                                  }}
                                   className="w-full h-full rounded-lg object-cover"
                                 />
                               ) : (

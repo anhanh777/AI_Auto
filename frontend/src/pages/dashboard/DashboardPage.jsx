@@ -222,6 +222,16 @@ const DashboardPage = () => {
                       <img
                         src={biz.logo_url}
                         alt={bizName}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.style.display = 'none';
+                          if (e.currentTarget.parentElement) {
+                            const fallback = document.createElement('div');
+                            fallback.className = 'w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-base sm:text-lg flex items-center justify-center shrink-0 shadow-sm';
+                            fallback.innerText = bizCode.substring(0, 2);
+                            e.currentTarget.parentElement.insertBefore(fallback, e.currentTarget);
+                          }
+                        }}
                         className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm"
                       />
                     ) : (
@@ -260,6 +270,10 @@ const DashboardPage = () => {
                       <img
                         src={ownerAvatar}
                         alt={ownerName}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50';
+                        }}
                         className="w-6 h-6 sm:w-7 sm:h-7 rounded-full object-cover border border-slate-300 dark:border-slate-600"
                       />
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium mt-0.5 max-w-[90px] truncate">

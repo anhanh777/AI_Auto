@@ -10,7 +10,7 @@ import ConnectChannelModal from '../../components/modals/ConnectChannelModal.jsx
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { uploadService } from '../../services/upload.service.js';
 import { socket } from '../../utils/socket.js';
-import { resolveMediaUrl } from '../../utils/media.js';
+import { resolveMediaUrl, resolveChannelAvatar, getInitials } from '../../utils/media.js';
 import {
   Search,
   ChevronDown,
@@ -93,7 +93,16 @@ const LiveChatPage = () => {
   const [channels, setChannels] = useState([]);
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [activeChannel, setActiveChannel] = useState(null);
+  const [channelAvatarFailed, setChannelAvatarFailed] = useState(false);
   const [showConnectModal, setShowConnectModal] = useState(false);
+
+  useEffect(() => {
+    setChannelAvatarFailed(false);
+  }, [activeChannel?._id, activeChannel?.page_id]);
+
+  const channelAvatarUrl = useMemo(() => {
+    return resolveChannelAvatar(activeChannel, activeBusiness);
+  }, [activeChannel, activeBusiness]);
 
   // Conversations & Chat state
   const [conversations, setConversations] = useState([]);
@@ -1152,15 +1161,16 @@ const LiveChatPage = () => {
             className="relative group cursor-pointer mb-1"
             title={`${activeBusiness?.business_name || 'Cửa hàng'} • Kênh: ${activeChannel?.page_name || ''} (Bấm để đổi kênh)`}
           >
-            {activeChannel?.avatar_url || activeBusiness?.logo_url ? (
+            {channelAvatarUrl && !channelAvatarFailed ? (
               <img
-                src={activeChannel?.avatar_url || activeBusiness?.logo_url}
-                alt="Logo"
+                src={channelAvatarUrl}
+                alt={activeChannel?.page_name || activeBusiness?.business_name || 'Logo'}
+                onError={() => setChannelAvatarFailed(true)}
                 className="w-10 h-10 rounded-2xl object-cover ring-2 ring-transparent group-hover:ring-[#1877F2] shadow-sm transition-all"
               />
             ) : (
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#f05a28] to-[#ff7e54] text-white font-black text-xs flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                AI
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#1877F2] to-[#00C6FF] text-white font-black text-xs flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform uppercase tracking-wider">
+                {getInitials(activeChannel?.page_name || activeBusiness?.business_name || 'AI')}
               </div>
             )}
             <span
@@ -1491,6 +1501,10 @@ const LiveChatPage = () => {
                     <img
                       src={customerAvatar}
                       alt={customerName}
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                      }}
                       className="w-11 h-11 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
                     />
                     {/* Facebook Icon Badge nhỏ ở góc dưới */}
@@ -1528,8 +1542,12 @@ const LiveChatPage = () => {
                     <div className="flex items-center space-x-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span className="text-slate-400 text-xs">↩</span>
                       <img
-                        src={activeChannel?.avatar_url || activeBusiness?.logo_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'}
+                        src={channelAvatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'}
                         alt="Shop"
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50';
+                        }}
                         className="w-3.5 h-3.5 rounded-full object-cover border border-slate-200 shrink-0"
                       />
                       <span className="truncate">
@@ -1595,6 +1613,10 @@ const LiveChatPage = () => {
                     <img
                       src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                       alt="Customer"
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                      }}
                       className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                     />
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 absolute bottom-0 right-0"></span>
@@ -1704,6 +1726,10 @@ const LiveChatPage = () => {
                               'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50'
                             }
                             alt="Customer"
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=50';
+                            }}
                             className="w-7 h-7 rounded-full object-cover shrink-0 mb-1"
                           />
                         )}
@@ -2124,6 +2150,10 @@ const LiveChatPage = () => {
                   <img
                     src={selectedConv.customer_id?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                     alt="Avatar"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                    }}
                     className="w-16 h-16 rounded-2xl object-cover mx-auto mb-2 border shadow-sm"
                   />
                   <h4 className="font-extrabold text-sm text-slate-900 dark:text-white">

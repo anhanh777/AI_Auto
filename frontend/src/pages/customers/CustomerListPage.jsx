@@ -822,6 +822,10 @@ const CustomerListPage = () => {
                             <img
                               src={c.avatar || c.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                               alt={c.full_name}
+                              onError={(e) => {
+                                e.currentTarget.onerror = null;
+                                e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                              }}
                               className="w-11 h-11 shrink-0 aspect-square rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
                             />
                             {isVip && (
@@ -1069,6 +1073,10 @@ const CustomerListPage = () => {
                 <img
                   src={detailCustomer.avatar || detailCustomer.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                   alt={detailCustomer.full_name}
+                  onError={(e) => {
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                  }}
                   className="w-14 h-14 rounded-2xl object-cover border-2 border-slate-200 dark:border-slate-700 shadow-md"
                 />
                 <div>

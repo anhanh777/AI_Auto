@@ -431,6 +431,10 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
                                 <img
                                   src={p.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                                   alt={p.page_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                                  }}
                                   className="w-11 h-11 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-sm"
                                 />
                                 <div>
