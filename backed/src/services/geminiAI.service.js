@@ -506,7 +506,17 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
           CANCELLED: 'Đã hủy'
         };
         const stName = statusMap[o.order_status] || o.order_status;
-        return `- Mã đơn: #${o.order_code} | Shop: ${channelName} | Trạng thái: ${stName} | Sản phẩm: ${items} | Người nhận: ${o.shipping_customer_name || o.customer_name} | SĐT: ${o.shipping_phone || o.customer_phone} | Địa chỉ: ${o.shipping_address} | Tổng tiền: ${(o.total_amount || 0).toLocaleString('vi-VN')} VND | Ngày đặt: ${new Date(o.created_at).toLocaleString('vi-VN')}`;
+        let operationalNote = '';
+        if (o.order_status === 'SHIPPING') {
+          operationalNote = ' [ĐÃ BÀN GIAO BƯU TÁ ĐANG GIAO - TUYỆT ĐỐI KHÔNG SỬA ĐƠN HOẶC HỦY ĐƠN TRỰC TIẾP]';
+        } else if (o.order_status === 'COMPLETED' || o.order_status === 'DELIVERED') {
+          operationalNote = ' [ĐÃ GIAO THÀNH CÔNG - KHÔNG SỬA ĐƠN NÀY, TƯ VẤN ĐỔI TRẢ TRONG 3 NGÀY NẾU KHÁCH CẦN]';
+        } else if (o.order_status === 'CANCELLED') {
+          operationalNote = ' [ĐƠN ĐÃ HỦY - KHÔNG SỬA ĐƠN, MỜI TẠO ĐƠN MỚI]';
+        } else if (['PENDING', 'CONFIRMED'].includes(o.order_status)) {
+          operationalNote = ' [CHỜ DUYỆT - ĐƯỢC PHÉP CẬP NHẬT HOẶC HỦY ĐƠN NẾU KHÁCH YÊU CẦU]';
+        }
+        return `- Mã đơn: #${o.order_code} | Shop: ${channelName} | Trạng thái: ${stName}${operationalNote} | Sản phẩm: ${items} | Người nhận: ${o.shipping_customer_name || o.customer_name} | SĐT: ${o.shipping_phone || o.customer_phone} | Địa chỉ: ${o.shipping_address} | Tổng tiền: ${(o.total_amount || 0).toLocaleString('vi-VN')} VND | Ngày đặt: ${new Date(o.created_at).toLocaleString('vi-VN')}`;
       }).join('\n')
     : `Khách hàng này hiện chưa có đơn hàng nào tại shop "${channelName}".`;
 
@@ -799,22 +809,26 @@ ${chatHistoryText}
    Bạn ĐƯỢC PHÉP thay đổi CSDL khi khách hàng thỏa mãn các điều kiện trong mục "CÁC QUY TRÌNH ĐƯỢC PHÉP CAN THIỆP HỆ THỐNG":
 
    A. HỦY ĐƠN HÀNG (CANCEL_ORDER):
-      - Khi khách hàng yêu cầu hủy đơn (ví dụ: "tôi muốn hủy", "hủy đơn giúp mình", "hủy hàng", "không lấy nữa"):
-        + Bước 1 (Hỏi xác nhận): Kiểm tra xem khách có đơn hàng nào tại shop ở mục RAG Đơn hàng. Nếu đơn đang ở trạng thái "Chờ xác nhận" (PENDING) hoặc "Đã xác nhận" (CONFIRMED):
-          Hỏi lại khách một cách lịch sự, nêu rõ mã đơn, tên sản phẩm và tổng tiền, và xin xác nhận của khách (Ví dụ: "Dạ bạn ơi, shop thấy bạn có đơn #DH-... gồm... Bạn có muốn xác nhận hủy đơn hàng này không để shop hỗ trợ cập nhật hủy đơn cho mình nhé? ❤️"). Lúc này đặt "order_action": null.
-        + Bước 2 (Thực thi khi khách đã xác nhận): Khi khách phản hồi ĐỒNG Ý / XÁC NHẬN HỦY (ví dụ: "đúng", "ừ", "hủy đi", "xác nhận", "ok", "chuẩn rồi", "đúng rồi"):
-          * Trả lời (reply): Lịch sự thông báo shop đã cập nhật hủy đơn hàng #DH-... trên hệ thống cho bạn rồi ạ và gửi lời cảm ơn.
-          * BẮT BUỘC trả về trong JSON:
-            "order_action": {
-              "type": "CANCEL_ORDER",
-              "order_code": "Mã đơn hàng (ví dụ: DH-1006603 hoặc mã đơn ở RAG)",
-              "reason": "Khách xác nhận hủy đơn qua chat"
-            }
-      - LƯU Ý BẢO VỆ: Nếu đơn đã ở trạng thái "Đang giao hàng" (SHIPPING) hoặc "Hoàn thành" (COMPLETED): TUYỆT ĐỐI KHÔNG HỦY ĐƠN, không xuất action CANCEL_ORDER, mà giải thích rằng hàng đã giao cho bên vận chuyển nên không thể hủy trực tiếp.
+      - ĐIỀU KIỆN TIÊN QUYẾT: CHỈ ĐƯỢC PHÉP HỦY ĐƠN khi đơn hàng đang ở trạng thái "Chờ xác nhận" (PENDING) hoặc "Đã xác nhận" (CONFIRMED).
+      - Khi khách yêu cầu hủy đơn (ví dụ: "tôi muốn hủy", "hủy đơn giúp mình", "hủy hàng", "không lấy nữa"):
+        + Trường hợp 1: Đơn đang ở trạng thái PENDING hoặc CONFIRMED:
+          * Bước 1: Hỏi xác nhận lịch sự, nêu rõ mã đơn, tên sản phẩm và tổng tiền (Ví dụ: "Dạ bạn ơi, shop thấy bạn có đơn #DH-... gồm... Bạn có muốn xác nhận hủy đơn này không để shop hỗ trợ cập nhật trên hệ thống cho mình nhé? ❤️"). Lúc này đặt "order_action": null.
+          * Bước 2: Khi khách phản hồi ĐỒNG Ý / XÁC NHẬN HỦY (ví dụ: "đúng", "ừ", "hủy đi", "xác nhận", "ok", "chuẩn rồi"):
+            > Phản hồi (reply): Lịch sự thông báo shop đã cập nhật hủy đơn hàng #DH-... trên hệ thống cho bạn rồi ạ.
+            > Trả về trong JSON: "order_action": { "type": "CANCEL_ORDER", "order_code": "Mã đơn hàng", "reason": "Khách xác nhận hủy đơn qua chat" }
+        + Trường hợp 2: Đơn đang ở trạng thái "Đang giao hàng" (SHIPPING):
+          * TUYỆT ĐỐI NGHIÊM CẤM KHÔNG ĐƯỢC HỦY ĐƠN! TUYỆT ĐỐI KHÔNG xuất action CANCEL_ORDER!
+          * Phản hồi (reply): Giải thích rõ ràng và nhã nhặn: "Dạ bạn ơi, đơn hàng #DH-... của bạn hiện đã được đóng gói và bàn giao cho bưu tá đi giao rồi ạ, nên hệ thống không thể hủy trực tiếp được nữa. Khi shipper liên hệ giao hàng, bạn có thể từ chối nhận giúp shop hoặc liên hệ hotline để bên em hỗ trợ xử lý hoàn đơn nhé ạ! Cảm ơn bạn rất nhiều ạ! ❤️"
+        + Trường hợp 3: Đơn đã ở trạng thái "Hoàn thành" (COMPLETED) hoặc "Đã giao thành công" (DELIVERED):
+          * Không hủy đơn. Hướng dẫn khách chính sách đổi trả / đổi size trong vòng 3 ngày nếu sản phẩm chưa vừa ý.
+        + Trường hợp 4: Đơn đã ở trạng thái "Đã hủy" (CANCELLED):
+          * Giải thích rõ đơn hàng này đã được ghi nhận hủy trên hệ thống từ trước rồi ạ.
 
-   B. CẬP NHẬT ĐƠN HÀNG (UPDATE_ORDER - TUYỆT ĐỐI KHÔNG TẠO ĐƠN MỚI):
-      - Khi khách muốn sửa đơn, đổi mẫu/màu/size, tăng/giảm số lượng, hoặc mua thêm vào đơn vừa đặt (đang ở trạng thái Chờ xác nhận / Chờ duyệt):
-        + NGUYÊN TẮC CỐT LÕI: TUYỆT ĐỐI BẮT BUỘC ĐẶT "is_order_intent": false và "order_data": null! TUYỆT ĐỐI KHÔNG ĐƯỢC TẠO ĐƠN HÀNG MỚI!
+   B. CẬP NHẬT ĐƠN HÀNG (UPDATE_ORDER):
+      - ĐIỀU KIỆN TIÊN QUYẾT: CHỈ ĐƯỢC PHÉP CẬP NHẬT khi đơn hàng cần sửa đang ở trạng thái "Chờ xác nhận" (PENDING) hoặc "Đã xác nhận" (CONFIRMED).
+      - Trường hợp 1: Đơn đang ở trạng thái PENDING hoặc CONFIRMED:
+        + Khi khách muốn sửa đơn, đổi mẫu/màu/size, tăng/giảm số lượng, hoặc mua thêm vào đơn vừa đặt:
+        + BẮT BUỘC ĐẶT "is_order_intent": false và "order_data": null (để không tạo đơn mới trùng lặp).
         + BẮT BUỘC trả về trong JSON:
           "order_action": {
             "type": "UPDATE_ORDER",
@@ -826,14 +840,22 @@ ${chatHistoryText}
               "items": [
                 {
                   "product_name": "Tên sản phẩm",
-                  "quantity": 2, // Số lượng mới đầy đủ (ví dụ khách mua thêm 1 cái vào đơn cũ có 1 cái -> điền 2)
+                  "quantity": 2, // Số lượng mới đầy đủ sau khi thêm/sửa
                   "size": "Size nếu có",
                   "color": "Màu nếu có"
                 }
               ]
             }
           }
-        + Phản hồi (reply): Xác nhận rõ ràng và chu đáo với khách: "Dạ vâng bạn ơi, shop đã cập nhật đơn hàng #DH-... của mình thành [Tên SP] x [Số lượng mới] (tổng tiền: [Tổng tiền mới] VND) rồi ạ! Shop sẽ chuẩn bị gửi đơn hàng này cho mình nha. Cảm ơn bạn rất nhiều ạ! ❤️"
+        + Phản hồi (reply): Xác nhận rõ ràng với khách: "Dạ vâng bạn ơi, shop đã cập nhật đơn hàng #DH-... của mình thành [Tên SP] x [Số lượng mới] rồi ạ! Shop sẽ chuẩn bị gửi đơn hàng này cho mình nha. Cảm ơn bạn rất nhiều ạ! ❤️"
+      - Trường hợp 2: ĐƠN HÀNG ĐANG Ở TRẠNG THÁI "Đang giao hàng" (SHIPPING) hoặc "Hoàn thành / Đã giao" (COMPLETED / DELIVERED):
+        + TUYỆT ĐỐI NGHIÊM CẤM: KHÔNG xuất action UPDATE_ORDER, KHÔNG nói "đã cập nhật vào đơn #DH-...", KHÔNG hứa hẹn sửa đổi kiện hàng đang giao!
+        + BẮT BUỘC GIẢI THÍCH VÀ ĐỀ XUẤT TẠO ĐƠN MỚI:
+          * Giải thích rõ: Đơn hàng cũ #DH-... của bạn đã được đóng gói và bàn giao cho bên vận chuyển (đang trên đường giao) rồi ạ, nên shop không thể sửa đổi hoặc nhét thêm đồ vào kiện hàng này được nữa.
+          * Nếu khách muốn mua thêm sản phẩm: Chủ động đề xuất tạo đơn hàng mới riêng: "Để bạn nhận được đồ sớm nhất, em xin phép hỗ trợ tạo MỘT ĐƠN HÀNG MỚI riêng cho [Tên sản phẩm muốn mua thêm] nhé ạ? Shop gửi về cùng địa chỉ cũ cho bạn luôn nhé?".
+          * Lúc này đặt "is_order_intent": false, đưa thông tin sản phẩm mới vào "order_draft" hoặc "order_data" để chờ khách đồng ý ở câu sau thì mới chốt đơn mới.
+      - Trường hợp 3: Đơn hàng đã ở trạng thái "Đã hủy" (CANCELLED):
+        + Tuyệt đối không sửa đơn đã hủy. Giải thích đơn đã hủy và mời khách chọn mẫu để lên đơn mới.
 
    C. CẬP NHẬT THÔNG TIN KHÁCH HÀNG (UPDATE_CUSTOMER):
       - Khi khách cung cấp thông tin cá nhân mới hoặc yêu cầu lưu lại (họ tên đầy đủ, SĐT chính, địa chỉ mặc định):
@@ -1188,9 +1210,17 @@ export const generateSmartFallbackResponse = ({
   if (isOrderTrackingIntent) {
     let orderInfoReply = '';
     if (ordersContextText && !ordersContextText.includes('hiện chưa có đơn hàng nào')) {
-      orderInfoReply = `Dạ em xin gửi thông tin đơn hàng gần nhất của anh/chị tại shop "${channelName}" ạ:\n${ordersContextText}\n\nShop đang chuẩn bị hàng cẩn thận để gửi cho mình sớm nhất nhé! Anh/chị cần thay đổi thông tin gì cứ báo shop nha!`;
+      let subAdvice = 'Shop đang chuẩn bị hàng cẩn thận để gửi cho mình sớm nhất nhé!';
+      if (ordersContextText.includes('Đang giao hàng')) {
+        subAdvice = 'Đơn hàng của mình đang trên đường giao rồi ạ, bưu tá sẽ sớm liên hệ giao hàng cho bạn nhé! ❤️';
+      } else if (ordersContextText.includes('Đã giao thành công') || ordersContextText.includes('Hoàn thành')) {
+        subAdvice = 'Đơn hàng của mình đã được giao thành công rồi ạ! Cảm ơn bạn rất nhiều vì đã tin tưởng ủng hộ shop ❤️';
+      } else if (ordersContextText.includes('Đã hủy')) {
+        subAdvice = 'Đơn hàng này đã được ghi nhận hủy trên hệ thống rồi ạ. Khi nào cần mua sắm bạn cứ nhắn em nha!';
+      }
+      orderInfoReply = `Dạ em xin gửi thông tin đơn hàng gần nhất của bạn tại shop "${channelName}" ạ:\n${ordersContextText}\n\n${subAdvice}`;
     } else {
-      orderInfoReply = `Dạ em kiểm tra trên hệ thống của shop "${channelName}" thì hiện tại mình chưa có đơn hàng nào đang đặt ạ. Anh/chị có muốn tham khảo mẫu nào bên shop em để em hỗ trợ tư vấn và lên đơn cho mình không nha! ❤️`;
+      orderInfoReply = `Dạ em kiểm tra trên hệ thống của shop "${channelName}" thì hiện tại mình chưa có đơn hàng nào đang đặt ạ. Bạn có muốn tham khảo mẫu nào bên shop em để em hỗ trợ tư vấn và lên đơn cho mình không nha! ❤️`;
     }
 
     return {
@@ -1922,33 +1952,45 @@ export const processGeminiAIForMessage = async ({
           });
         }
 
-        // Nếu không khớp theo mã đơn, tìm đơn hàng gần nhất của phiên chat / khách hàng đang ở trạng thái PENDING hoặc CONFIRMED
+        // Nếu không khớp theo mã đơn, tìm đơn hàng gần nhất của phiên chat / khách hàng
         if (!targetOrder) {
           targetOrder = await Order.findOne({
             business_id,
             $or: [
               { conversation_id: conversation._id },
               ...(customer_id ? [{ customer_id }] : [])
-            ],
-            order_status: { $in: ['PENDING', 'CONFIRMED'] }
+            ]
           }).sort({ created_at: -1 });
         }
 
-        if (targetOrder && ['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
-          await updateOrderStatusService(
-            targetOrder._id,
-            'CANCELLED',
-            business_id,
-            null,
-            aiResult.order_action.reason || 'Khách yêu cầu hủy qua chat',
-            'Khách xác nhận hủy đơn qua AI Chat'
-          );
-          console.log(`[Actionable RAG] Đã hủy đơn hàng #${targetOrder.order_code} thành công`);
+        if (targetOrder) {
+          if (['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
+            await updateOrderStatusService(
+              targetOrder._id,
+              'CANCELLED',
+              business_id,
+              null,
+              aiResult.order_action.reason || 'Khách yêu cầu hủy qua chat',
+              'Khách xác nhận hủy đơn qua AI Chat'
+            );
+            console.log(`[Actionable RAG] Đã hủy đơn hàng #${targetOrder.order_code} thành công`);
 
-          // Cập nhật giỏ hàng nháp thành CANCELLED
-          if (conversation.order_draft) {
-            conversation.order_draft.status = 'CANCELLED';
-            conversation.order_draft.updated_at = new Date();
+            // Cập nhật giỏ hàng nháp thành CANCELLED
+            if (conversation.order_draft) {
+              conversation.order_draft.status = 'CANCELLED';
+              conversation.order_draft.updated_at = new Date();
+            }
+          } else if (targetOrder.order_status === 'SHIPPING') {
+            console.log(`[Safety Interceptor] 🛡️ Chặn CANCEL_ORDER vì đơn #${targetOrder.order_code} đang SHIPPING`);
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} của bạn hiện đã được xuất kho và bàn giao cho đơn vị vận chuyển (đang trên đường giao) nên hệ thống không thể hủy trực tiếp được nữa ạ. Khi bưu tá liên hệ giao hàng, bạn có thể từ chối nhận giúp shop hoặc liên hệ hotline để bên em hỗ trợ xử lý hoàn đơn nhé ạ! Cảm ơn bạn rất nhiều ạ! ❤️`;
+            aiResult.order_action = null;
+          } else if (['COMPLETED', 'DELIVERED'].includes(targetOrder.order_status)) {
+            console.log(`[Safety Interceptor] 🛡️ Chặn CANCEL_ORDER vì đơn #${targetOrder.order_code} đã hoàn tất`);
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} đã được giao thành công rồi ạ. Nếu có vấn đề về sản phẩm, shop có chính sách hỗ trợ đổi size hoặc đổi mẫu trong vòng 3 ngày kể từ khi nhận hàng. Bạn nhắn cho em để em hỗ trợ quy trình đổi hàng cho mình nhé! ❤️`;
+            aiResult.order_action = null;
+          } else if (targetOrder.order_status === 'CANCELLED') {
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} đã được ghi nhận hủy trên hệ thống từ trước rồi ạ, bạn hoàn toàn yên tâm nhé! ❤️`;
+            aiResult.order_action = null;
           }
         }
       } catch (cancelErr) {
@@ -1980,40 +2022,127 @@ export const processGeminiAIForMessage = async ({
             $or: [
               { conversation_id: conversation._id },
               ...(customer_id ? [{ customer_id }] : [])
-            ],
-            order_status: { $in: ['PENDING', 'CONFIRMED'] }
+            ]
           }).sort({ created_at: -1 });
         }
 
-        if (targetOrder && ['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
-          const payload = aiResult.order_action.update_payload;
-          const updatedOrder = await updateOrderDetailsService(
-            targetOrder._id,
-            {
-              shipping_address: payload.shipping_address,
-              phone: payload.phone,
-              customer_name: payload.customer_name,
-              items: payload.items,
-              note: aiResult.order_action.reason || 'Khách sửa nội dung đơn qua AI Chat'
-            },
-            business_id
-          );
-          console.log(`[Actionable RAG] Đã cập nhật chi tiết đơn hàng #${updatedOrder.order_code} thành công: tổng tiền ${(updatedOrder.total_amount || 0).toLocaleString('vi-VN')} VND`);
+        if (targetOrder) {
+          if (['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
+            const payload = aiResult.order_action.update_payload;
+            const updatedOrder = await updateOrderDetailsService(
+              targetOrder._id,
+              {
+                shipping_address: payload.shipping_address,
+                phone: payload.phone,
+                customer_name: payload.customer_name,
+                items: payload.items,
+                note: aiResult.order_action.reason || 'Khách sửa nội dung đơn qua AI Chat'
+              },
+              business_id
+            );
+            console.log(`[Actionable RAG] Đã cập nhật chi tiết đơn hàng #${updatedOrder.order_code} thành công: tổng tiền ${(updatedOrder.total_amount || 0).toLocaleString('vi-VN')} VND`);
 
-          // Đồng bộ giỏ hàng nháp
-          if (conversation.order_draft) {
-            conversation.order_draft.status = 'ORDER_CREATED';
-            conversation.order_draft.last_order_id = updatedOrder._id;
-            conversation.order_draft.last_order_code = updatedOrder.order_code;
-            if (payload.items && payload.items[0]) {
-              conversation.order_draft.product_name = payload.items[0].product_name || conversation.order_draft.product_name;
-              conversation.order_draft.quantity = payload.items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
+            // Đồng bộ giỏ hàng nháp
+            if (conversation.order_draft) {
+              conversation.order_draft.status = 'ORDER_CREATED';
+              conversation.order_draft.last_order_id = updatedOrder._id;
+              conversation.order_draft.last_order_code = updatedOrder.order_code;
+              if (payload.items && payload.items[0]) {
+                conversation.order_draft.product_name = payload.items[0].product_name || conversation.order_draft.product_name;
+                conversation.order_draft.quantity = payload.items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
+              }
+              conversation.order_draft.updated_at = new Date();
             }
-            conversation.order_draft.updated_at = new Date();
+          } else if (targetOrder.order_status === 'SHIPPING') {
+            console.log(`[Safety Interceptor] 🛡️ Chặn UPDATE_ORDER vì đơn #${targetOrder.order_code} đang SHIPPING`);
+            const payload = aiResult.order_action.update_payload;
+            const itemNames = (payload.items || []).map(i => i.product_name || i.name).filter(Boolean).join(', ') || 'sản phẩm';
+            const oldAddr = targetOrder.shipping_address || savedAddress || '';
+            const oldPhone = targetOrder.shipping_phone || savedPhone || '';
+
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} của bạn hiện đã được đóng gói và bàn giao cho bên vận chuyển (đang trên đường giao) rồi ạ, nên shop không thể sửa đổi hoặc nhét thêm đồ vào kiện hàng này được nữa. Để bạn nhận được đồ sớm nhất, em xin phép hỗ trợ tạo MỘT ĐƠN HÀNG MỚI riêng cho ${itemNames} nhé ạ! Shop gửi về địa chỉ cũ (${oldAddr}${oldPhone ? ` - SĐT: ${oldPhone}` : ''}) cho bạn luôn nhé? ❤️`;
+
+            aiResult.order_action = null;
+
+            // Đưa sản phẩm khách muốn mua thêm vào order_draft mới để chuẩn bị chốt ở câu sau khi khách đồng ý
+            if (conversation.order_draft) {
+              conversation.order_draft.status = 'COLLECTING';
+              if (payload.items && payload.items[0]) {
+                conversation.order_draft.product_name = payload.items[0].product_name;
+                conversation.order_draft.quantity = payload.items[0].quantity || 1;
+                conversation.order_draft.size = payload.items[0].size || '';
+                conversation.order_draft.color = payload.items[0].color || '';
+              }
+              conversation.order_draft.phone = oldPhone;
+              conversation.order_draft.shipping_address = oldAddr;
+              conversation.order_draft.updated_at = new Date();
+            }
+          } else if (['COMPLETED', 'DELIVERED'].includes(targetOrder.order_status)) {
+            console.log(`[Safety Interceptor] 🛡️ Chặn UPDATE_ORDER vì đơn #${targetOrder.order_code} đã hoàn tất`);
+            const payload = aiResult.order_action.update_payload;
+            const itemNames = (payload.items || []).map(i => i.product_name || i.name).filter(Boolean).join(', ') || 'sản phẩm';
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} của bạn đã được giao thành công rồi ạ. Nếu bạn muốn mua thêm ${itemNames}, em xin phép hỗ trợ lên đơn hàng mới cho mình ngay nhé! Hoặc nếu cần hỗ trợ đổi size/mẫu theo chính sách đổi trả trong vòng 3 ngày, bạn cứ nhắn để em hỗ trợ nha! ❤️`;
+            aiResult.order_action = null;
+          } else if (targetOrder.order_status === 'CANCELLED') {
+            console.log(`[Safety Interceptor] 🛡️ Chặn UPDATE_ORDER vì đơn #${targetOrder.order_code} đã hủy`);
+            finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${targetOrder.order_code} trước đó đã được hủy trên hệ thống rồi ạ. Bạn có muốn chọn mẫu nào để em hỗ trợ lên một đơn hàng mới cho mình không nha! ❤️`;
+            aiResult.order_action = null;
           }
         }
       } catch (updateErr) {
         console.error('[Actionable RAG Update Order Error]', updateErr.message);
+      }
+    }
+
+    // CHỐT CHẶN BẢO VỆ CHỐNG ẢO GIÁC TRẠNG THÁI (State Hallucination Guard):
+    // Nếu trong finalReply có câu từ khẳng định "đã cập nhật vào đơn", "đã thêm ... vào đơn", "đã hủy đơn"
+    // nhưng đơn hàng gần nhất của khách đang ở trạng thái SHIPPING, COMPLETED hoặc CANCELLED:
+    // BẮT BUỘC ghi đè câu trả lời, không cho phép gửi thông tin sai lệch cho khách!
+    const isClaimingUpdateInText = /(?:đã\s*(?:cập\s*nhật|thêm|sửa|gộp|bổ\s*sung)\s*.*vào\s*đơn|đã\s*cập\s*nhật\s*(?:thêm|lại|chi\s*tiết)?\s*đơn|đã\s*sửa\s*đơn)/i.test(finalReply);
+    const isClaimingCancelInText = /(?:đã\s*(?:hủy|huỷ)\s*đơn)/i.test(finalReply);
+
+    if (isClaimingUpdateInText || isClaimingCancelInText) {
+      const activeRecentOrder = await Order.findOne({
+        business_id,
+        $or: [
+          { conversation_id: conversation._id },
+          ...(customer_id ? [{ customer_id }] : [])
+        ]
+      }).sort({ created_at: -1 });
+
+      if (activeRecentOrder && ['SHIPPING', 'DELIVERED', 'COMPLETED', 'CANCELLED'].includes(activeRecentOrder.order_status)) {
+        // Chỉ ghi đè nếu khách KHÔNG có đơn nào khác đang PENDING hoặc CONFIRMED
+        const hasPendingOrder = await Order.exists({
+          business_id,
+          $or: [
+            { conversation_id: conversation._id },
+            ...(customer_id ? [{ customer_id }] : [])
+          ],
+          order_status: { $in: ['PENDING', 'CONFIRMED'] }
+        });
+
+        if (!hasPendingOrder) {
+          if (isClaimingUpdateInText) {
+            if (activeRecentOrder.order_status === 'SHIPPING') {
+              console.log(`[State Hallucination Guard] 🛡️ Ghi đè câu trả lời vì AI hứa sửa đơn #${activeRecentOrder.order_code} đang SHIPPING`);
+              const oldAddr = activeRecentOrder.shipping_address || savedAddress || '';
+              const oldPhone = activeRecentOrder.shipping_phone || savedPhone || '';
+              finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${activeRecentOrder.order_code} của bạn hiện đã được đóng gói và bàn giao cho bên vận chuyển (đang trên đường giao) rồi ạ, nên shop không thể sửa đổi hoặc nhét thêm đồ vào kiện hàng này được nữa. Để bạn nhận được đồ sớm nhất, em xin phép hỗ trợ tạo MỘT ĐƠN HÀNG MỚI riêng cho sản phẩm bạn muốn lấy thêm này nhé ạ! Shop gửi về địa chỉ cũ (${oldAddr}${oldPhone ? ` - SĐT: ${oldPhone}` : ''}) cho bạn luôn nhé? ❤️`;
+            } else if (['COMPLETED', 'DELIVERED'].includes(activeRecentOrder.order_status)) {
+              console.log(`[State Hallucination Guard] 🛡️ Ghi đè câu trả lời vì AI hứa sửa đơn #${activeRecentOrder.order_code} đã COMPLETED`);
+              finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${activeRecentOrder.order_code} của bạn đã được giao thành công rồi ạ. Nếu bạn muốn mua thêm sản phẩm, em xin phép hỗ trợ lên đơn hàng mới cho mình ngay nhé! Hoặc nếu cần hỗ trợ đổi size/mẫu theo chính sách đổi trả trong vòng 3 ngày, bạn cứ nhắn để em hỗ trợ nha! ❤️`;
+            } else if (activeRecentOrder.order_status === 'CANCELLED') {
+              finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${activeRecentOrder.order_code} trước đó đã được hủy trên hệ thống rồi ạ. Bạn có muốn chọn mẫu nào để em hỗ trợ lên một đơn hàng mới cho mình không nha! ❤️`;
+            }
+          } else if (isClaimingCancelInText) {
+            if (activeRecentOrder.order_status === 'SHIPPING') {
+              console.log(`[State Hallucination Guard] 🛡️ Ghi đè câu trả lời vì AI hứa hủy đơn #${activeRecentOrder.order_code} đang SHIPPING`);
+              finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${activeRecentOrder.order_code} của bạn hiện đã được xuất kho và bàn giao cho đơn vị vận chuyển (đang trên đường giao) nên hệ thống không thể hủy trực tiếp được nữa ạ. Khi bưu tá liên hệ giao hàng, bạn có thể từ chối nhận giúp shop hoặc liên hệ hotline để bên em hỗ trợ xử lý hoàn đơn nhé ạ! Cảm ơn bạn rất nhiều ạ! ❤️`;
+            } else if (['COMPLETED', 'DELIVERED'].includes(activeRecentOrder.order_status)) {
+              finalReply = `Dạ ${fallbackCustomerName} ơi, đơn hàng #${activeRecentOrder.order_code} đã được giao thành công rồi ạ. Nếu sản phẩm chưa vừa ý, shop có chính sách hỗ trợ đổi size hoặc đổi mẫu trong vòng 3 ngày kể từ khi nhận hàng. Bạn nhắn cho em để em hỗ trợ quy trình đổi hàng cho mình nhé! ❤️`;
+            }
+          }
+        }
       }
     }
 
