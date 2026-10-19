@@ -140,7 +140,15 @@ export const parseKnowledgeFile = (fileBuffer) => {
     // Chuẩn hóa action_type
     let action_type = 'NONE';
     const normAct = normalizeHeaderKey(actionTypeRaw);
-    if (normAct.includes('huy_don') || normAct.includes('cancel')) {
+    if (normAct.includes('danh_muc') || normAct.includes('catalog') || normAct.includes('lookup')) {
+      action_type = 'LOOKUP_CATALOG';
+    } else if (normAct.includes('24h') || normAct.includes('follow') || normAct.includes('cham_soc')) {
+      action_type = 'SCHEDULE_FOLLOWUP';
+    } else if (normAct.includes('voucher') || normAct.includes('giam_gia') || normAct.includes('khuyen_mai') || normAct.includes('apply_voucher')) {
+      action_type = 'APPLY_VOUCHER';
+    } else if (normAct.includes('tag') || normAct.includes('nhan') || normAct.includes('crm')) {
+      action_type = 'AUTO_TAG_CUSTOMER';
+    } else if (normAct.includes('huy_don') || normAct.includes('cancel')) {
       action_type = 'CANCEL_ORDER';
     } else if (normAct.includes('cap_nhat_don') || normAct.includes('update_order') || normAct.includes('sua_don')) {
       action_type = 'UPDATE_ORDER';

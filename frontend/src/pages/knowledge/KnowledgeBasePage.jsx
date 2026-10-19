@@ -33,7 +33,31 @@ export const ACTION_TYPE_MAP = {
     label: 'Chỉ tư vấn & giải đáp',
     badge: '💬 Chỉ tư vấn',
     color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600',
-    desc: 'AI chỉ đọc hiểu để tư vấn và giải đáp khách hàng, tuyệt đối không chỉnh sửa dữ liệu CSDL.'
+    desc: 'AI chỉ đọc hiểu để tư vấn và giải đáp khách hàng, tuyệt đối không can thiệp CSDL.'
+  },
+  LOOKUP_CATALOG: {
+    label: 'Tự động tra cứu danh mục & Gợi ý sản phẩm kèm ảnh',
+    badge: '🔍 Tra cứu danh mục',
+    color: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    desc: 'Khi khách hỏi danh mục/bộ sưu tập (ví dụ Lego Titan, Chima...), AI tự động lọc toàn bộ sản phẩm và trích xuất album ảnh gửi cho khách.'
+  },
+  SCHEDULE_FOLLOWUP: {
+    label: 'Tự động hẹn giờ chăm sóc lại sau 24h (nếu chưa chốt đơn)',
+    badge: '⏰ Hẹn chăm sóc 24h',
+    color: 'bg-cyan-50 text-cyan-700 dark:bg-cyan-950/60 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+    desc: 'Khi khách xem hoặc hỏi mẫu nhưng chưa đặt mua, AI tự động lên lịch gửi tin nhắn hỏi thăm, chăm sóc lại sau 22-24h.'
+  },
+  APPLY_VOUCHER: {
+    label: 'Tự động áp dụng mã giảm giá / Ưu đãi',
+    badge: '🎁 Áp mã ưu đãi',
+    color: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+    desc: 'Khi khách hỏi ưu đãi/giảm giá, AI kiểm tra điều kiện và tự động áp dụng mã giảm giá trực tiếp vào đơn hàng nháp.'
+  },
+  AUTO_TAG_CUSTOMER: {
+    label: 'Tự động gắn nhãn phân loại khách hàng (CRM)',
+    badge: '🏷️ Gắn nhãn CRM',
+    color: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800',
+    desc: 'Tự động phân loại và gắn nhãn khách hàng (Khách sỉ, Khách VIP, Khiếu nại...) vào hệ thống CRM theo ngữ cảnh tin nhắn.'
   },
   CANCEL_ORDER: {
     label: 'Tự động hủy đơn hàng',
@@ -510,9 +534,13 @@ const KnowledgeBasePage = () => {
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none font-medium"
                 >
                   <option value="NONE">💬 Chỉ tư vấn & giải đáp (Không can thiệp CSDL)</option>
-                  <option value="CANCEL_ORDER">⚡ Tự động hủy đơn hàng (Khi thỏa điều kiện & khách xác nhận)</option>
-                  <option value="UPDATE_ORDER">⚡ Tự động cập nhật đơn hàng (Đổi địa chỉ, SĐT, số lượng, mẫu)</option>
-                  <option value="UPDATE_CUSTOMER">⚡ Tự động cập nhật thông tin khách hàng (Tên, SĐT, Địa chỉ)</option>
+                  <option value="LOOKUP_CATALOG">🔍 Tự động tra cứu danh mục & Gợi ý sản phẩm kèm ảnh</option>
+                  <option value="SCHEDULE_FOLLOWUP">⏰ Tự động hẹn giờ chăm sóc lại sau 24h (nếu chưa chốt đơn)</option>
+                  <option value="APPLY_VOUCHER">🎁 Tự động áp dụng mã giảm giá / Ưu đãi</option>
+                  <option value="AUTO_TAG_CUSTOMER">🏷️ Tự động gắn nhãn phân loại khách hàng (CRM)</option>
+                  <option value="CANCEL_ORDER">❌ Tự động hủy đơn hàng (Khi thỏa điều kiện & khách xác nhận)</option>
+                  <option value="UPDATE_ORDER">✏️ Tự động cập nhật đơn hàng (Đổi địa chỉ, SĐT, số lượng, mẫu)</option>
+                  <option value="UPDATE_CUSTOMER">👤 Tự động cập nhật thông tin khách hàng (Tên, SĐT, Địa chỉ)</option>
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 italic">
                   {(ACTION_TYPE_MAP[form.action_type] || ACTION_TYPE_MAP.NONE).desc}

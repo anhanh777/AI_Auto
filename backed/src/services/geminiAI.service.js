@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import {
   AIConfig,
   Product,
+  Category,
   KnowledgeBase,
   Message,
   Conversation,
@@ -173,10 +174,15 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     aiConfig = await AIConfig.findOne({ business_id }).lean();
   }
 
-  const [products, knowledgeList, recentMessages, recentOrders, channelOrderCount] = await Promise.all([
-    // B. Danh mục sản phẩm đang mở bán kèm tồn kho
+  const [categories, products, knowledgeList, recentMessages, recentOrders, channelOrderCount] = await Promise.all([
+    // A. Danh mục sản phẩm đang hoạt động của Doanh nghiệp
+    Category.find({ business_id, is_active: true })
+      .select('category_name slug description')
+      .lean(),
+
+    // B. Danh mục sản phẩm đang mở bán kèm tồn kho và category_ids
     Product.find({ business_id, status: 'ACTIVE' })
-      .select('product_name sku base_price sale_price stock_available variants_json ai_selling_points description image_urls')
+      .select('product_name sku base_price sale_price stock_available variants_json ai_selling_points description image_urls category_ids')
       .limit(60)
       .lean(),
 
@@ -215,14 +221,51 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
 
   const sortedHistory = recentMessages.reverse();
 
+  // Xây dựng Bản đồ Danh mục & Sản phẩm (Store Catalog Map)
+  const categoryLookup = {};
+  (categories || []).forEach((c) => {
+    categoryLookup[c._id.toString()] = c.category_name;
+  });
+
+  const catalogGroup = {};
+  (categories || []).forEach((c) => {
+    catalogGroup[c.category_name] = [];
+  });
+  catalogGroup['Khác'] = [];
+
   const productContextText = products.map((p) => {
     const price = p.sale_price || p.base_price;
     const variantsStr = Array.isArray(p.variants_json) && p.variants_json.length > 0
       ? p.variants_json.map((v) => `${v.size || ''}/${v.color || ''} (còn ${v.stock || 0})`).join(', ')
       : 'Không có biến thể';
     const imgUrls = Array.isArray(p.image_urls) && p.image_urls.length > 0 ? p.image_urls.join(', ') : 'Chưa có ảnh';
-    return `- [SKU: ${p.sku}] ${p.product_name} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''} | Ảnh sản phẩm: ${imgUrls}`;
+
+    const matchedCats = (p.category_ids || [])
+      .map((cid) => categoryLookup[cid?.toString() || String(cid)])
+      .filter(Boolean);
+    const catStr = matchedCats.length > 0 ? matchedCats.join(', ') : 'Chung';
+
+    if (matchedCats.length > 0) {
+      matchedCats.forEach((cName) => {
+        if (!catalogGroup[cName]) catalogGroup[cName] = [];
+        catalogGroup[cName].push(`${p.product_name} (SKU: ${p.sku}, Giá: ${price.toLocaleString('vi-VN')} VND, Tồn: ${p.stock_available})`);
+      });
+    } else {
+      catalogGroup['Khác'].push(`${p.product_name} (SKU: ${p.sku}, Giá: ${price.toLocaleString('vi-VN')} VND, Tồn: ${p.stock_available})`);
+    }
+
+    return `- [SKU: ${p.sku}] ${p.product_name} | Danh mục: ${catStr} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''} | Ảnh sản phẩm: ${imgUrls}`;
   }).join('\n');
+
+  const catalogLines = [];
+  Object.entries(catalogGroup).forEach(([catName, list]) => {
+    if (list && list.length > 0) {
+      catalogLines.push(`- Danh mục "${catName}": ${list.join('; ')}`);
+    }
+  });
+  const catalogContextText = catalogLines.length > 0
+    ? catalogLines.join('\n')
+    : 'Chưa có phân loại danh mục cụ thể.';
 
   const advisoryKnowledge = [];
   const actionableKnowledge = [];
@@ -297,6 +340,8 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
       smart_delay_seconds: aiConfig?.smart_delay_seconds || 3,
       auto_order_extraction: aiConfig?.auto_order_extraction !== undefined ? aiConfig.auto_order_extraction : true
     },
+    catalogContextText,
+    rawCategories: categories || [],
     productContextText: productContextText || 'Hiện tại chưa có sản phẩm nào trong kho.',
     knowledgeContextText: knowledgeContextText || 'Chưa có tài liệu FAQ bổ sung.',
     actionableKnowledgeText: actionableKnowledgeText,
@@ -335,6 +380,8 @@ export const consultWithGeminiAI = async ({
   const ragContext = await buildRAGContext({ business_id, conversation_id, customer_id, channel_id });
   const {
     aiConfig,
+    catalogContextText,
+    rawCategories,
     productContextText,
     knowledgeContextText,
     actionableKnowledgeText,
@@ -374,6 +421,7 @@ export const consultWithGeminiAI = async ({
       messageText,
       aiConfig,
       rawProducts,
+      categories: rawCategories,
       chatHistoryText,
       ordersContextText,
       defaultCustomerName: customerName,
@@ -410,6 +458,9 @@ ${channelContextText}
 === HỒ SƠ KHÁCH HÀNG (CUSTOMER PROFILE) ===
 ${customerProfileText}
 
+=== BẢN ĐỒ DANH MỤC & NHÓM SẢN PHẨM CỦA SHOP (STORE CATALOG - CỰC KỲ QUAN TRỌNG) ===
+${catalogContextText}
+
 === THÔNG TIN SẢN PHẨM & TỒN KHO THỰC TẾ (RAG) ===
 ${productContextText}
 
@@ -442,7 +493,14 @@ ${chatHistoryText}
      + Nếu đơn hàng vừa được tạo thành công: Chỉ cần đáp lại chân thành, ngắn gọn và lịch sự: "Dạ vâng ạ, cảm ơn ${fallbackCustomerName} đã tin tưởng ủng hộ shop! Chúc bạn một ngày thật nhiều niềm vui nhé! ❤️".
      + TUYỆT ĐỐI KHÔNG hỏi lại thông tin nhận hàng, KHÔNG xin lại SĐT/Địa chỉ, và KHÔNG tạo thêm đơn hàng mới khi khách chỉ nói câu xác nhận/cảm ơn thông thường!
 
-1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH:
+1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH / TRA CỨU DANH MỤC:
+   - KHI KHÁCH HỎI THEO DANH MỤC / BỘ SƯU TẬP / DÒNG SẢN PHẨM (Ví dụ: "bên mình có lego titan ko", "các mẫu titan", "danh mục chima", "shop có những loại nào", "cho xem mẫu lego robot"):
+     + BẮT BUỘC đối chiếu với mục "BẢN ĐỒ DANH MỤC & NHÓM SẢN PHẨM CỦA SHOP" ở trên.
+     + Nếu shop có danh mục đó (hoặc từ khóa tương đồng, ví dụ khách hỏi "lego titan" mà shop có danh mục "Titan"):
+       * Khẳng định ngay rằng shop CÓ dòng sản phẩm/danh mục này (Ví dụ: "Dạ shop có dòng Lego Titan ạ!").
+       * Liệt kê đầy đủ tên các sản phẩm thuộc danh mục (ví dụ danh mục Titan có Gavi và Levi), kèm mức giá cụ thể của từng sản phẩm.
+       * BẮT BUỘC trích xuất TOÀN BỘ link ảnh (từ trường "Ảnh sản phẩm") của TẤT CẢ các sản phẩm trong danh mục đó vào mảng "image_urls" của JSON để hệ thống tự động gửi ảnh sang Messenger cho khách xem!
+       * Đưa ra câu hỏi gợi ý chốt chọn mẫu thân thiện (ví dụ: "Dòng Titan bên em đang có 2 mẫu Gavi (33.333đ) và Levi (39.999đ) rất đẹp, bạn thích mẫu nào hơn để shop hỗ trợ tư vấn chi tiết cho mình nha! ❤️").
    - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào", "xem hình ảnh của từng sản phẩm":
      + Niềm nở giới thiệu đặc điểm nổi bật, thiết kế và mức giá ưu đãi của các sản phẩm.
      + BẮT BUỘC: Nếu trong thông tin sản phẩm ở trên có link URL ở trường "Ảnh sản phẩm", hãy trích xuất chính xác các đường link URL đó vào mảng "image_urls" của JSON. Tuyệt đối KHÔNG NÓI "shop chưa có ảnh" hay "chưa có ảnh sẵn" nếu trong kho có đường link ảnh!
@@ -560,11 +618,27 @@ ${chatHistoryText}
       - Khi khách cung cấp thông tin cá nhân mới hoặc yêu cầu lưu lại (họ tên đầy đủ, SĐT chính, địa chỉ mặc định):
         + Trả về: "customer_action": { "type": "UPDATE_CUSTOMER", "full_name": "Tên khách", "phone": "SĐT", "shipping_address": "Địa chỉ" }
 
+   D. TRA CỨU DANH MỤC & GỢI Ý SẢN PHẨM (LOOKUP_CATALOG):
+      - Khi tài liệu tri thức có mã lệnh LOOKUP_CATALOG được kích hoạt HOẶC khi khách hỏi theo danh mục/bộ sưu tập/dòng sản phẩm:
+        + BẮT BUỘC tra cứu mục "BẢN ĐỒ DANH MỤC & NHÓM SẢN PHẨM CỦA SHOP" để tìm đúng danh mục (ví dụ Titan, Chima...).
+        + Liệt kê đầy đủ tên các sản phẩm, giá bán của từng sản phẩm.
+        + BẮT BUỘC trích xuất TOÀN BỘ URL ảnh sản phẩm thuộc danh mục đó vào mảng "image_urls" của JSON.
+        + Chủ động gợi ý so sánh và hỏi khách thích mẫu nào hơn để tư vấn chốt đơn.
+
+   E. HẸN GIỜ CHĂM SÓC LẠI SAU 24H (SCHEDULE_FOLLOWUP):
+      - Khi tài liệu tri thức có mã lệnh SCHEDULE_FOLLOWUP được kích hoạt, HOẶC khi khách đã xem/hỏi sản phẩm/danh mục mà chưa chốt mua trong lượt chat này:
+      - BẮT BUỘC trả về trong JSON:
+        "followup_action": {
+          "type": "SCHEDULE_FOLLOWUP",
+          "target": "Tên sản phẩm hoặc danh mục khách vừa quan tâm (ví dụ: Lego Titan)",
+          "hours": 22
+        }
+
 === ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (JSON ONLY) ===
 Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdown code block) theo schema sau:
 {
   "reply": "Nội dung tin nhắn bạn sẽ gửi lại cho khách hàng bằng tiếng Việt (TUYỆT ĐỐI KHÔNG chứa đường link URL ảnh, link localhost hay /uploads/ ở đây)",
-  "image_urls": ["Danh sách URL ảnh sản phẩm nếu khách hỏi xem mẫu/ảnh"],
+  "image_urls": ["Danh sách URL ảnh sản phẩm nếu khách hỏi xem mẫu/ảnh hoặc hỏi theo danh mục"],
   "is_order_intent": true | false,
   "order_data": null hoặc {
     "customer_name": "Tên khách hàng",
@@ -596,6 +670,11 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
     "full_name": "Tên đầy đủ nếu có",
     "phone": "SĐT nếu có",
     "shipping_address": "Địa chỉ mặc định nếu có"
+  },
+  "followup_action": null hoặc {
+    "type": "NONE" | "SCHEDULE_FOLLOWUP",
+    "target": "Tên sản phẩm hoặc danh mục khách vừa hỏi",
+    "hours": 22
   },
   "missing_fields": ["phone", "shipping_address", "variant"],
   "handover_to_staff": false | true,
@@ -685,6 +764,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       order_data: parsed.order_data || null,
       order_action: parsed.order_action || null,
       customer_action: parsed.customer_action || null,
+      followup_action: parsed.followup_action || null,
       missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
       handover_to_staff: Boolean(parsed.handover_to_staff),
       handover_reason: parsed.handover_reason || null
@@ -695,6 +775,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       messageText,
       aiConfig,
       rawProducts,
+      categories: rawCategories,
       chatHistoryText,
       ordersContextText,
       defaultCustomerName: customerName,
@@ -715,6 +796,7 @@ export const generateSmartFallbackResponse = ({
   messageText,
   aiConfig,
   rawProducts,
+  categories = [],
   chatHistoryText,
   ordersContextText = '',
   defaultCustomerName = '',
@@ -861,6 +943,38 @@ export const generateSmartFallbackResponse = ({
     return {
       reply: orderInfoReply,
       image_urls: [],
+      is_order_intent: false,
+      order_data: null,
+      missing_fields: [],
+      handover_to_staff: false
+    };
+  }
+
+  // --- TRƯỜNG HỢP 0.5: Khách hỏi xem theo DANH MỤC / BỘ SƯU TẬP (ví dụ: "có lego titan ko", "các mẫu titan", "danh mục titan", "chima") ---
+  let matchedCat = null;
+  let catProducts = [];
+  if (Array.isArray(categories) && categories.length > 0) {
+    for (const c of categories) {
+      const cName = (c.category_name || '').toLowerCase();
+      if (cName && (lower.includes(cName) || (cName.length >= 3 && lower.includes(cName.slice(0, 4))))) {
+        matchedCat = c;
+        catProducts = rawProducts.filter((p) => {
+          return (p.category_ids || []).some((cid) => String(cid) === String(c._id));
+        });
+        if (catProducts.length > 0) break;
+      }
+    }
+  }
+
+  const isCategoryQuery = Boolean(matchedCat) && catProducts.length > 0 && !isBuyingIntent && !isOrderTrackingIntent;
+  if (isCategoryQuery) {
+    const pNamesWithPrice = catProducts.map((p) => `• ${p.product_name}: ${(p.sale_price || p.base_price || 0).toLocaleString('vi-VN')} VND`).join('\n');
+    const allCatImages = catProducts.flatMap((p) => Array.isArray(p.image_urls) ? p.image_urls : []).filter(Boolean);
+    const reply = `Dạ shop có dòng sản phẩm "${matchedCat.category_name}" ạ! ✨\nHiện tại danh mục "${matchedCat.category_name}" bên em đang có các mẫu sau:\n${pNamesWithPrice}\n\nShop gửi bạn xem hình ảnh các mẫu bên dưới nha. Bạn ưng mẫu nào để em hỗ trợ tư vấn và chuẩn bị hàng cho mình nhé! ❤️`;
+
+    return {
+      reply,
+      image_urls: allCatImages,
       is_order_intent: false,
       order_data: null,
       missing_fields: [],
@@ -1444,6 +1558,8 @@ export const processGeminiAIForMessage = async ({
             last_order_id: createdOrder._id,
             last_order_code: createdOrder.order_code
           };
+          // Hủy lịch nhắc hẹn vì khách đã chốt đơn thành công
+          conversation.followup_status = 'CANCELLED';
         }
       } catch (orderErr) {
         console.error('[Gemini AI Order Creation Error]', orderErr.message);
@@ -1590,6 +1706,19 @@ export const processGeminiAIForMessage = async ({
         }
       } catch (custErr) {
         console.error('[Actionable RAG Update Customer Error]', custErr.message);
+      }
+    }
+
+    // D. Tự động Hẹn giờ chăm sóc lại sau 24h nếu chưa chốt đơn (SCHEDULE_FOLLOWUP)
+    if (aiResult.followup_action?.type === 'SCHEDULE_FOLLOWUP' && conversation.order_draft?.status !== 'ORDER_CREATED') {
+      try {
+        const hours = Number(aiResult.followup_action.hours) || 22;
+        conversation.followup_status = 'PENDING';
+        conversation.followup_due_at = new Date(Date.now() + hours * 60 * 60 * 1000);
+        conversation.followup_note = aiResult.followup_action.target || 'Khách quan tâm sản phẩm nhưng chưa chốt đơn';
+        console.log(`[Actionable RAG] ⏰ Đã hẹn lịch chăm sóc lại sau ${hours}h cho hội thoại #${conversation._id} (${conversation.followup_note})`);
+      } catch (flErr) {
+        console.warn('[Actionable RAG Followup Warning]', flErr.message);
       }
     }
 

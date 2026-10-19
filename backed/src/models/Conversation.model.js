@@ -106,6 +106,20 @@ const conversationSchema = new mongoose.Schema(
       },
       updated_at: { type: Date, default: Date.now }
     },
+    // Cơ chế chăm sóc lại sau 24h nếu chưa chốt đơn (SCHEDULE_FOLLOWUP)
+    followup_status: {
+      type: String,
+      enum: ['NONE', 'PENDING', 'SENT', 'CANCELLED'],
+      default: 'NONE'
+    },
+    followup_due_at: {
+      type: Date,
+      default: null
+    },
+    followup_note: {
+      type: String,
+      default: ''
+    },
     // 13. Người khởi tạo phiên chat (users._id hoặc Hệ thống)
     created_by: {
       type: mongoose.Schema.Types.ObjectId,

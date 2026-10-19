@@ -28,7 +28,16 @@ const knowledgeBaseSchema = new mongoose.Schema(
     },
     action_type: {
       type: String,
-      enum: ['NONE', 'CANCEL_ORDER', 'UPDATE_ORDER', 'UPDATE_CUSTOMER'],
+      enum: [
+        'NONE',
+        'LOOKUP_CATALOG',
+        'SCHEDULE_FOLLOWUP',
+        'APPLY_VOUCHER',
+        'AUTO_TAG_CUSTOMER',
+        'CANCEL_ORDER',
+        'UPDATE_ORDER',
+        'UPDATE_CUSTOMER'
+      ],
       default: 'NONE'
     },
     is_active: {
