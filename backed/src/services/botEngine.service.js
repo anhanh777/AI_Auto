@@ -331,7 +331,16 @@ export const processBotEngineForMessage = async ({
             } catch (fbSendErr) {
               const fbErrMsg = fbSendErr.response?.data?.error?.message || fbSendErr.message;
               const fbErrCode = fbSendErr.response?.data?.error?.code;
-              console.error(`[Facebook Send Bot Reply Error ${fbErrCode || ''}]`, fbErrMsg);
+              const fbErrSubcode = fbSendErr.response?.data?.error?.error_subcode;
+              console.error(`[Facebook Send Bot Reply Error ${fbErrCode || ''} (subcode: ${fbErrSubcode || 'none'})]`, fbErrMsg);
+
+              const isRestricted = fbErrCode === 10 || fbErrSubcode === 1893063 || (typeof fbErrMsg === 'string' && fbErrMsg.toLowerCase().includes('hạn chế'));
+              let descriptiveError = fbErrMsg;
+              if (fbErrCode === 190) {
+                descriptiveError = 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.';
+              } else if (isRestricted) {
+                descriptiveError = 'Facebook tạm thời hạn chế gửi tin nhắn từ Fanpage này. Vui lòng thử lại sau.';
+              }
 
               if (botMessage?._id) {
                 try {
@@ -342,9 +351,8 @@ export const processBotEngineForMessage = async ({
                         metadata: {
                           send_status: 'FAILED',
                           error_code: fbErrCode,
-                          error_message: fbErrCode === 190
-                            ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
-                            : fbErrMsg
+                          error_subcode: fbErrSubcode,
+                          error_message: descriptiveError
                         }
                       }
                     },
@@ -414,7 +422,16 @@ export const processBotEngineForMessage = async ({
         } catch (fbErr) {
           const fbErrMsg = fbErr.response?.data?.error?.message || fbErr.message;
           const fbErrCode = fbErr.response?.data?.error?.code;
-          console.error(`[Facebook Send AI Error ${fbErrCode || ''}]`, fbErrMsg);
+          const fbErrSubcode = fbErr.response?.data?.error?.error_subcode;
+          console.error(`[Facebook Send AI Error ${fbErrCode || ''} (subcode: ${fbErrSubcode || 'none'})]`, fbErrMsg);
+
+          const isRestricted = fbErrCode === 10 || fbErrSubcode === 1893063 || (typeof fbErrMsg === 'string' && fbErrMsg.toLowerCase().includes('hạn chế'));
+          let descriptiveError = fbErrMsg;
+          if (fbErrCode === 190) {
+            descriptiveError = 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.';
+          } else if (isRestricted) {
+            descriptiveError = 'Facebook tạm thời hạn chế gửi tin nhắn từ Fanpage này. Vui lòng thử lại sau.';
+          }
 
           if (aiResult.message_id) {
             try {
@@ -425,9 +442,8 @@ export const processBotEngineForMessage = async ({
                     metadata: {
                       send_status: 'FAILED',
                       error_code: fbErrCode,
-                      error_message: fbErrCode === 190
-                        ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
-                        : fbErrMsg
+                      error_subcode: fbErrSubcode,
+                      error_message: descriptiveError
                     }
                   }
                 },

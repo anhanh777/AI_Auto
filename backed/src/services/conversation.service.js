@@ -267,15 +267,23 @@ export const sendMessageService = async ({ conversation_id, sender_type = 'STAFF
           } catch (textErr) {
             const fbErrMsg = textErr.response?.data?.error?.message || textErr.message;
             const fbErrCode = textErr.response?.data?.error?.code;
-            console.error(`[Facebook Send Text Error ${fbErrCode || ''}]`, fbErrMsg);
+            const fbErrSubcode = textErr.response?.data?.error?.error_subcode;
+            console.error(`[Facebook Send Text Error ${fbErrCode || ''} (subcode: ${fbErrSubcode || 'none'})]`, fbErrMsg);
+
+            const isRestricted = fbErrCode === 10 || fbErrSubcode === 1893063 || (typeof fbErrMsg === 'string' && fbErrMsg.toLowerCase().includes('hạn chế'));
+            let descriptiveError = fbErrMsg;
+            if (fbErrCode === 190) {
+              descriptiveError = 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.';
+            } else if (isRestricted) {
+              descriptiveError = 'Facebook tạm thời hạn chế gửi tin nhắn từ Fanpage này. Vui lòng thử lại sau.';
+            }
 
             message.metadata = {
               ...message.metadata,
               send_status: 'FAILED',
               error_code: fbErrCode,
-              error_message: fbErrCode === 190
-                ? 'Token Fanpage Facebook đã hết hạn. Vui lòng kết nối lại Fanpage.'
-                : fbErrMsg
+              error_subcode: fbErrSubcode,
+              error_message: descriptiveError
             };
             await message.save();
 

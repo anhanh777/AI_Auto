@@ -179,6 +179,61 @@ export const normalizeImageUrl = (url, backendUrl = (process.env.BACKEND_URL || 
 };
 
 /**
+ * Helper kiểm tra xem tin nhắn / văn bản / giỏ hàng có đang đề cập đến sản phẩm đã ngừng kinh doanh hay không
+ */
+export const isTargetingDiscontinuedProduct = (targetText = '', discontinuedProducts = [], existingDraft = null) => {
+  if (!Array.isArray(discontinuedProducts) || discontinuedProducts.length === 0) return null;
+
+  const domainStopWords = new Set([
+    'cho', 'tôi', 'mình', 'em', 'anh', 'chị', 'xem', 'với', 'nhé', 'nha', 'ạ', 'shop',
+    'có', 'còn', 'không', 'giá', 'bao', 'nhiêu', 'bán', 'được', 'hỏi', 'muốn', 'cần',
+    'gửi', 'hình', 'ảnh', 'mẫu', 'thực', 'tế', 'thật', 'bên', 'dưới', 'đây', 'này',
+    'kia', 'đó', 'loại', 'chiếc', 'cái', 'set', 'bộ', 'con', 'dòng', 'phẩm', 'sản',
+    'áo', 'quần', 'váy', 'đầm', 'nữ', 'nam', 'unisex', 'thời', 'trang', 'kiểu', 'dáng',
+    'lego', 'đồ', 'chơi', 'xếp', 'mô'
+  ]);
+
+  const cleanLowerText = (targetText || '')
+    .toLowerCase()
+    .replace(/thuê hoa/gi, 'thêu hoa')
+    .replace(/[.,?!:;]/g, ' ');
+  const textDistinctive = cleanLowerText.split(/\s+/).filter((w) => w.length >= 2 && !domainStopWords.has(w));
+
+  const draftName = (existingDraft?.product_name || '').toLowerCase();
+  const draftSku = (existingDraft?.sku || '').toLowerCase();
+
+  for (const dp of discontinuedProducts) {
+    const dpName = (dp.product_name || '').toLowerCase().trim();
+    const dpSku = (dp.sku || '').toLowerCase().trim();
+
+    // 1. Khớp theo SKU
+    if (dpSku && cleanLowerText.includes(dpSku)) return dp;
+
+    // 2. Khớp theo toàn bộ tên sản phẩm
+    if (dpName && dpName.length >= 3 && cleanLowerText.includes(dpName)) return dp;
+
+    // 3. Khớp theo order draft hiện tại
+    if (draftName && dpName && (draftName.includes(dpName) || dpName.includes(draftName))) return dp;
+    if (draftSku && dpSku && draftSku === dpSku) return dp;
+
+    // 4. Khớp theo từ khóa đặc trưng (distinctive keywords)
+    const dpDistinctive = dpName.split(/\s+/).filter((w) => w.length >= 2 && !domainStopWords.has(w));
+    if (dpDistinctive.length > 0 && textDistinctive.length > 0) {
+      let matchedCount = 0;
+      for (const tw of textDistinctive) {
+        if (dpDistinctive.includes(tw)) matchedCount++;
+      }
+      const ratio = matchedCount / dpDistinctive.length;
+      if (matchedCount >= 1 && (ratio >= 0.5 || matchedCount >= 2)) {
+        return dp;
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
  * Cơ chế Tự động Bù Ảnh (Deterministic Image Auto-Hydration):
  * Khi khách yêu cầu xem ảnh / xem mẫu HOẶC khi câu trả lời của AI hứa gửi ảnh,
  * nếu mảng image_urls đang rỗng, hàm này sẽ tự động tìm kiếm sản phẩm hoặc danh mục
@@ -189,6 +244,7 @@ export const resolveImagesForReply = ({
   replyText = '',
   orderDraft = null,
   rawProducts = [],
+  discontinuedProducts = [],
   rawCategories = [],
   chatHistoryText = ''
 }) => {
@@ -196,17 +252,37 @@ export const resolveImagesForReply = ({
   const lowerReply = (replyText || '').toLowerCase();
   const lowerHistory = (chatHistoryText || '').toLowerCase();
 
+  // 1. Chốt chặn an toàn: Nếu phản hồi thông báo hết hàng / ngừng bán / tạm ngưng -> KHÔNG BÙ ẢNH
+  const isDiscontinuedNotice = /(?:hết\s*hàng|ngừng\s*kinh\s*doanh|tạm\s*ngưng|ngưng\s*bán|tạm\s*ẩn|đã\s*hết|hết\s*mẫu|không\s*còn\s*hàng|hết\s*size|chưa\s*về\s*thêm|đã\s*bán\s*hết|hết\s*rồi|không\s*còn)/i.test(lowerReply);
+  if (isDiscontinuedNotice) {
+    return [];
+  }
+
+  // 2. Chốt chặn sản phẩm đã ngừng kinh doanh: Nếu khách hoặc câu trả lời hoặc lịch sử đang nói về sản phẩm ngưng bán
+  if (Array.isArray(discontinuedProducts) && discontinuedProducts.length > 0) {
+    const isTargetingDiscontinued = isTargetingDiscontinuedProduct(lowerMsg, discontinuedProducts, orderDraft) ||
+      isTargetingDiscontinuedProduct(lowerReply, discontinuedProducts, orderDraft) ||
+      isTargetingDiscontinuedProduct(lowerHistory, discontinuedProducts, orderDraft);
+    if (isTargetingDiscontinued) {
+      return [];
+    }
+  }
+
   const isImageRequested = /(?:cho\s+(?:mình|em|anh|chị|tôi|tớ|bạn|khách|chúng\s*tôi)?\s*xem|xem\s+ảnh|cho\s+xem|xem\s+mẫu|xem\s+hàng|xem\s+sản\s+phẩm|xem\s+áo|xem\s+đồ|xem\s+váy|xem\s+quần|ảnh\s+thật|hình\s+ảnh|gửi\s+ảnh|gửi\s+hình|gửi\s+mẫu|ảnh\s+đâu|thấy\s+ảnh|chưa\s+thấy\s+ảnh|ko\s+thấy\s+ảnh|không\s+thấy\s+ảnh|xin\s+ảnh|có\s+ảnh|ảnh|hình)/i.test(lowerMsg);
   const isReplyPromisingImage = /(?:gửi\s+(?:bạn|anh|chị|em|mình|khách)?\s*(?:xem\s*)?(?:hình\s*ảnh|ảnh|mẫu)|hình\s*ảnh\s*(?:mẫu|thực\s*tế|sản\s*phẩm)|bên\s*dưới\s*(?:nha|nhé|ạ)|dưới\s*đây)/i.test(lowerReply);
 
   if (!isImageRequested && !isReplyPromisingImage) return [];
+
+  // Chỉ lấy sản phẩm ACTIVE (loại bỏ hoàn toàn sản phẩm HIDDEN / INACTIVE)
+  const activeProducts = (rawProducts || []).filter((p) => p && p.status !== 'HIDDEN' && p.status !== 'INACTIVE');
+  if (activeProducts.length === 0) return [];
 
   const foundImages = [];
 
   // Helper tìm theo SKU
   const findBySku = (targetText) => {
     if (!targetText) return null;
-    for (const p of rawProducts || []) {
+    for (const p of activeProducts) {
       if (p.sku) {
         const skuLower = p.sku.toLowerCase();
         if (targetText.includes(skuLower)) {
@@ -221,10 +297,10 @@ export const resolveImagesForReply = ({
   // Helper tìm theo Tên sản phẩm (ưu tiên tên dài trước)
   const findByName = (targetText) => {
     if (!targetText) return null;
-    const sortedProds = [...(rawProducts || [])].sort((a, b) => (b.product_name || '').length - (a.product_name || '').length);
+    const sortedProds = [...activeProducts].sort((a, b) => (b.product_name || '').length - (a.product_name || '').length);
     for (const p of sortedProds) {
       const pName = (p.product_name || '').toLowerCase();
-      if (pName && pName.length >= 2 && targetText.includes(pName)) {
+      if (pName && pName.length >= 3 && targetText.includes(pName)) {
         const imgs = getProductImages(p);
         if (imgs.length > 0) return imgs;
       }
@@ -232,7 +308,20 @@ export const resolveImagesForReply = ({
     return null;
   };
 
-  // Helper tìm theo từ khóa nổi bật / Fuzzy (xử lý sai chính tả "thuê hoa" <-> "thêu hoa", trích xuất đặc trưng sản phẩm)
+  // Danh sách Stopwords đặc thù ngành hàng (ngăn chặn việc khớp lung tung giữa các sản phẩm cùng loại)
+  const domainStopWords = new Set([
+    // Đại từ, trợ từ, từ nối
+    'cho', 'tôi', 'mình', 'em', 'anh', 'chị', 'xem', 'với', 'nhé', 'nha', 'ạ', 'shop',
+    'có', 'còn', 'không', 'giá', 'bao', 'nhiêu', 'bán', 'được', 'hỏi', 'muốn', 'cần',
+    'gửi', 'hình', 'ảnh', 'mẫu', 'thực', 'tế', 'thật', 'bên', 'dưới', 'đây', 'này',
+    'kia', 'đó', 'loại', 'chiếc', 'cái', 'set', 'bộ', 'con', 'dòng', 'phẩm', 'sản',
+    // Thời trang chung (tránh việc "áo thêu hoa" khớp sang "áo thun retro" vì chung chữ "áo" và "nữ")
+    'áo', 'quần', 'váy', 'đầm', 'nữ', 'nam', 'unisex', 'thời', 'trang', 'kiểu', 'dáng',
+    // Đồ chơi & mô hình chung
+    'lego', 'đồ', 'chơi', 'xếp', 'mô'
+  ]);
+
+  // Helper tìm theo từ khóa nổi bật / Distinctive Fuzzy (đòi hỏi khớp từ khóa đặc trưng thực chất)
   const findByFuzzyKeywords = (targetText) => {
     if (!targetText) return null;
     const cleanTarget = targetText
@@ -241,23 +330,43 @@ export const resolveImagesForReply = ({
       .toLowerCase();
 
     let bestMatch = null;
-    let maxMatchedWords = 0;
+    let maxMatchedCount = 0;
 
-    for (const p of rawProducts || []) {
+    for (const p of activeProducts) {
       const pName = (p.product_name || '').toLowerCase();
       if (!pName) continue;
-      const stopWords = new Set(['cho', 'tôi', 'mình', 'em', 'anh', 'chị', 'xem', 'với', 'nhé', 'nha', 'ạ', 'shop', 'có', 'còn', 'không', 'giá', 'bao', 'nhiêu', 'bán', 'được']);
-      const pWords = pName.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
-      const targetWords = cleanTarget.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
 
-      let matchedCount = 0;
-      for (const tw of targetWords) {
-        if (pWords.includes(tw)) matchedCount++;
+      const pWords = pName.split(/\s+/).filter((w) => w.length >= 2);
+      const targetWords = cleanTarget.split(/\s+/).filter((w) => w.length >= 2);
+
+      // Trích xuất các từ đặc trưng (distinctive tokens)
+      const pDistinctive = pWords.filter((w) => !domainStopWords.has(w));
+      const targetDistinctive = targetWords.filter((w) => !domainStopWords.has(w));
+
+      if (pDistinctive.length === 0) {
+        // Tên sản phẩm chỉ toàn từ chung -> Bắt buộc phải chứa trọn vẹn tên sản phẩm
+        if (cleanTarget.includes(pName)) {
+          bestMatch = p;
+          break;
+        }
+        continue;
       }
 
-      if (matchedCount >= 2 && matchedCount > maxMatchedWords) {
-        maxMatchedWords = matchedCount;
-        bestMatch = p;
+      // Đếm số từ đặc trưng khớp nhau
+      let matchedDistinctiveCount = 0;
+      for (const tw of targetDistinctive) {
+        if (pDistinctive.includes(tw)) matchedDistinctiveCount++;
+      }
+
+      // Điều kiện để được coi là khớp:
+      // 1. Phải khớp ít nhất 1 từ đặc trưng (distinctive)
+      // 2. Tỷ lệ khớp phải đạt ít nhất 50% số từ đặc trưng của sản phẩm HOẶC khớp >= 2 từ đặc trưng
+      const ratio = matchedDistinctiveCount / pDistinctive.length;
+      if (matchedDistinctiveCount >= 1 && (ratio >= 0.5 || matchedDistinctiveCount >= 2)) {
+        if (matchedDistinctiveCount > maxMatchedCount) {
+          maxMatchedCount = matchedDistinctiveCount;
+          bestMatch = p;
+        }
       }
     }
 
@@ -288,29 +397,47 @@ export const resolveImagesForReply = ({
     const draftName = (orderDraft.product_name || '').toLowerCase();
     const draftId = orderDraft.product_id ? String(orderDraft.product_id) : '';
 
-    const matched = (rawProducts || []).find((p) =>
-      (draftSku && p.sku && p.sku.toLowerCase() === draftSku) ||
-      (draftName && p.product_name && p.product_name.toLowerCase() === draftName) ||
-      (draftId && String(p._id) === draftId)
-    );
+    // Kiểm tra xem draft có trỏ đến sản phẩm ngưng bán không
+    const isDraftDiscontinued = Array.isArray(discontinuedProducts) && discontinuedProducts.some((dp) => {
+      const dpName = (dp.product_name || '').toLowerCase().trim();
+      const dpSku = (dp.sku || '').toLowerCase().trim();
+      return (draftName && dpName && draftName.includes(dpName)) || (draftSku && dpSku && draftSku === dpSku);
+    });
 
-    if (matched) {
-      const imgs = getProductImages(matched);
-      if (imgs.length > 0) {
-        foundImages.push(...imgs);
+    if (!isDraftDiscontinued) {
+      const matched = activeProducts.find((p) =>
+        (draftSku && p.sku && p.sku.toLowerCase() === draftSku) ||
+        (draftName && p.product_name && p.product_name.toLowerCase() === draftName) ||
+        (draftId && String(p._id) === draftId)
+      );
+
+      if (matched) {
+        const imgs = getProductImages(matched);
+        if (imgs.length > 0) {
+          foundImages.push(...imgs);
+        }
       }
     }
   }
 
   // 4. Tìm sản phẩm nhắc đến trong lịch sử chat gần nhất (chatHistoryText)
   if (foundImages.length === 0 && lowerHistory) {
-    const historySkuImgs = findBySku(lowerHistory);
-    if (historySkuImgs && historySkuImgs.length > 0) {
-      foundImages.push(...historySkuImgs);
-    } else {
-      const historyNameImgs = findByName(lowerHistory) || findByFuzzyKeywords(lowerHistory);
-      if (historyNameImgs && historyNameImgs.length > 0) {
-        foundImages.push(...historyNameImgs);
+    // Chú ý: Nếu lịch sử chat nhắc đến sản phẩm đã ngừng kinh doanh, TUYỆT ĐỐI không lấy sản phẩm đó!
+    const isHistoryDiscontinued = Array.isArray(discontinuedProducts) && discontinuedProducts.some((dp) => {
+      const dName = (dp.product_name || '').toLowerCase().trim();
+      const dSku = (dp.sku || '').toLowerCase().trim();
+      return (dName && dName.length >= 4 && lowerHistory.includes(dName)) || (dSku && lowerHistory.includes(dSku));
+    });
+
+    if (!isHistoryDiscontinued) {
+      const historySkuImgs = findBySku(lowerHistory);
+      if (historySkuImgs && historySkuImgs.length > 0) {
+        foundImages.push(...historySkuImgs);
+      } else {
+        const historyNameImgs = findByName(lowerHistory) || findByFuzzyKeywords(lowerHistory);
+        if (historyNameImgs && historyNameImgs.length > 0) {
+          foundImages.push(...historyNameImgs);
+        }
       }
     }
   }
@@ -320,7 +447,7 @@ export const resolveImagesForReply = ({
     for (const cat of rawCategories) {
       const cName = (cat.category_name || '').toLowerCase();
       if (cName && (lowerMsg.includes(cName) || lowerReply.includes(cName) || lowerHistory.includes(cName))) {
-        const catProds = (rawProducts || []).filter((p) =>
+        const catProds = activeProducts.filter((p) =>
           (p.category_ids || []).some((cid) => String(cid) === String(cat._id))
         );
         const catImgs = catProds.flatMap((p) => getProductImages(p)).filter(Boolean);
@@ -376,7 +503,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     aiConfig = await AIConfig.findOne({ business_id }).lean();
   }
 
-  const [categories, products, knowledgeList, recentMessages, recentOrders, channelOrderCount] = await Promise.all([
+  const [categories, products, discontinuedProducts, knowledgeList, recentMessages, recentOrders, channelOrderCount] = await Promise.all([
     // A. Danh mục sản phẩm đang hoạt động của Doanh nghiệp
     Category.find({ business_id, is_active: true })
       .select('category_name slug description')
@@ -388,12 +515,18 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
       .limit(60)
       .lean(),
 
-    // C. Kho tri thức FAQ & Chính sách
+    // C. Danh mục sản phẩm ĐÃ NGỪNG KINH DOANH hoặc TẠM ẨN của Doanh nghiệp (RAG Phủ định - Negative Context)
+    Product.find({ business_id, status: { $in: ['HIDDEN', 'INACTIVE'] } })
+      .select('product_name sku base_price sale_price status stock_available description')
+      .limit(50)
+      .lean(),
+
+    // D. Kho tri thức FAQ & Chính sách
     KnowledgeBase.find({ business_id, is_active: true })
       .select('title category content action_type keywords')
       .lean(),
 
-    // D. Lịch sử 8 tin nhắn gần nhất
+    // E. Lịch sử 8 tin nhắn gần nhất
     conversation_id
       ? Message.find({ conversation_id })
           .sort({ created_at: -1 })
@@ -401,7 +534,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
           .lean()
       : [],
 
-    // E. Các đơn hàng gần đây của khách hàng tại Kênh chat này (để AI tra cứu trạng thái đơn hàng khi khách hỏi)
+    // F. Các đơn hàng gần đây của khách hàng tại Kênh chat này (để AI tra cứu trạng thái đơn hàng khi khách hỏi)
     orderQueryConditions.length > 0
       ? Order.find({
           business_id,
@@ -468,6 +601,13 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
   const catalogContextText = catalogLines.length > 0
     ? catalogLines.join('\n')
     : 'Chưa có phân loại danh mục cụ thể.';
+
+  const discontinuedContextText = Array.isArray(discontinuedProducts) && discontinuedProducts.length > 0
+    ? discontinuedProducts.map((p) => {
+        const st = p.status === 'HIDDEN' ? 'Đã tạm ẩn / Tạm ngưng bán' : 'Ngừng kinh doanh / Hết hàng';
+        return `- [SKU: ${p.sku || 'N/A'}] ${p.product_name} | Trạng thái: ${st.toUpperCase()}`;
+      }).join('\n')
+    : 'Hiện không có sản phẩm nào ngừng kinh doanh hoặc tạm ẩn.';
 
   const advisoryKnowledge = [];
   const actionableKnowledge = [];
@@ -562,6 +702,8 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     catalogContextText,
     rawCategories: categories || [],
     productContextText: productContextText || 'Hiện tại chưa có sản phẩm nào trong kho.',
+    discontinuedContextText,
+    discontinuedProducts: discontinuedProducts || [],
     knowledgeContextText: knowledgeContextText || 'Chưa có tài liệu FAQ bổ sung.',
     actionableKnowledgeText: actionableKnowledgeText,
     chatHistoryText: chatHistoryText || 'Đây là tin nhắn đầu tiên của khách.',
@@ -602,6 +744,8 @@ export const consultWithGeminiAI = async ({
     catalogContextText,
     rawCategories,
     productContextText,
+    discontinuedContextText,
+    discontinuedProducts,
     knowledgeContextText,
     actionableKnowledgeText,
     chatHistoryText,
@@ -640,6 +784,7 @@ export const consultWithGeminiAI = async ({
       messageText,
       aiConfig,
       rawProducts,
+      discontinuedProducts,
       categories: rawCategories,
       chatHistoryText,
       ordersContextText,
@@ -683,6 +828,9 @@ ${catalogContextText}
 === THÔNG TIN SẢN PHẨM & TỒN KHO THỰC TẾ (RAG) ===
 ${productContextText}
 
+=== CÁC SẢN PHẨM ĐÃ NGỪNG KINH DOANH HOẶC TẠM ẨN CỦA SHOP (NEGATIVE CONTEXT - BẮT BUỘC TUÂN THỦ) ===
+${discontinuedContextText}
+
 === CHÍNH SÁCH BÁN HÀNG & KHO TRI THỨC TƯ VẤN (FAQ - KHÔNG CAN THIỆP CSDL) ===
 ${knowledgeContextText}
 
@@ -712,7 +860,20 @@ ${chatHistoryText}
      + Nếu đơn hàng vừa được tạo thành công: Chỉ cần đáp lại chân thành, ngắn gọn và lịch sự: "Dạ vâng ạ, cảm ơn ${fallbackCustomerName} đã tin tưởng ủng hộ shop! Chúc bạn một ngày thật nhiều niềm vui nhé! ❤️".
      + TUYỆT ĐỐI KHÔNG hỏi lại thông tin nhận hàng, KHÔNG xin lại SĐT/Địa chỉ, và KHÔNG tạo thêm đơn hàng mới khi khách chỉ nói câu xác nhận/cảm ơn thông thường!
 
+0.1. NGUYÊN TẮC BẮT BUỘC ĐỐI VỚI SẢN PHẨM ĐÃ NGỪNG KINH DOANH / TẠM ẨN:
+   - Danh sách "CÁC SẢN PHẨM ĐÃ NGỪNG KINH DOANH HOẶC TẠM ẨN CỦA SHOP" ở trên là những mặt hàng shop hiện KHÔNG CÒN BÁN.
+   - Khi khách hỏi về bất kỳ sản phẩm nào có tên hoặc SKU trùng/tương tự với danh sách ngưng bán này (kể cả khi sản phẩm đó từng được khách và bot thảo luận trong lịch sử chat cũ):
+     + TUYỆT ĐỐI KHÔNG được trả lời là còn hàng, KHÔNG khen ngợi, KHÔNG hẹn gửi ảnh, và KHÔNG tạo đơn hàng cho sản phẩm này!
+     + BẮT BUỘC thông báo rõ ràng: "Dạ bạn ơi, mẫu [Tên sản phẩm] hiện tại bên shop đã tạm ngưng kinh doanh / hết hàng rồi ạ!".
+     + BẮT BUỘC ĐẶT mảng "image_urls": [] RỖNG (tuyệt đối không gửi ảnh của sản phẩm đã ngưng bán, cũng không được lấy ảnh của sản phẩm khác bù vào)!
+     + ĐẶT "is_order_intent": false và "order_data": null.
+     + Sau khi thông báo hết hàng, bạn có thể niềm nở gợi ý sang các sản phẩm ĐANG KINH DOANH CÒN HÀNG của shop (nêu tên cụ thể từ mục SẢN PHẨM & TỒN KHO THỰC TẾ) để khách tham khảo.
+   - LƯU Ý SÂU: Lịch sử hội thoại cũ có thể chứa các tin nhắn trước đây khi sản phẩm còn bán. Bạn TUYỆT ĐỐI KHÔNG ĐƯỢC dựa vào tin nhắn cũ để ngộ nhận là sản phẩm vẫn còn hàng!
+
 1. GIAI ĐOẠN 1 - KHÁM PHÁ / XEM MẪU / XEM ẢNH / TRA CỨU DANH MỤC:
+   - ĐẶC BIỆT: Nếu khách hỏi xem ảnh hoặc hỏi mua về sản phẩm ĐÃ NGỪNG KINH DOANH / TẠM ẨN:
+     + Tuyệt đối KHÔNG gửi ảnh! Đặt "image_urls": [].
+     + Giải thích rõ sản phẩm đã tạm ngưng kinh doanh / hết hàng và mời khách xem mẫu khác còn hàng nếu khách có nhu cầu.
    - KHI KHÁCH HỎI THEO DANH MỤC / BỘ SƯU TẬP / DÒNG SẢN PHẨM (Ví dụ: "bên mình có lego titan ko", "các mẫu titan", "danh mục chima", "shop có những loại nào", "cho xem mẫu lego robot"):
      + BẮT BUỘC đối chiếu với mục "BẢN ĐỒ DANH MỤC & NHÓM SẢN PHẨM CỦA SHOP" ở trên.
      + Nếu shop có danh mục đó (hoặc từ khóa tương đồng, ví dụ khách hỏi "lego titan" mà shop có danh mục "Titan"):
@@ -1012,6 +1173,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
         replyText: cleanedReply,
         orderDraft,
         rawProducts,
+        discontinuedProducts,
         rawCategories,
         chatHistoryText
       });
@@ -1031,7 +1193,9 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       followup_action: parsed.followup_action || null,
       missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
       handover_to_staff: Boolean(parsed.handover_to_staff),
-      handover_reason: parsed.handover_reason || null
+      handover_reason: parsed.handover_reason || null,
+      discontinuedProducts: discontinuedProducts || [],
+      rawProducts: rawProducts || []
     };
   } catch (apiErr) {
     console.error('[Gemini API Call Error]', apiErr.message);
@@ -1039,6 +1203,7 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       messageText,
       aiConfig,
       rawProducts,
+      discontinuedProducts,
       categories: rawCategories,
       chatHistoryText,
       ordersContextText,
@@ -1060,6 +1225,7 @@ export const generateSmartFallbackResponse = ({
   messageText,
   aiConfig,
   rawProducts,
+  discontinuedProducts = [],
   categories = [],
   chatHistoryText,
   ordersContextText = '',
@@ -1083,6 +1249,29 @@ export const generateSmartFallbackResponse = ({
     customerNote,
     phoneValidation
   } = extractNameAndCleanAddress(text, defaultCustomerName);
+
+  // 0. Chốt chặn kiểm tra sản phẩm đã ngừng kinh doanh / tạm ẩn
+  if (Array.isArray(discontinuedProducts) && discontinuedProducts.length > 0) {
+    const matchedDisc = isTargetingDiscontinuedProduct(lower, discontinuedProducts, existingDraft) ||
+      isTargetingDiscontinuedProduct(chatHistoryText, discontinuedProducts, existingDraft);
+
+    if (matchedDisc) {
+      const activeSuggestions = (rawProducts || []).slice(0, 3).map((p) => `"${p.product_name}"`).join(', ');
+      const suggestionText = activeSuggestions ? ` Bạn có thể tham khảo thêm các mẫu đang có sẵn tại shop như ${activeSuggestions} nha!` : '';
+      return {
+        reply: `Dạ bạn ơi, mẫu "${matchedDisc.product_name}" hiện tại bên shop đã tạm ngưng kinh doanh / hết hàng rồi ạ.${suggestionText} Shop có thể hỗ trợ tư vấn mẫu khác cho bạn nhé? ❤️`,
+        image_urls: [],
+        is_order_intent: false,
+        order_data: null,
+        order_action: null,
+        customer_action: null,
+        followup_action: null,
+        missing_fields: [],
+        discontinuedProducts,
+        rawProducts
+      };
+    }
+  }
 
   // 1. Khớp sản phẩm được nhắc đến trong tin nhắn
   let matchedProduct = null;
@@ -1149,7 +1338,7 @@ export const generateSmartFallbackResponse = ({
       }
     }
   }
-  if (!matchedProduct && rawProducts.length > 0) {
+  if (!matchedProduct && rawProducts.length > 0 && (phone || cleanAddress || existingDraft?.product_name)) {
     matchedProduct = rawProducts[0];
   }
 
@@ -1640,6 +1829,49 @@ export const processGeminiAIForMessage = async ({
       finalReply = (Array.isArray(aiResult.image_urls) && aiResult.image_urls.length > 0)
         ? 'Dạ em gửi anh/chị xem hình ảnh thực tế của mẫu bên dưới nha! Anh/chị cần em tư vấn thêm màu hay size nào cứ nhắn em nhé.'
         : 'Dạ em chào anh/chị, em có thể hỗ trợ gì cho mình ạ?';
+    }
+
+    // =========================================================================
+    // CHỐT CHẶN BẢO VỆ SẢN PHẨM ĐÃ NGỪNG KINH DOANH (Discontinued Product Guard)
+    // Áp dụng đồng bộ cho tất cả các Fanpage / Cửa hàng trong hệ thống:
+    // Ngăn chặn 100% tình trạng AI hứa hẹn còn hàng hoặc gửi ảnh sản phẩm đã ngưng bán
+    // =========================================================================
+    const discProds = aiResult.discontinuedProducts || [];
+    if (discProds.length > 0) {
+      const lowerCustMsg = (messageText || '').toLowerCase();
+      const lowerReplyCheck = (finalReply || '').toLowerCase();
+      const draftProdName = (conversation.order_draft?.product_name || '').toLowerCase();
+
+      // Kiểm tra xem khách có đang hỏi hoặc giỏ hàng nháp đang nhắc về sản phẩm ngưng bán
+      const matchedDisc = isTargetingDiscontinuedProduct(messageText, discProds, conversation.order_draft) ||
+        isTargetingDiscontinuedProduct(conversation.order_draft?.product_name || '', discProds, conversation.order_draft);
+
+      if (matchedDisc) {
+        const isDiscontinuedAcknowledged = /(?:hết\s*hàng|ngừng\s*kinh\s*doanh|tạm\s*ngưng|ngưng\s*bán|tạm\s*ẩn|đã\s*hết|không\s*còn)/i.test(lowerReplyCheck);
+        const isReplySayingAvailable = /(?:còn\s*hàng|dạ\s*còn|sẵn\s*hàng|đang\s*có|đặt\s*hàng|chốt\s*đơn|gửi\s*(?:bạn|anh|chị|em|mình)?\s*xem)/i.test(lowerReplyCheck);
+
+        if (!isDiscontinuedAcknowledged || isReplySayingAvailable) {
+          console.warn(`[Discontinued Guard] 🛡️ Can thiệp an toàn: Khách hỏi sản phẩm đã ngưng bán "${matchedDisc.product_name}". Ghi đè phản hồi sang thông báo hết hàng.`);
+          const activeSuggestions = (aiResult.rawProducts || []).slice(0, 3).map((p) => `"${p.product_name}"`).join(', ');
+          const suggestionText = activeSuggestions ? ` Bạn có thể tham khảo thêm các mẫu đang có sẵn tại shop như ${activeSuggestions} nha!` : '';
+          finalReply = `Dạ bạn ơi, mẫu "${matchedDisc.product_name}" hiện tại bên shop đã tạm ngưng kinh doanh / hết hàng rồi ạ.${suggestionText} Shop có thể hỗ trợ tư vấn mẫu khác cho bạn nhé? ❤️`;
+        }
+
+        // BẮT BUỘC xóa ảnh và reset giỏ hàng nháp đối với sản phẩm đã ngừng kinh doanh
+        aiResult.image_urls = [];
+        aiResult.is_order_intent = false;
+        aiResult.order_data = null;
+        if (conversation.order_draft && conversation.order_draft.product_name === matchedDisc.product_name) {
+          conversation.order_draft.product_name = '';
+          conversation.order_draft.product_id = null;
+          conversation.order_draft.status = 'IDLE';
+        }
+      }
+    }
+
+    // Nếu câu trả lời có tính chất thông báo hết hàng / ngừng bán, dọn dẹp sạch image_urls
+    if (/(?:hết\s*hàng|ngừng\s*kinh\s*doanh|tạm\s*ngưng|ngưng\s*bán|tạm\s*ẩn|đã\s*hết|không\s*còn\s*hàng|hết\s*mẫu)/i.test(finalReply)) {
+      aiResult.image_urls = [];
     }
 
     // Lấy thông tin khách hàng đã lưu từ DB để làm fallback cho khách quen
@@ -2197,9 +2429,11 @@ export const processGeminiAIForMessage = async ({
     }
 
     // Chốt chặn an toàn kép: Nếu aiResult.image_urls vẫn rỗng, tự động tra cứu sản phẩm bù ảnh lớp 2
-    if (!Array.isArray(aiResult.image_urls) || aiResult.image_urls.length === 0) {
+    // CHÚ Ý: Tuyệt đối không bù ảnh nếu câu trả lời là thông báo hết hàng / ngừng kinh doanh
+    const isOutOfStockReply = /(?:hết\s*hàng|ngừng\s*kinh\s*doanh|tạm\s*ngưng|ngưng\s*bán|tạm\s*ẩn|đã\s*hết|không\s*còn|hết\s*mẫu)/i.test(finalReply);
+    if (!isOutOfStockReply && (!Array.isArray(aiResult.image_urls) || aiResult.image_urls.length === 0)) {
       try {
-        const fallbackProds = await Product.find({ business_id, status: { $ne: 'HIDDEN' } })
+        const fallbackProds = await Product.find({ business_id, status: 'ACTIVE' })
           .select('product_name sku image_urls category_ids')
           .limit(50)
           .lean();
@@ -2208,6 +2442,7 @@ export const processGeminiAIForMessage = async ({
           replyText: finalReply,
           orderDraft: conversation.order_draft,
           rawProducts: fallbackProds,
+          discontinuedProducts: discProds,
           chatHistoryText: ''
         });
         if (doubleCheckImages.length > 0) {

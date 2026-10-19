@@ -1912,7 +1912,13 @@ const LiveChatPage = () => {
                               title={msg.metadata?.error_message || 'Không thể gửi đến Messenger'}
                             >
                               <AlertTriangle size={11} className="text-amber-300 shrink-0" />
-                              <span>Chưa gửi được sang Messenger (Token Fanpage hết hạn)</span>
+                              <span>
+                                {msg.metadata?.error_code === 10 || msg.metadata?.error_subcode === 1893063 || (msg.metadata?.error_message && msg.metadata.error_message.includes('hạn chế'))
+                                  ? 'Chưa gửi được sang Messenger (Facebook tạm thời hạn chế gửi tin)'
+                                  : (msg.metadata?.error_code === 190
+                                      ? 'Chưa gửi được sang Messenger (Token Fanpage hết hạn)'
+                                      : (msg.metadata?.error_message || 'Chưa gửi được sang Messenger'))}
+                              </span>
                             </div>
                           )}
                         </div>
