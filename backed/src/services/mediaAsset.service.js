@@ -228,17 +228,42 @@ export const syncProductMediaService = async (business_id) => {
       // Kiểm tra xem URL này đã tồn tại trong kho ảnh của business chưa
       const exists = await MediaAsset.findOne({ business_id, file_url: url });
       if (!exists) {
+        let calculatedSize = 0;
+        try {
+          const filename = path.basename(url);
+          const sf = await StoredFile.findOne({ filename }).lean() ||
+            await StoredFile.db?.collection('stored_files')?.findOne({ filename });
+          if (sf?.size) calculatedSize = sf.size;
+          else if (sf?.data?.length) calculatedSize = sf.data.length;
+          else if (sf?.data?.buffer?.length) calculatedSize = sf.data.buffer.length;
+          if (!calculatedSize) {
+            const diskPath = path.join(uploadDir, 'products', filename);
+            if (fs.existsSync(diskPath)) calculatedSize = fs.statSync(diskPath).size;
+          }
+        } catch (sErr) {}
+
         await MediaAsset.create({
           business_id,
           file_name: product.product_name,
           original_name: product.sku || product.product_name,
           file_url: url,
           file_path: url.startsWith('/uploads/') ? url : '',
+          file_size: calculatedSize || 0,
           folder: 'products',
           tags: [product.product_name, product.sku].filter(Boolean),
           caption: `Ảnh sản phẩm: ${product.product_name} (${product.sku || 'N/A'})`
         });
         addedCount++;
+      } else if (exists.file_size === 0) {
+        try {
+          const filename = path.basename(url);
+          const sf = await StoredFile.findOne({ filename }).lean() ||
+            await StoredFile.db?.collection('stored_files')?.findOne({ filename });
+          const calculatedSize = sf?.size || sf?.data?.length || sf?.data?.buffer?.length || 0;
+          if (calculatedSize) {
+            await MediaAsset.findByIdAndUpdate(exists._id, { $set: { file_size: calculatedSize } });
+          }
+        } catch (e) {}
       }
     }
   }

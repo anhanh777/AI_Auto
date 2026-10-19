@@ -154,6 +154,8 @@ export const parseKnowledgeFile = (fileBuffer) => {
       action_type = 'UPDATE_ORDER';
     } else if (normAct.includes('khach_hang') || normAct.includes('update_customer') || normAct.includes('khach')) {
       action_type = 'UPDATE_CUSTOMER';
+    } else if (normAct.includes('validate') || normAct.includes('tham_dinh') || normAct.includes('kiem_tra') || normAct.includes('chot_don')) {
+      action_type = 'VALIDATE_CHECKOUT';
     }
 
     const errors = [];

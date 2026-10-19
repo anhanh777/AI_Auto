@@ -36,7 +36,8 @@ const knowledgeBaseSchema = new mongoose.Schema(
         'AUTO_TAG_CUSTOMER',
         'CANCEL_ORDER',
         'UPDATE_ORDER',
-        'UPDATE_CUSTOMER'
+        'UPDATE_CUSTOMER',
+        'VALIDATE_CHECKOUT'
       ],
       default: 'NONE'
     },

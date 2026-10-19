@@ -15,7 +15,7 @@ const uploadDir = path.resolve(__dirname, '../../uploads');
  */
 export const serveOrRecoverUploadFile = async (req, res, next) => {
   try {
-    const rawPath = req.path.replace(/^\/+/, '');
+    const rawPath = (req.path || req.url || '').split('?')[0].replace(/^\/+/, '');
     const parts = rawPath.split('/');
     let folder = 'general';
     let filename = '';
@@ -35,26 +35,53 @@ export const serveOrRecoverUploadFile = async (req, res, next) => {
       return res.sendFile(localFilePath);
     }
 
-    // 2. Tìm trong MongoDB Atlas StoredFile
-    const stored = await StoredFile.findOne({
+    // 2. Tìm trong MongoDB Atlas StoredFile (tìm trên cả storedfiles và stored_files)
+    let stored = await StoredFile.findOne({
       $or: [
         { filename, folder },
         { filename }
       ]
     }).lean();
 
+    if (!stored) {
+      try {
+        const altCollection = StoredFile.db?.collection('stored_files');
+        if (altCollection) {
+          stored = await altCollection.findOne({
+            $or: [
+              { filename, folder },
+              { filename }
+            ]
+          });
+        }
+      } catch (altErr) {}
+    }
+
     if (stored && stored.data) {
+      const fileBuffer = Buffer.isBuffer(stored.data)
+        ? stored.data
+        : (stored.data.buffer ? Buffer.from(stored.data.buffer) : Buffer.from(stored.data));
+
       try {
         const dir = path.dirname(localFilePath);
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(localFilePath, stored.data);
+        fs.writeFileSync(localFilePath, fileBuffer);
       } catch (cacheErr) {
         console.warn('[FileRecovery Cache Warn]', cacheErr.message);
       }
 
-      res.set('Content-Type', stored.mimetype || 'image/jpeg');
+      let mimeType = stored.mimetype || 'image/jpeg';
+      if (fileBuffer.length >= 4) {
+        const hex = fileBuffer.slice(0, 4).toString('hex').toLowerCase();
+        if (hex.startsWith('ffd8')) mimeType = 'image/jpeg';
+        else if (hex.startsWith('89504e47')) mimeType = 'image/png';
+        else if (hex.startsWith('52494646')) mimeType = 'image/webp';
+        else if (hex.startsWith('47494638')) mimeType = 'image/gif';
+      }
+
+      res.set('Content-Type', mimeType);
       res.set('Cache-Control', 'public, max-age=86400');
-      return res.send(stored.data);
+      return res.end(fileBuffer);
     }
 
     // 3. Fallback an toàn nếu file hoàn toàn không tồn tại (tránh lỗi 404 cho Facebook và LiveChat)

@@ -96,11 +96,20 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
         try {
           const filename = path.basename(relPath);
           const folder = relPath.includes('/') ? relPath.split('/')[0] : 'general';
-          const stored = await StoredFile.findOne({ $or: [{ filename, folder }, { filename }] }).lean();
+          let stored = await StoredFile.findOne({ $or: [{ filename, folder }, { filename }] }).lean();
+          if (!stored) {
+            try {
+              const alt = StoredFile.db?.collection('stored_files');
+              if (alt) stored = await alt.findOne({ $or: [{ filename, folder }, { filename }] });
+            } catch (aErr) {}
+          }
           if (stored && stored.data) {
+            const fileBuf = Buffer.isBuffer(stored.data)
+              ? stored.data
+              : (stored.data.buffer ? Buffer.from(stored.data.buffer) : Buffer.from(stored.data));
             const dir = path.dirname(localFilePath);
             if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(localFilePath, stored.data);
+            fs.writeFileSync(localFilePath, fileBuf);
             console.log(`[Facebook Send API] Đã tự phục hồi file ảnh ${filename} từ MongoDB Atlas vào disk`);
           }
         } catch (recoverErr) {

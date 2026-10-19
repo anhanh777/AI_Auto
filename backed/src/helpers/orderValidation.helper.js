@@ -156,7 +156,7 @@ export const evaluateAddressQuality = (rawAddress = '') => {
       quality: 'VAGUE_AREA',
       cleanAddress: text,
       customerNote,
-      feedbackMessage: `Dạ shop đã ghi nhận bạn ở khu vực "${text}". Tuy nhiên để shipper giao tận nơi, bạn cho shop xin thêm Số nhà, tên Đường (hoặc Thôn/Xóm/Ngõ) cụ thể nữa nhé ạ!`
+      feedbackMessage: `Dạ nàng ơi, để gói hàng được giao tận tay nhanh nhất, nàng bổ sung giúp shop chi tiết: Số nhà, Tên đường (hoặc thôn/xóm), Phường/Xã và Quận/Huyện/Tỉnh nhé ạ! ❤️`
     };
   }
 

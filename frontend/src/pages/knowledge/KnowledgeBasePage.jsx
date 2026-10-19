@@ -76,6 +76,12 @@ export const ACTION_TYPE_MAP = {
     badge: '⚡ Cập nhật khách',
     color: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
     desc: 'Khi khách cung cấp hoặc cập nhật thông tin cá nhân, AI tự động lưu vào hồ sơ khách hàng.'
+  },
+  VALIDATE_CHECKOUT: {
+    label: 'Kiểm tra & Thẩm định thông tin trước khi chốt đơn',
+    badge: '🛡️ Thẩm định chốt đơn',
+    color: 'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+    desc: 'Bắt buộc kiểm tra SĐT đúng 10 số và Địa chỉ đủ 3 cấp hành chính (Số nhà, Tên đường, Xã/Phường, Tỉnh/TP). Nếu thiếu, AI tự động yêu cầu bổ sung và từ chối chốt đơn.'
   }
 };
 
@@ -248,6 +254,7 @@ const KnowledgeBasePage = () => {
       onConfirm: async () => {
         try {
           setConfirmDialog((prev) => ({ ...prev, loading: true }));
+          setItems((prev) => prev.filter((it) => it._id !== id));
           const res = await knowledgeService.deleteKnowledge(id, activeBusiness._id);
           if (res?.success !== false) {
             showToast('success', 'Đã xóa tài liệu tri thức');
@@ -255,6 +262,7 @@ const KnowledgeBasePage = () => {
           }
         } catch (err) {
           showToast('error', err.response?.data?.message || err.message || 'Lỗi khi xóa');
+          fetchKnowledge();
         } finally {
           setConfirmDialog((prev) => ({ ...prev, isOpen: false, loading: false }));
         }
@@ -541,6 +549,7 @@ const KnowledgeBasePage = () => {
                   <option value="CANCEL_ORDER">❌ Tự động hủy đơn hàng (Khi thỏa điều kiện & khách xác nhận)</option>
                   <option value="UPDATE_ORDER">✏️ Tự động cập nhật đơn hàng (Đổi địa chỉ, SĐT, số lượng, mẫu)</option>
                   <option value="UPDATE_CUSTOMER">👤 Tự động cập nhật thông tin khách hàng (Tên, SĐT, Địa chỉ)</option>
+                  <option value="VALIDATE_CHECKOUT">🛡️ Kiểm tra & Thẩm định thông tin trước khi chốt đơn (SĐT, Địa chỉ đủ 3 cấp)</option>
                 </select>
                 <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 italic">
                   {(ACTION_TYPE_MAP[form.action_type] || ACTION_TYPE_MAP.NONE).desc}
