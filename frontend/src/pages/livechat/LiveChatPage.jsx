@@ -757,6 +757,21 @@ const LiveChatPage = () => {
     return `${h}:${m}`;
   };
 
+  // Format văn bản tin nhắn (hỗ trợ in đậm **bold** hoặc *bold* tương tự Messenger)
+  const renderFormattedMessageText = (text) => {
+    if (!text) return null;
+    const parts = text.split(/(\*\*.*?\*\*|\*[^*\n]+?\*)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+        return <strong key={idx} className="font-semibold text-inherit">{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+        return <strong key={idx} className="font-semibold text-inherit">{part.slice(1, -1)}</strong>;
+      }
+      return part;
+    });
+  };
+
   // Danh sách cuộc trò chuyện đã áp dụng 9 bộ lọc
   const filteredConversations = useMemo(() => {
     let result = [...conversations];
@@ -1710,15 +1725,80 @@ const LiveChatPage = () => {
                             </div>
                           )}
 
-                          {/* Hiển thị tệp đính kèm (ảnh / file / nhãn dán) nếu có */}
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="space-y-1.5 my-1">
-                              {msg.attachments.map((att, attIdx) => {
-                                const isSticker = att.type === 'sticker';
-                                const isImg = att.type === 'image' || att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i);
-                                const mediaUrl = resolveMediaUrl(att.url);
+                          {/* 1. Hiển thị nội dung văn bản TRƯỚC (khớp thứ tự đọc và tin nhắn Messenger) */}
+                          {msg.content &&
+                            msg.content !== '[Hình ảnh]' &&
+                            msg.content !== '[Hình ảnh sản phẩm]' &&
+                            msg.content !== '[Nhãn dán]' &&
+                            !msg.content.startsWith('[Tệp:') && (
+                              <div className="whitespace-pre-wrap leading-relaxed select-text font-normal text-[12px]">
+                                {renderFormattedMessageText(msg.content)}
+                              </div>
+                            )}
 
-                                if (isSticker) {
+                          {/* 2. Hiển thị tệp đính kèm (ảnh / file / nhãn dán) BÊN DƯỚI văn bản */}
+                          {msg.attachments && msg.attachments.length > 0 && (() => {
+                            const images = msg.attachments.filter(
+                              (att) => att.type === 'image' || att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)
+                            );
+                            const stickers = msg.attachments.filter((att) => att.type === 'sticker');
+                            const files = msg.attachments.filter(
+                              (att) =>
+                                att.type !== 'image' &&
+                                att.type !== 'sticker' &&
+                                !att.url?.match(/\.(jpeg|jpg|gif|png|webp)($|\?)/i)
+                            );
+
+                            return (
+                              <div className="mt-2 space-y-2">
+                                {/* Lưới hiển thị ảnh thông minh (Photo Grid) */}
+                                {images.length > 0 && (
+                                  <div
+                                    className={
+                                      images.length === 1
+                                        ? 'max-w-[280px]'
+                                        : images.length === 2
+                                        ? 'grid grid-cols-2 gap-1.5 max-w-[340px]'
+                                        : images.length === 3
+                                        ? 'grid grid-cols-3 gap-1.5 max-w-[380px]'
+                                        : 'grid grid-cols-2 gap-1.5 max-w-[340px]'
+                                    }
+                                  >
+                                    {images.map((att, attIdx) => {
+                                      const mediaUrl = resolveMediaUrl(att.url);
+                                      const heightClass =
+                                        images.length === 1
+                                          ? 'max-h-[240px] w-auto'
+                                          : images.length === 2
+                                          ? 'h-32 w-full'
+                                          : images.length === 3
+                                          ? 'h-24 sm:h-28 w-full'
+                                          : 'h-28 w-full';
+
+                                      return (
+                                        <div
+                                          key={attIdx}
+                                          className="relative group overflow-hidden rounded-xl border border-black/10 dark:border-white/10 bg-black/5"
+                                        >
+                                          <img
+                                            src={mediaUrl}
+                                            alt={att.name || 'Ảnh sản phẩm'}
+                                            onClick={() => window.open(mediaUrl, '_blank')}
+                                            className={`${heightClass} object-cover cursor-pointer group-hover:scale-105 transition-transform duration-200`}
+                                            title={att.name ? `${att.name} - Bấm để mở ảnh lớn` : 'Bấm để mở ảnh kích thước gốc'}
+                                            onError={(e) => {
+                                              e.currentTarget.style.display = 'none';
+                                            }}
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+
+                                {/* Nhãn dán (Stickers) */}
+                                {stickers.map((att, attIdx) => {
+                                  const mediaUrl = resolveMediaUrl(att.url);
                                   return (
                                     <div key={attIdx} className="my-1">
                                       <img
@@ -1726,48 +1806,39 @@ const LiveChatPage = () => {
                                         alt={att.name || 'Nhãn dán'}
                                         className="w-24 h-24 sm:w-28 sm:h-28 object-contain hover:scale-105 transition-transform"
                                         title={att.name || 'Nhãn dán'}
-                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        onError={(e) => {
+                                          e.currentTarget.style.display = 'none';
+                                        }}
                                       />
                                     </div>
                                   );
-                                }
-                                if (isImg) {
-                                  return (
-                                    <img
-                                      key={attIdx}
-                                      src={mediaUrl}
-                                      alt="Attachment"
-                                      onClick={() => window.open(mediaUrl, '_blank')}
-                                      className="max-w-[240px] max-h-[220px] rounded-xl object-cover cursor-pointer hover:opacity-90 shadow-xs border border-black/10 dark:border-white/10"
-                                      title="Bấm để mở ảnh kích thước gốc"
-                                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                                    />
-                                  );
-                                }
-                                return (
-                                  <a
-                                    key={attIdx}
-                                    href={mediaUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[11px] transition ${
-                                      isStaff || isBot
-                                        ? 'bg-white/20 hover:bg-white/30 text-white'
-                                        : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
-                                    }`}
-                                  >
-                                    <FileText size={15} className="shrink-0" />
-                                    <span className="truncate max-w-[160px] font-medium">{att.name || 'Tệp đính kèm'}</span>
-                                  </a>
-                                );
-                              })}
-                            </div>
-                          )}
+                                })}
 
-                          {/* Ẩn text placeholder tự tạo [Hình ảnh] hoặc [Nhãn dán] khi tin nhắn đã có file đính kèm */}
-                          {msg.content && msg.content !== '[Hình ảnh]' && msg.content !== '[Nhãn dán]' && !msg.content.startsWith('[Tệp:') && (
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
-                          )}
+                                {/* Tệp tin tài liệu (Files) */}
+                                {files.map((att, attIdx) => {
+                                  const mediaUrl = resolveMediaUrl(att.url);
+                                  return (
+                                    <a
+                                      key={attIdx}
+                                      href={mediaUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className={`flex items-center space-x-2 px-3 py-2 rounded-xl text-[11px] transition ${
+                                        isStaff || isBot
+                                          ? 'bg-white/20 hover:bg-white/30 text-white'
+                                          : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                                      }`}
+                                    >
+                                      <FileText size={15} className="shrink-0" />
+                                      <span className="truncate max-w-[160px] font-medium">
+                                        {att.name || 'Tệp đính kèm'}
+                                      </span>
+                                    </a>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
 
                           <div
                             className={`text-[9px] mt-1 text-right flex items-center justify-end space-x-1.5 ${

@@ -13,6 +13,14 @@ const attachmentSchema = new mongoose.Schema({
   url: {
     type: String,
     required: true
+  },
+  name: {
+    type: String,
+    default: ''
+  },
+  external_message_id: {
+    type: String,
+    default: null
   }
 }, { _id: false });
 

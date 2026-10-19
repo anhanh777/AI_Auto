@@ -278,11 +278,21 @@ export const handleWebhookPayloadService = async (body) => {
 
         // Bóc tách hình ảnh từ tin nhắn trích dẫn (Quote Reply) hoặc tin nhắn ảnh gần nhất
         if (replyToMid) {
-          const quotedMsg = await Message.findOne({ external_message_id: replyToMid });
+          const quotedMsg = await Message.findOne({
+            $or: [
+              { external_message_id: replyToMid },
+              { 'attachments.external_message_id': replyToMid }
+            ]
+          });
           if (quotedMsg && Array.isArray(quotedMsg.attachments)) {
-            for (const att of quotedMsg.attachments) {
-              if (att.url && !customerImageUrls.includes(att.url)) {
-                customerImageUrls.push(att.url);
+            const specificAtt = quotedMsg.attachments.find(a => a.external_message_id === replyToMid);
+            if (specificAtt?.url && !customerImageUrls.includes(specificAtt.url)) {
+              customerImageUrls.push(specificAtt.url);
+            } else {
+              for (const att of quotedMsg.attachments) {
+                if (att.url && !customerImageUrls.includes(att.url)) {
+                  customerImageUrls.push(att.url);
+                }
               }
             }
           }

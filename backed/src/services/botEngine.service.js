@@ -48,7 +48,7 @@ export const renderDynamicVariables = (templateText = '', context = {}) => {
 /**
  * Gửi hình ảnh qua Facebook Messenger (Hỗ trợ URL công khai trên mạng và file upload cục bộ trên server)
  */
-export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversationId = null) => {
+export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversationId = null, parentMessageId = null) => {
   if (!imgUrl || !senderPsid || !pageToken) return;
   try {
     let fbMid = null;
@@ -126,18 +126,25 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
       }
     }
 
-    // Lưu lại message chứa image và external_message_id vào DB để khi khách hàng quote/reply ảnh này,
-    // webhook có thể tìm thấy ngay theo reply_to.mid!
-    if (fbMid && conversationId) {
-      await Message.create({
-        conversation_id: conversationId,
-        sender_type: 'AI_BOT',
-        sender_id: null,
-        content: '[Hình ảnh sản phẩm]',
-        attachments: [{ type: 'image', url: normalizedUrl }],
-        external_message_id: fbMid,
-        is_read: true
-      });
+    // Gắn fbMid vào attachment của tin nhắn cha để nhận diện quote reply mà không sinh tin nhắn trùng lặp
+    if (fbMid) {
+      if (parentMessageId) {
+        await Message.updateOne(
+          { _id: parentMessageId, 'attachments.url': normalizedUrl },
+          { $set: { 'attachments.$.external_message_id': fbMid } }
+        );
+      } else if (conversationId) {
+        // Chỉ tạo tin nhắn rời nếu không có parentMessageId
+        await Message.create({
+          conversation_id: conversationId,
+          sender_type: 'AI_BOT',
+          sender_id: null,
+          content: '[Hình ảnh sản phẩm]',
+          attachments: [{ type: 'image', url: normalizedUrl, external_message_id: fbMid }],
+          external_message_id: fbMid,
+          is_read: true
+        });
+      }
     }
   } catch (imgErr) {
     console.warn('[Facebook Send Image Warn]', imgErr.message);
@@ -312,7 +319,7 @@ export const processBotEngineForMessage = async ({
 
           // 2. Gửi danh sách hình ảnh đính kèm (hỗ trợ nhiều ảnh/album)
           for (const imgUrl of allImages) {
-            await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation._id);
+            await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation._id, botMessage?._id);
           }
         }
       }
@@ -397,7 +404,7 @@ export const processBotEngineForMessage = async ({
       if (Array.isArray(aiResult.image_urls) && aiResult.image_urls.length > 0) {
         const imagesToSend = aiResult.image_urls.slice(0, 3);
         for (const imgUrl of imagesToSend) {
-          await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation_id);
+          await sendFacebookImage(imgUrl, targetPsid, pageToken, conversation_id, aiResult.message_id);
         }
       }
     }
