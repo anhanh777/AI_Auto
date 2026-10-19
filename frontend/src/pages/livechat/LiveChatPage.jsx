@@ -367,12 +367,15 @@ const LiveChatPage = () => {
         try {
           setConfirmDialog((prev) => ({ ...prev, loading: true }));
           const res = await channelService.deleteChannel(channelId);
-          if (res.success) {
+          const isSuccess = res?.success || Boolean(res?._id || res?.data?._id);
+          if (isSuccess) {
             showToast('success', 'Đã xóa kênh Fanpage thành công');
             if (activeChannel?._id === channelId) {
               handleBackToChannelList();
             }
-            fetchChannels();
+            await fetchChannels();
+          } else {
+            throw new Error(res?.message || 'Không thể xóa kênh');
           }
         } catch (error) {
           showToast('error', error.message || 'Lỗi khi xóa kênh');
@@ -1040,8 +1043,19 @@ const LiveChatPage = () => {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center space-x-3 min-w-0">
-                      <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-[#1877F2] flex items-center justify-center shrink-0 shadow-sm border border-blue-200 dark:border-blue-800">
-                        <Facebook size={26} />
+                      <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950 text-[#1877F2] flex items-center justify-center shrink-0 shadow-sm border border-blue-200 dark:border-blue-800 overflow-hidden relative">
+                        {resolveChannelAvatar(ch, activeBusiness) ? (
+                          <img
+                            src={resolveChannelAvatar(ch, activeBusiness)}
+                            alt={ch.page_name}
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.style.display = 'none';
+                            }}
+                            className="w-full h-full object-cover relative z-10"
+                          />
+                        ) : null}
+                        <Facebook size={26} className="absolute inset-0 m-auto text-[#1877F2] z-0" />
                       </div>
 
                       <div className="min-w-0">
@@ -1142,6 +1156,19 @@ const LiveChatPage = () => {
           onChannelCreated={async () => {
             await fetchChannels();
           }}
+        />
+
+        {/* Modal xác nhận xóa Fanpage thay thế window.confirm */}
+        <ConfirmModal
+          isOpen={confirmDialog.isOpen}
+          onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmDialog.onConfirm}
+          title={confirmDialog.title}
+          message={confirmDialog.message}
+          confirmText={confirmDialog.confirmText}
+          cancelText={confirmDialog.cancelText}
+          type={confirmDialog.type}
+          loading={confirmDialog.loading}
         />
       </div>
     );
