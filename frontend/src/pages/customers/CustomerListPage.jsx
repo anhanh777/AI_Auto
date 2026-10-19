@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { customerService } from '../../services/customer.service.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import { socket } from '../../utils/socket.js';
+import { resolveMediaUrl, getInitials } from '../../utils/media.js';
 import {
   Users,
   Search,
@@ -793,16 +794,16 @@ const CustomerListPage = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50/80 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 border-b border-slate-200/80 dark:border-slate-700/80 uppercase tracking-wider text-[11px]">
-                  <th className="py-3.5 px-4 font-bold min-w-[200px]">Khách hàng</th>
-                  <th className="py-3.5 px-4 font-bold">Kênh tiếp cận</th>
-                  <th className="py-3.5 px-4 font-bold">Liên hệ</th>
-                  <th className="py-3.5 px-4 font-bold">Địa chỉ giao hàng</th>
-                  <th className="py-3.5 px-4 font-bold">Thẻ phân loại</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Đơn hàng</th>
-                  <th className="py-3.5 px-4 font-bold text-right">Tổng chi tiêu</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Ngày đăng ký</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Tương tác cuối</th>
-                  <th className="py-3.5 px-4 font-bold text-center">Thao tác</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[190px] whitespace-nowrap">Khách hàng</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[130px] whitespace-nowrap">Kênh tiếp cận</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[140px] whitespace-nowrap">Liên hệ</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[160px] max-w-[220px] whitespace-nowrap">Địa chỉ giao hàng</th>
+                  <th className="py-3.5 px-4 font-bold min-w-[170px] whitespace-nowrap">Thẻ phân loại</th>
+                  <th className="py-3.5 px-4 font-bold text-center w-20 whitespace-nowrap">Đơn hàng</th>
+                  <th className="py-3.5 px-4 font-bold text-right min-w-[110px] whitespace-nowrap">Tổng chi tiêu</th>
+                  <th className="py-3.5 px-4 font-bold text-center min-w-[125px] whitespace-nowrap">Ngày đăng ký</th>
+                  <th className="py-3.5 px-4 font-bold text-center min-w-[135px] whitespace-nowrap">Tương tác cuối</th>
+                  <th className="py-3.5 px-4 font-bold text-center w-28 whitespace-nowrap">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-700/60">
@@ -816,18 +817,24 @@ const CustomerListPage = () => {
                       onClick={() => handleOpenDetail(c, 'info')}
                     >
                       {/* Customer Info */}
-                      <td className="py-3.5 px-4 min-w-[200px]">
+                      <td className="py-3.5 px-4 min-w-[190px]">
                         <div className="flex items-center space-x-3">
-                          <div className="relative w-11 h-11 shrink-0 aspect-square">
-                            <img
-                              src={c.avatar || c.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                              alt={c.full_name}
-                              onError={(e) => {
-                                e.currentTarget.onerror = null;
-                                e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
-                              }}
-                              className="w-11 h-11 shrink-0 aspect-square rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
-                            />
+                          <div className="relative w-10 h-10 shrink-0 aspect-square">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white font-bold text-xs flex items-center justify-center shrink-0 uppercase border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
+                              {(c.avatar || c.profile_pic_url) ? (
+                                <img
+                                  src={resolveMediaUrl(c.avatar || c.profile_pic_url)}
+                                  alt={c.full_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span>{getInitials(c.full_name)}</span>
+                              )}
+                            </div>
                             {isVip && (
                               <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-500 text-white flex items-center justify-center text-[9px] shadow">
                                 <Crown size={9} />
@@ -836,7 +843,7 @@ const CustomerListPage = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center space-x-1.5">
-                              <p className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-[#f05a28] transition truncate" title={c.full_name}>
+                              <p className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-[#f05a28] transition truncate max-w-[140px]" title={c.full_name}>
                                 {c.full_name}
                               </p>
                             </div>
@@ -916,26 +923,37 @@ const CustomerListPage = () => {
 
                       {/* Tags */}
                       <td className="py-3.5 px-4">
-                        <div className="flex flex-wrap items-center gap-1 max-w-[200px]">
+                        <div className="flex items-center gap-1.5 flex-wrap max-w-[210px]">
                           {c.tags && c.tags.length > 0 ? (
-                            c.tags.map((t, idx) => {
-                              const isTagVip = t.toUpperCase().includes('VIP');
-                              const isTagDanger = t.toUpperCase().includes('BOM');
-                              return (
+                            <>
+                              {c.tags.slice(0, 2).map((t, idx) => {
+                                const isTagVip = t.toUpperCase().includes('VIP');
+                                const isTagDanger = t.toUpperCase().includes('BOM');
+                                return (
+                                  <span
+                                    key={idx}
+                                    title={t}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap max-w-[110px] truncate ${
+                                      isTagVip
+                                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'
+                                        : isTagDanger
+                                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400'
+                                        : 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300'
+                                    }`}
+                                  >
+                                    {t}
+                                  </span>
+                                );
+                              })}
+                              {c.tags.length > 2 && (
                                 <span
-                                  key={idx}
-                                  className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                                    isTagVip
-                                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'
-                                      : isTagDanger
-                                      ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-400'
-                                      : 'bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300'
-                                  }`}
+                                  title={c.tags.slice(2).join(', ')}
+                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-help"
                                 >
-                                  {t}
+                                  +{c.tags.length - 2}
                                 </span>
-                              );
-                            })
+                              )}
+                            </>
                           ) : (
                             <span className="text-slate-400 text-[11px]">—</span>
                           )}
@@ -1071,7 +1089,7 @@ const CustomerListPage = () => {
             <div className="flex items-center justify-between pb-5 border-b border-slate-100 dark:border-slate-700">
               <div className="flex items-center space-x-4">
                 <img
-                  src={detailCustomer.avatar || detailCustomer.profile_pic_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
+                  src={resolveMediaUrl(detailCustomer.avatar || detailCustomer.profile_pic_url) || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
                   alt={detailCustomer.full_name}
                   onError={(e) => {
                     e.currentTarget.onerror = null;

@@ -9,7 +9,7 @@ import { uploadService } from '../../services/upload.service.js';
 import { generateSku, generateSlug } from '../../utils/slug.utils.js';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
 import MediaPickerModal from '../../components/modals/MediaPickerModal.jsx';
-import { resolveMediaUrl } from '../../utils/media.js';
+import { resolveMediaUrl, getInitials } from '../../utils/media.js';
 import {
   Package,
   Plus,
@@ -909,15 +909,15 @@ const ProductListPage = () => {
                           className="rounded border-slate-300 text-[#f05a28] focus:ring-[#f05a28]"
                         />
                       </th>
-                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[130px]">TRẠNG THÁI</th>
-                      <th className="py-3 px-3 whitespace-nowrap min-w-[70px]">SKU</th>
-                      <th className="py-3 px-4 min-w-[280px]">SẢN PHẨM</th>
-                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[90px]">BIẾN THỂ</th>
-                      <th className="py-3 px-4 text-right whitespace-nowrap min-w-[120px]">GIÁ</th>
-                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[125px]">TỒN KHO KHẢ DỤNG</th>
-                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[125px]">TỒN KHO THỰC TẾ</th>
-                      <th className="py-3 px-4 whitespace-nowrap min-w-[140px]">NGƯỜI TẠO</th>
-                      <th className="py-3 px-3 text-right w-20 whitespace-nowrap"></th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[110px]">TRẠNG THÁI</th>
+                      <th className="py-3 px-3 whitespace-nowrap min-w-[65px]">SKU</th>
+                      <th className="py-3 px-4 min-w-[220px] max-w-xs">SẢN PHẨM</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[80px]">BIẾN THỂ</th>
+                      <th className="py-3 px-4 text-right whitespace-nowrap min-w-[100px]">GIÁ</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[110px]">TỒN KHẢ DỤNG</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap min-w-[110px]">TỒN THỰC TẾ</th>
+                      <th className="py-3 px-4 whitespace-nowrap min-w-[130px]">NGƯỜI TẠO</th>
+                      <th className="py-3 px-3 text-right w-16 whitespace-nowrap"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -938,8 +938,8 @@ const ProductListPage = () => {
                       products.map((prod) => {
                         const hasSale = prod.sale_price !== null && prod.sale_price !== undefined && prod.sale_price < prod.base_price;
                         const mainImage = resolveMediaUrl(prod.image_urls?.[0]) || 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
-                        const creatorName = prod.created_by?.full_name || 'Anh Trần';
-                        const creatorAvatar = prod.created_by?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=60';
+                        const creatorName = prod.created_by?.full_name || prod.created_by?.username || 'Quản trị viên';
+                        const creatorAvatar = prod.created_by?.avatar || prod.created_by?.avatar_url || '';
                         const isChecked = selectedProductIds.includes(prod._id);
 
                         return (
@@ -996,6 +996,10 @@ const ProductListPage = () => {
                                 <img
                                   src={mainImage}
                                   alt={prod.product_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
+                                  }}
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 shadow-2xs"
                                 />
                                 <div className="truncate min-w-0">
@@ -1064,17 +1068,27 @@ const ProductListPage = () => {
 
                             {/* NGƯỜI TẠO: Avatar tròn + Tên + Ngày giờ */}
                             <td className="py-3 px-4 whitespace-nowrap">
-                              <div className="flex items-center space-x-2">
-                                <img
-                                  src={creatorAvatar}
-                                  alt={creatorName}
-                                  className="w-7 h-7 rounded-full object-cover border shrink-0"
-                                />
-                                <div>
-                                  <p className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-7 h-7 rounded-full bg-linear-to-tr from-[#f05a28] to-amber-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0 uppercase border border-slate-200 dark:border-slate-700 shadow-2xs overflow-hidden">
+                                  {creatorAvatar ? (
+                                    <img
+                                      src={resolveMediaUrl(creatorAvatar)}
+                                      alt={creatorName}
+                                      onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span>{getInitials(creatorName)}</span>
+                                  )}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={creatorName}>
                                     {creatorName}
                                   </p>
-                                  <p className="text-[10px] text-slate-400">
+                                  <p className="text-[10px] text-slate-400 font-mono">
                                     {formatDateTime(prod.created_at || new Date())}
                                   </p>
                                 </div>
@@ -1199,6 +1213,10 @@ const ProductListPage = () => {
                                 <img
                                   src={resolveMediaUrl(cat.image_url)}
                                   alt={cat.category_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
+                                  }}
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
                                 />
                               ) : (
@@ -1396,6 +1414,10 @@ const ProductListPage = () => {
                                   <img
                                     src={prodImg}
                                     alt={prod?.product_name || 'Product'}
+                                    onError={(e) => {
+                                      e.currentTarget.onerror = null;
+                                      e.currentTarget.src = 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9?w=100';
+                                    }}
                                     className="w-10 h-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                                   />
                                 ) : (
@@ -1447,12 +1469,22 @@ const ProductListPage = () => {
 
                             {/* Người thực hiện */}
                             <td className="py-3 px-3 whitespace-nowrap">
-                              <div className="flex items-center space-x-2">
-                                <img
-                                  src={actor?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=100&h=100&fit=crop&crop=faces'}
-                                  alt={actorName}
-                                  className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                                />
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-7 h-7 rounded-full bg-linear-to-tr from-sky-500 to-indigo-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0 uppercase border border-slate-200 dark:border-slate-700 shadow-2xs overflow-hidden">
+                                  {actor?.avatar ? (
+                                    <img
+                                      src={resolveMediaUrl(actor.avatar)}
+                                      alt={actorName}
+                                      onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <span>{getInitials(actorName)}</span>
+                                  )}
+                                </div>
                                 <div>
                                   <p className="font-bold text-slate-800 dark:text-slate-200">
                                     {actorName}

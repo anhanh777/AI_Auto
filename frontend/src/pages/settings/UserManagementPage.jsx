@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import { useBusiness } from '../../contexts/BusinessContext.jsx';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import ConfirmModal from '../../components/common/ConfirmModal.jsx';
+import { resolveMediaUrl, getInitials } from '../../utils/media.js';
 import {
   Users,
   ShieldCheck,
@@ -743,14 +744,21 @@ const UserManagementPage = () => {
                       <td className="py-4 pl-6 px-4">
                         <div className="flex items-center space-x-3">
                           <div className="relative shrink-0">
-                            <img
-                              src={
-                                user.avatar ||
-                                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
-                              }
-                              alt={user.full_name}
-                              className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700"
-                            />
+                            <div className="w-10 h-10 rounded-full bg-linear-to-tr from-[#f05a28] to-amber-500 text-white font-bold text-xs flex items-center justify-center shrink-0 uppercase border border-slate-200 dark:border-slate-700 shadow-2xs overflow-hidden">
+                              {user.avatar ? (
+                                <img
+                                  src={resolveMediaUrl(user.avatar)}
+                                  alt={user.full_name}
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span>{getInitials(user.full_name || user.username)}</span>
+                              )}
+                            </div>
                             {user.is_active && (
                               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-800 absolute bottom-0 right-0"></span>
                             )}
@@ -977,11 +985,21 @@ const UserManagementPage = () => {
                       >
                         <td className="py-3.5 pl-6 pr-4">
                           <div className="flex items-center space-x-3">
-                            <img
-                              src={requester?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'}
-                              alt="Avatar"
-                              className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0 shadow-sm"
-                            />
+                            <div className="w-9 h-9 rounded-full bg-linear-to-tr from-sky-500 to-indigo-500 text-white font-bold text-xs flex items-center justify-center shrink-0 uppercase border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
+                              {requester?.avatar ? (
+                                <img
+                                  src={resolveMediaUrl(requester.avatar)}
+                                  alt="Avatar"
+                                  onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <span>{getInitials(requester?.full_name || requester?.username)}</span>
+                              )}
+                            </div>
                             <div>
                               <p className="font-bold text-slate-800 dark:text-slate-200">
                                 {requester?.full_name || 'Chưa đặt tên'}
@@ -1051,11 +1069,14 @@ const UserManagementPage = () => {
                 >
                   <img
                     src={
-                      formData.avatar ||
-                      selectedUser?.avatar ||
+                      resolveMediaUrl(formData.avatar || selectedUser?.avatar) ||
                       'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
                     }
                     alt="Avatar"
+                    onError={(e) => {
+                      e.currentTarget.onerror = null;
+                      e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100';
+                    }}
                     className="w-12 h-12 rounded-full object-cover border-2 border-slate-200 dark:border-slate-700 group-hover:opacity-75 transition shadow-sm"
                   />
                   <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
