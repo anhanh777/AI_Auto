@@ -316,7 +316,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
   const savedAddress = customer?.shipping_address || customer?.address || '';
   const customerTags = Array.isArray(customer?.tags) ? customer.tags.join(', ') : '';
 
-  // Điều kiện tìm kiếm đơn hàng: Ưu tiên lọc đơn hàng của đúng KÊNH hiện tại để tránh lẫn lộn giữa các shop/Fanpage
+  // Điều kiện tìm kiếm đơn hàng: Ưu tiên lọc đơn hàng của đúng KÊNH hiện tại hoặc theo SĐT khách hàng
   const orderQueryConditions = [];
   if (conversation_id) orderQueryConditions.push({ conversation_id });
   if (customer_id) {
@@ -325,6 +325,10 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     } else {
       orderQueryConditions.push({ customer_id });
     }
+  }
+  if (savedPhone) {
+    orderQueryConditions.push({ shipping_phone: savedPhone });
+    orderQueryConditions.push({ customer_phone: savedPhone });
   }
 
   // A. Cấu hình AI của Business (ưu tiên channel_id, nếu không có fallback về business default)
@@ -1616,9 +1620,12 @@ export const processGeminiAIForMessage = async ({
       aiResult.order_action?.type === 'UPDATE_ORDER' ||
       aiResult.order_action?.type === 'CANCEL_ORDER';
 
-    if (!isActionModifyingOrder && aiResult.is_order_intent && phoneCheck.isValid && addressCheck.quality === 'VALID') {
+    // Chấp nhận cả địa chỉ chi tiết (VALID) và khu vực tỉnh/thành phố (VAGUE_AREA) để CSKH gọi xác nhận số nhà, không làm rơi đơn
+    const isAddressAcceptable = addressCheck.quality === 'VALID' || addressCheck.quality === 'VAGUE_AREA';
+
+    if (!isActionModifyingOrder && aiResult.is_order_intent && phoneCheck.isValid && isAddressAcceptable) {
       try {
-        const orderInfo = aiResult.order_data || conversation.order_draft;
+        const orderInfo = aiResult.order_data || conversation.order_draft || {};
         const itemsToCreate = [];
 
         // Xác định tên chuẩn xác của khách hàng
@@ -1627,7 +1634,7 @@ export const processGeminiAIForMessage = async ({
           finalCustomerName = customerFbName || customerRecord?.full_name || 'Khách hàng';
         }
 
-        // Tìm kiếm chính xác ID và giá sản phẩm trong DB
+        // Tìm kiếm chính xác ID và giá sản phẩm trong DB của Business này
         if (Array.isArray(orderInfo.items) && orderInfo.items.length > 0) {
           for (const it of orderInfo.items) {
             let foundProduct = null;
@@ -1659,39 +1666,61 @@ export const processGeminiAIForMessage = async ({
                 unit_price: unitPrice,
                 price: unitPrice
               });
+            } else if (it.product_name) {
+              // Nếu tên sản phẩm không khớp chính xác kho hàng (hoặc giá tùy chỉnh), mượn product_id của 1 sản phẩm đang bán
+              const anyShopProd = await Product.findOne({ business_id, status: 'ACTIVE' });
+              const customPrice = Number(it.price || it.unit_price) || Number(orderInfo.price) || (anyShopProd ? (anyShopProd.sale_price || anyShopProd.base_price) : 0);
+              itemsToCreate.push({
+                product_id: anyShopProd?._id || null,
+                variant_sku: it.sku || anyShopProd?.sku || 'CUSTOM',
+                product_name: it.product_name,
+                size: it.size || conversation.order_draft?.size || '',
+                color: it.color || conversation.order_draft?.color || '',
+                quantity: Number(it.quantity) || Number(conversation.order_draft?.quantity) || 1,
+                unit_price: customPrice,
+                price: customPrice
+              });
             }
           }
         }
 
-        // Nếu itemsToCreate vẫn rỗng nhưng order_draft có thông tin
-        if (itemsToCreate.length === 0 && (conversation.order_draft?.product_id || conversation.order_draft?.product_name)) {
+        // Nếu itemsToCreate vẫn rỗng nhưng order_draft hoặc orderInfo có thông tin
+        if (itemsToCreate.length === 0) {
           let foundProduct = null;
-          if (conversation.order_draft.product_id) {
+          if (conversation.order_draft?.product_id) {
             foundProduct = await Product.findById(conversation.order_draft.product_id);
           }
-          if (!foundProduct && conversation.order_draft.product_name) {
+          if (!foundProduct && (conversation.order_draft?.product_name || orderInfo.product_name)) {
+            const searchName = conversation.order_draft?.product_name || orderInfo.product_name;
             foundProduct = await Product.findOne({
               business_id,
-              product_name: new RegExp(conversation.order_draft.product_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+              product_name: new RegExp(searchName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
             });
           }
-          if (foundProduct) {
-            const unitPrice = foundProduct.sale_price || foundProduct.base_price || 0;
-            itemsToCreate.push({
-              product_id: foundProduct._id,
-              variant_sku: foundProduct.sku,
-              product_name: foundProduct.product_name,
-              size: conversation.order_draft.size || '',
-              color: conversation.order_draft.color || '',
-              quantity: Number(conversation.order_draft.quantity) || 1,
-              unit_price: unitPrice,
-              price: unitPrice
-            });
-          }
+          const anyShopProd = await Product.findOne({ business_id, status: 'ACTIVE' });
+          const targetProd = foundProduct || anyShopProd;
+          const targetName = conversation.order_draft?.product_name || orderInfo.product_name || targetProd?.product_name || 'Sản phẩm đặt mua';
+          const targetSku = conversation.order_draft?.sku || orderInfo.sku || targetProd?.sku || 'CUSTOM';
+          const targetPrice = Number(conversation.order_draft?.price || orderInfo.price) || (targetProd ? (targetProd.sale_price || targetProd.base_price) : 0);
+
+          itemsToCreate.push({
+            product_id: targetProd?._id || null,
+            variant_sku: targetSku,
+            product_name: targetName,
+            size: conversation.order_draft?.size || orderInfo.size || '',
+            color: conversation.order_draft?.color || orderInfo.color || '',
+            quantity: Number(conversation.order_draft?.quantity || orderInfo.quantity) || 1,
+            unit_price: targetPrice,
+            price: targetPrice
+          });
         }
 
         // Tạo đơn hàng ở trạng thái PENDING
         if (itemsToCreate.length > 0 || addressCheck.cleanAddress) {
+          const noteText = addressCheck.quality === 'VAGUE_AREA'
+            ? `Đơn hàng tự động qua AI: "${addressCheck.cleanAddress}" (Khách chỉ cung cấp khu vực tỉnh/TP, CSKH cần gọi xác nhận số nhà chi tiết)`
+            : `Đơn hàng tự động trích xuất bởi Trợ lý AI Gemini: "${addressCheck.customerNote || orderInfo.customer_note || messageText}"`;
+
           createdOrder = await createOrderService(
             {
               business_id,
@@ -1707,12 +1736,12 @@ export const processGeminiAIForMessage = async ({
               order_status: 'PENDING',
               status: 'PENDING',
               order_source: 'FACEBOOK_AI',
-              note: `Đơn hàng tự động trích xuất bởi Trợ lý AI Gemini: "${addressCheck.customerNote || orderInfo.customer_note || messageText}"`
+              note: noteText
             },
             null
           );
 
-          console.log(`[Gemini AI] 🛒 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG THÀNH CÔNG: Mã #${createdOrder.order_code} (Khách: ${finalCustomerName})`);
+          console.log(`[Gemini AI] 🛒 ĐÃ TỰ ĐỘNG TẠO ĐƠN HÀNG THÀNH CÔNG: Mã #${createdOrder.order_code} (Shop: ${conversation.channel_id?.page_name || 'Soulmade'} - Khách: ${finalCustomerName})`);
           if (!finalReply.includes(createdOrder.order_code)) {
             finalReply += `\n\n(Dạ em đã tạo đơn hàng thành công với mã #${createdOrder.order_code}. Shop sẽ sớm liên hệ xác nhận và giao hàng ạ!)`;
           }
@@ -1752,6 +1781,20 @@ export const processGeminiAIForMessage = async ({
         }
       } catch (orderErr) {
         console.error('[Gemini AI Order Creation Error]', orderErr.message);
+      }
+    }
+
+    // ĐỒNG BỘ TUYỆT ĐỐI GIỮA NỘI DUNG CHAT VÀ CSDL:
+    // Nếu đơn hàng KHÔNG tạo được, nhưng AI lỡ viết văn bản hứa hẹn "đã tạo đơn", "đóng gói gửi hàng",
+    // thì BẮT BUỘC ghi đè văn bản để hỏi nốt thông tin còn thiếu, tránh việc khách hiểu lầm là đã có đơn trên hệ thống!
+    if (!createdOrder) {
+      const isClaimingOrder = /(?:đóng\s*gói\s*và\s*gửi\s*hàng|gửi\s*hàng\s*đi\s*sớm\s*nhất|lên\s*đơn\s*hàng\s*thành\s*công|đã\s*tạo\s*đơn\s*hàng|đã\s*lên\s*đơn|đã\s*chốt\s*đơn)/i.test(finalReply);
+      if (isClaimingOrder) {
+        if (!phoneCheck.isValid) {
+          finalReply = `Dạ shop xin chào ${customerFbName || customerRecord?.full_name || 'bạn'} ạ! Shop đã ghi nhận thông tin đặt hàng, bạn cho shop xin Số điện thoại nhận hàng chuẩn 10 số để bên em hoàn tất lên đơn cho mình nhé! ❤️`;
+        } else if (!isAddressAcceptable) {
+          finalReply = `Dạ shop đã ghi nhận SĐT ${phoneCheck.phone} của mình rồi ạ! Bạn cho shop xin thêm Địa chỉ nhận hàng (Tỉnh/Thành phố, Quận/Huyện, Số nhà, Tên đường) để shop lên đơn và gửi hàng cho mình nha! ❤️`;
+        }
       }
     }
 
