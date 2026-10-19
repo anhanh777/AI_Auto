@@ -363,16 +363,16 @@ export const createOrderService = async (data, userId) => {
     }
   }
 
-  // Cập nhật thông tin khách hàng nếu khách chưa có SĐT hoặc Địa chỉ
+  // Cập nhật thông tin khách hàng với SĐT hoặc Địa chỉ mới nhất
   const custUpdates = {
     $inc: { total_orders_count: 1 },
     last_interaction_at: new Date()
   };
-  if (!customer.phone && shippingPhone) {
+  if (shippingPhone) {
     custUpdates.phone = shippingPhone;
     custUpdates.phone_number = shippingPhone;
   }
-  if (!customer.shipping_address && shippingAddr) {
+  if (shippingAddr) {
     custUpdates.shipping_address = shippingAddr;
     custUpdates.address = shippingAddr;
   }
