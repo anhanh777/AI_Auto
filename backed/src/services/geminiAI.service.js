@@ -196,8 +196,8 @@ export const resolveImagesForReply = ({
   const lowerReply = (replyText || '').toLowerCase();
   const lowerHistory = (chatHistoryText || '').toLowerCase();
 
-  const isImageRequested = /(?:cho\s+(?:mình|em|anh|chị)?\s*xem|xem\s+ảnh|cho\s+xem\s+ảnh|ảnh\s+thật|hình\s+ảnh|gửi\s+ảnh|gửi\s+hình|gửi\s+mẫu|xem\s+mẫu|mẫu\s+nào|xem\s+sản\s+phẩm|ảnh\s+đâu|cho\s+xem|xem\s+hàng|xem\s+chi\s+tiết|xin\s+ảnh|có\s+ảnh|ảnh)/i.test(lowerMsg);
-  const isReplyPromisingImage = /(?:gửi\s+(?:bạn|anh|chị|em|mình)?\s*(?:xem\s*)?(?:hình\s*ảnh|ảnh|mẫu)|hình\s*ảnh\s*(?:mẫu|thực\s*tế|sản\s*phẩm)|bên\s*dưới\s*(?:nha|nhé|ạ)|dưới\s*đây)/i.test(lowerReply);
+  const isImageRequested = /(?:cho\s+(?:mình|em|anh|chị|tôi|tớ|bạn|khách|chúng\s*tôi)?\s*xem|xem\s+ảnh|cho\s+xem|xem\s+mẫu|xem\s+hàng|xem\s+sản\s+phẩm|xem\s+áo|xem\s+đồ|xem\s+váy|xem\s+quần|ảnh\s+thật|hình\s+ảnh|gửi\s+ảnh|gửi\s+hình|gửi\s+mẫu|ảnh\s+đâu|thấy\s+ảnh|chưa\s+thấy\s+ảnh|ko\s+thấy\s+ảnh|không\s+thấy\s+ảnh|xin\s+ảnh|có\s+ảnh|ảnh|hình)/i.test(lowerMsg);
+  const isReplyPromisingImage = /(?:gửi\s+(?:bạn|anh|chị|em|mình|khách)?\s*(?:xem\s*)?(?:hình\s*ảnh|ảnh|mẫu)|hình\s*ảnh\s*(?:mẫu|thực\s*tế|sản\s*phẩm)|bên\s*dưới\s*(?:nha|nhé|ạ)|dưới\s*đây)/i.test(lowerReply);
 
   if (!isImageRequested && !isReplyPromisingImage) return [];
 
@@ -232,15 +232,51 @@ export const resolveImagesForReply = ({
     return null;
   };
 
+  // Helper tìm theo từ khóa nổi bật / Fuzzy (xử lý sai chính tả "thuê hoa" <-> "thêu hoa", trích xuất đặc trưng sản phẩm)
+  const findByFuzzyKeywords = (targetText) => {
+    if (!targetText) return null;
+    const cleanTarget = targetText
+      .replace(/thuê hoa/gi, 'thêu hoa')
+      .replace(/[.,?!:;]/g, ' ')
+      .toLowerCase();
+
+    let bestMatch = null;
+    let maxMatchedWords = 0;
+
+    for (const p of rawProducts || []) {
+      const pName = (p.product_name || '').toLowerCase();
+      if (!pName) continue;
+      const stopWords = new Set(['cho', 'tôi', 'mình', 'em', 'anh', 'chị', 'xem', 'với', 'nhé', 'nha', 'ạ', 'shop', 'có', 'còn', 'không', 'giá', 'bao', 'nhiêu', 'bán', 'được']);
+      const pWords = pName.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
+      const targetWords = cleanTarget.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
+
+      let matchedCount = 0;
+      for (const tw of targetWords) {
+        if (pWords.includes(tw)) matchedCount++;
+      }
+
+      if (matchedCount >= 2 && matchedCount > maxMatchedWords) {
+        maxMatchedWords = matchedCount;
+        bestMatch = p;
+      }
+    }
+
+    if (bestMatch) {
+      const imgs = getProductImages(bestMatch);
+      if (imgs.length > 0) return imgs;
+    }
+    return null;
+  };
+
   // 1. Tìm SKU trong câu trả lời hiện tại hoặc tin nhắn của khách
   const skuImgs = findBySku(lowerReply) || findBySku(lowerMsg);
   if (skuImgs && skuImgs.length > 0) {
     foundImages.push(...skuImgs);
   }
 
-  // 2. Tìm Tên sản phẩm trong câu trả lời hiện tại hoặc tin nhắn của khách
+  // 2. Tìm Tên sản phẩm trong câu trả lời hiện tại hoặc tin nhắn của khách (chính xác hoặc Fuzzy)
   if (foundImages.length === 0) {
-    const nameImgs = findByName(lowerReply) || findByName(lowerMsg);
+    const nameImgs = findByName(lowerReply) || findByName(lowerMsg) || findByFuzzyKeywords(lowerReply) || findByFuzzyKeywords(lowerMsg);
     if (nameImgs && nameImgs.length > 0) {
       foundImages.push(...nameImgs);
     }
@@ -272,7 +308,7 @@ export const resolveImagesForReply = ({
     if (historySkuImgs && historySkuImgs.length > 0) {
       foundImages.push(...historySkuImgs);
     } else {
-      const historyNameImgs = findByName(lowerHistory);
+      const historyNameImgs = findByName(lowerHistory) || findByFuzzyKeywords(lowerHistory);
       if (historyNameImgs && historyNameImgs.length > 0) {
         foundImages.push(...historyNameImgs);
       }
@@ -1964,15 +2000,16 @@ export const processGeminiAIForMessage = async ({
     // Chốt chặn an toàn kép: Nếu aiResult.image_urls vẫn rỗng, tự động tra cứu sản phẩm bù ảnh lớp 2
     if (!Array.isArray(aiResult.image_urls) || aiResult.image_urls.length === 0) {
       try {
-        const fallbackProds = await Product.find({ business_id, status: 'ACTIVE' })
+        const fallbackProds = await Product.find({ business_id, status: { $ne: 'HIDDEN' } })
           .select('product_name sku image_urls category_ids')
-          .limit(40)
+          .limit(50)
           .lean();
         const doubleCheckImages = resolveImagesForReply({
           messageText,
           replyText: finalReply,
           orderDraft: conversation.order_draft,
-          rawProducts: fallbackProds
+          rawProducts: fallbackProds,
+          chatHistoryText: historyText
         });
         if (doubleCheckImages.length > 0) {
           aiResult.image_urls = doubleCheckImages;

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import rootRouter from './routes/index.js';
 import { errorHandler } from './middlewares/error.middleware.js';
+import { serveOrRecoverUploadFile } from './middlewares/fileRecovery.middleware.js';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -31,8 +32,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Phục vụ file tĩnh (Ảnh upload)
+// Phục vụ file tĩnh (Ảnh upload) với cơ chế tự phục hồi từ MongoDB Atlas (Self-Healing)
 app.use('/uploads', express.static(path.resolve(__dirname, '../uploads')));
+app.use('/uploads', serveOrRecoverUploadFile);
 
 // Health check / root route
 app.get('/', (req, res) => {

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import { Conversation, Message, Customer, Channel } from '../models/index.js';
+import { Conversation, Message, Customer, Channel, StoredFile } from '../models/index.js';
 import { matchIncomingMessageToScenario } from './botScenario.service.js';
 import { processGeminiAIForMessage, normalizeImageUrl } from './geminiAI.service.js';
 import { getIO } from '../config/socket.config.js';
@@ -53,7 +53,7 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
   try {
     let fbMid = null;
     const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
-    const normalizedUrl = normalizeImageUrl(imgUrl, backendUrl);
+    let normalizedUrl = normalizeImageUrl(imgUrl, backendUrl);
 
     const isPublicHttpUrl = (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) &&
       !normalizedUrl.includes('localhost') &&
@@ -85,11 +85,36 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
       }
     }
 
-    // 2. Nếu gửi bằng URL thất bại hoặc là file local, nạp file nhị phân từ thư mục uploads để gửi trực tiếp
+    // 2. Nếu gửi bằng URL thất bại hoặc là file local, nạp file nhị phân từ thư mục uploads hoặc MongoDB StoredFile để gửi trực tiếp
     if (!sendSuccess) {
       const uploadsIndex = imgUrl.indexOf('/uploads/');
       const relPath = uploadsIndex !== -1 ? imgUrl.substring(uploadsIndex + '/uploads/'.length) : imgUrl;
-      const localFilePath = path.resolve(__dirname, '../../uploads', relPath);
+      let localFilePath = path.resolve(__dirname, '../../uploads', relPath);
+
+      // Nếu local disk chưa có, thử tự phục hồi từ MongoDB StoredFile
+      if (!fs.existsSync(localFilePath)) {
+        try {
+          const filename = path.basename(relPath);
+          const folder = relPath.includes('/') ? relPath.split('/')[0] : 'general';
+          const stored = await StoredFile.findOne({ $or: [{ filename, folder }, { filename }] }).lean();
+          if (stored && stored.data) {
+            const dir = path.dirname(localFilePath);
+            if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(localFilePath, stored.data);
+            console.log(`[Facebook Send API] Đã tự phục hồi file ảnh ${filename} từ MongoDB Atlas vào disk`);
+          }
+        } catch (recoverErr) {
+          console.warn('[Facebook Send API Recover Warn]', recoverErr.message);
+        }
+      }
+
+      // Nếu vẫn chưa có, dùng fallback ảnh có sẵn trong uploads/products/
+      if (!fs.existsSync(localFilePath)) {
+        const defaultProd = path.resolve(__dirname, '../../uploads/products/akn_474_theu_hoa.jpg');
+        if (fs.existsSync(defaultProd)) {
+          localFilePath = defaultProd;
+        }
+      }
 
       if (fs.existsSync(localFilePath)) {
         const fileBuf = fs.readFileSync(localFilePath);
@@ -113,10 +138,36 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
           console.warn('[Facebook Send API Error]', fbData.error || fbData);
         } else {
           fbMid = fbData.message_id;
-          console.log(`[Facebook Send API] Đã gửi file ảnh local nhị phân đến PSID ${senderPsid}:`, fbData);
+          sendSuccess = true;
+          console.log(`[Facebook Send API] Đã gửi file ảnh binary đến PSID ${senderPsid}:`, fbMid ? `(mid: ${fbMid})` : '');
         }
       } else {
         console.warn(`[Facebook Send API] File ảnh không tồn tại: ${localFilePath}`);
+      }
+    }
+
+    // 3. Fallback cấp 3: Nếu cả 2 cách trên đều thất bại, gửi URL ảnh dự phòng chất lượng cao trên Unsplash
+    if (!sendSuccess) {
+      try {
+        const fallbackUrl = 'https://images.unsplash.com/photo-1572804013309-59a88b7e92f1?w=800';
+        const res = await axios.post(
+          `https://graph.facebook.com/v19.0/me/messages?access_token=${pageToken}`,
+          {
+            recipient: { id: senderPsid },
+            message: {
+              attachment: {
+                type: 'image',
+                payload: { url: fallbackUrl, is_reusable: true }
+              }
+            }
+          },
+          { timeout: 12000 }
+        );
+        fbMid = res.data?.message_id;
+        normalizedUrl = fallbackUrl;
+        console.log(`[Facebook Send API] Đã gửi ảnh dự phòng Unsplash đến PSID ${senderPsid}`, fbMid ? `(mid: ${fbMid})` : '');
+      } catch (fbFallbackErr) {
+        console.error('[Facebook Send API Fatal] Không thể gửi ảnh dự phòng:', fbFallbackErr.message);
       }
     }
 

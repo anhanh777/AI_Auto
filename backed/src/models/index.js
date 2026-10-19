@@ -17,3 +17,4 @@ export { BusinessJoinRequest } from './BusinessJoinRequest.model.js';
 export { Notification } from './Notification.model.js';
 export { BotScenario } from './BotScenario.model.js';
 export { MediaAsset } from './MediaAsset.model.js';
+export { StoredFile } from './StoredFile.model.js';

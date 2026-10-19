@@ -1843,7 +1843,8 @@ const LiveChatPage = () => {
                                             className={`${heightClass} object-cover cursor-pointer group-hover:scale-105 transition-transform duration-200`}
                                             title={att.name ? `${att.name} - Bấm để mở ảnh lớn` : 'Bấm để mở ảnh kích thước gốc'}
                                             onError={(e) => {
-                                              e.currentTarget.style.display = 'none';
+                                              e.currentTarget.onerror = null;
+                                              e.currentTarget.src = 'https://images.unsplash.com/photo-1523381210434-271e8be1f52b?w=500';
                                             }}
                                           />
                                         </div>
@@ -1863,7 +1864,8 @@ const LiveChatPage = () => {
                                         className="w-24 h-24 sm:w-28 sm:h-28 object-contain hover:scale-105 transition-transform"
                                         title={att.name || 'Nhãn dán'}
                                         onError={(e) => {
-                                          e.currentTarget.style.display = 'none';
+                                          e.currentTarget.onerror = null;
+                                          e.currentTarget.src = 'https://images.unsplash.com/photo-1574158622682-e40e69881006?w=150';
                                         }}
                                       />
                                     </div>

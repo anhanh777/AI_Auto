@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { MediaAsset } from '../models/MediaAsset.model.js';
 import { Product } from '../models/Product.model.js';
+import { StoredFile } from '../models/StoredFile.model.js';
 import '../models/User.model.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -140,6 +141,27 @@ export const createMediaAssetsFromUploadService = async ({
       tags: Array.isArray(tags) ? tags : [],
       caption: caption || ''
     });
+
+    if (file.path && fs.existsSync(file.path)) {
+      try {
+        const fileBuf = fs.readFileSync(file.path);
+        StoredFile.updateOne(
+          { filename: file.filename, folder: folderType },
+          {
+            $set: {
+              filename: file.filename,
+              folder: folderType,
+              mimetype: file.mimetype || 'image/jpeg',
+              size: file.size || fileBuf.length,
+              data: fileBuf
+            }
+          },
+          { upsert: true }
+        ).catch((e) => console.warn('[MediaAsset StoredFile Async Warn]', e.message));
+      } catch (storeErr) {
+        console.warn('[MediaAsset StoredFile Warn]', storeErr.message);
+      }
+    }
 
     createdAssets.push(newAsset);
   }
