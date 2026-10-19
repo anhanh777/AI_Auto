@@ -24,14 +24,12 @@ export const channelService = {
 
   // Lấy danh sách Fanpage từ Meta bằng User Access Token
   getFacebookPages: async (userAccessToken) => {
-    const res = await apiClient.post('/channels/facebook/pages', { user_access_token: userAccessToken });
-    return res.data;
+    return await apiClient.post('/channels/facebook/pages', { user_access_token: userAccessToken });
   },
 
   // Kết nối 1 Fanpage vào Business
   connectFacebookPage: async (pageData) => {
-    const res = await apiClient.post('/channels/facebook/connect', pageData);
-    return res.data;
+    return await apiClient.post('/channels/facebook/connect', pageData);
   },
 
   // Đồng bộ lại danh tính khách hàng bằng Page Access Token

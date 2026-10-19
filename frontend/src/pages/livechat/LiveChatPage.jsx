@@ -1138,7 +1138,10 @@ const LiveChatPage = () => {
           isOpen={showConnectModal}
           onClose={() => setShowConnectModal(false)}
           businessId={activeBusiness._id}
-          onChannelCreated={() => fetchChannels()}
+          existingPageIds={channels.map((c) => c.page_id).filter(Boolean)}
+          onChannelCreated={async () => {
+            await fetchChannels();
+          }}
         />
       </div>
     );
@@ -2377,7 +2380,10 @@ const LiveChatPage = () => {
         isOpen={showConnectModal}
         onClose={() => setShowConnectModal(false)}
         businessId={activeBusiness._id}
-        onChannelCreated={() => fetchChannels()}
+        existingPageIds={channels.map((c) => c.page_id).filter(Boolean)}
+        onChannelCreated={async () => {
+          await fetchChannels();
+        }}
       />
 
       {/* Modal xác nhận xóa Fanpage thay thế window.confirm */}

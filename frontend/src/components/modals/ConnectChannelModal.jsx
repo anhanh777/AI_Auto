@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Facebook,
@@ -26,7 +26,13 @@ import {
   getFacebookUserProfile
 } from '../../utils/facebookSdk.js';
 
-const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) => {
+const ConnectChannelModal = ({
+  isOpen,
+  onClose,
+  businessId,
+  onChannelCreated,
+  existingPageIds = []
+}) => {
   const { showToast } = useToast();
 
   // Tab: 'oauth' (Đăng nhập Facebook) | 'manual' (Thủ công)
@@ -38,7 +44,14 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
   const [pages, setPages] = useState([]);
   const [loadingPages, setLoadingPages] = useState(false);
   const [connectingPageId, setConnectingPageId] = useState(null);
+  const [connectedPageIds, setConnectedPageIds] = useState(new Set());
   const [operatingModes, setOperatingModes] = useState({});
+
+  useEffect(() => {
+    if (Array.isArray(existingPageIds)) {
+      setConnectedPageIds(new Set(existingPageIds.map(String)));
+    }
+  }, [existingPageIds, isOpen]);
 
   // Manual Form State
   const [manualLoading, setManualLoading] = useState(false);
@@ -90,8 +103,9 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
       // Bước 1: Thử lấy qua backend API
       try {
         const res = await channelService.getFacebookPages(userAccessToken);
-        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-          loadedPages = res.data;
+        const pageList = Array.isArray(res) ? res : (Array.isArray(res?.data) ? res.data : []);
+        if (pageList.length > 0) {
+          loadedPages = pageList;
         }
       } catch (backendErr) {
         console.warn('Backend page query warning, trying direct SDK:', backendErr.message);
@@ -144,10 +158,18 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
       };
 
       const res = await channelService.connectFacebookPage(payload);
-      if (res.success) {
+      const isSuccess = res?.success || Boolean(res?._id || res?.data?._id);
+      const channelData = res?.data || res;
+
+      if (isSuccess) {
+        setConnectedPageIds((prev) => new Set([...prev, String(page.page_id)]));
         showToast('success', `Đã kết nối Fanpage "${page.page_name}" vào cửa hàng thành công!`);
-        if (onChannelCreated) onChannelCreated(res.data);
+        if (onChannelCreated) {
+          await onChannelCreated(channelData);
+        }
         onClose();
+      } else {
+        throw new Error(res?.message || 'Kết nối Fanpage không thành công');
       }
     } catch (err) {
       console.error('Lỗi khi kết nối Fanpage:', err);
@@ -173,9 +195,14 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
         platform: 'facebook',
         business_id: businessId
       });
-      if (res.success) {
+      const isSuccess = res?.success || Boolean(res?._id || res?.data?._id);
+      const channelData = res?.data || res;
+
+      if (isSuccess) {
         showToast('success', 'Kết nối Fanpage mới thành công!');
-        if (onChannelCreated) onChannelCreated(res.data);
+        if (onChannelCreated) {
+          await onChannelCreated(channelData);
+        }
         onClose();
         setManualForm({
           page_name: '',
@@ -185,6 +212,8 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
           access_token: '',
           avatar_url: ''
         });
+      } else {
+        throw new Error(res?.message || 'Lỗi khi kết nối Fanpage');
       }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Lỗi khi kết nối Fanpage';
@@ -449,36 +478,45 @@ const ConnectChannelModal = ({ isOpen, onClose, businessId, onChannelCreated }) 
 
                               {/* Mode & Action */}
                               <div className="flex items-center space-x-2 self-end sm:self-center">
-                                <select
-                                  value={operatingModes[p.page_id] || 'AI_AUTO'}
-                                  onChange={(e) =>
-                                    setOperatingModes({
-                                      ...operatingModes,
-                                      [p.page_id]: e.target.value
-                                    })
-                                  }
-                                  className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
-                                >
-                                  <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
-                                  <option value="HYBRID">⚡ Lai (Hybrid)</option>
-                                  <option value="MANUAL">👤 Thủ công</option>
-                                </select>
+                                {connectedPageIds.has(String(p.page_id)) ? (
+                                  <span className="px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 rounded-lg text-xs font-bold flex items-center space-x-1 shadow-2xs">
+                                    <CheckCircle2 size={13} />
+                                    <span>Đã kết nối</span>
+                                  </span>
+                                ) : (
+                                  <>
+                                    <select
+                                      value={operatingModes[p.page_id] || 'AI_AUTO'}
+                                      onChange={(e) =>
+                                        setOperatingModes({
+                                          ...operatingModes,
+                                          [p.page_id]: e.target.value
+                                        })
+                                      }
+                                      className="px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 focus:outline-none"
+                                    >
+                                      <option value="AI_AUTO">🤖 AI Tự Động 24/7</option>
+                                      <option value="HYBRID">⚡ Lai (Hybrid)</option>
+                                      <option value="MANUAL">👤 Thủ công</option>
+                                    </select>
 
-                                <button
-                                  type="button"
-                                  disabled={isConnecting}
-                                  onClick={() => handleConnectPage(p)}
-                                  className="px-3.5 py-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
-                                >
-                                  {isConnecting ? (
-                                    <>
-                                      <RefreshCw size={12} className="animate-spin" />
-                                      <span>Đang kết nối...</span>
-                                    </>
-                                  ) : (
-                                    <span>Kết nối</span>
-                                  )}
-                                </button>
+                                    <button
+                                      type="button"
+                                      disabled={isConnecting}
+                                      onClick={() => handleConnectPage(p)}
+                                      className="px-3.5 py-1.5 bg-[#1877F2] hover:bg-[#166fe5] text-white rounded-lg text-xs font-bold shadow transition flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+                                    >
+                                      {isConnecting ? (
+                                        <>
+                                          <RefreshCw size={12} className="animate-spin" />
+                                          <span>Đang kết nối...</span>
+                                        </>
+                                      ) : (
+                                        <span>Kết nối</span>
+                                      )}
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </div>
                           );
