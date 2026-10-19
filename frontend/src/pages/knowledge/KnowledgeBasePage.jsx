@@ -28,6 +28,33 @@ const DEFAULT_CATEGORIES = [
   'Câu hỏi thường gặp'
 ];
 
+export const ACTION_TYPE_MAP = {
+  NONE: {
+    label: 'Chỉ tư vấn & giải đáp',
+    badge: '💬 Chỉ tư vấn',
+    color: 'bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600',
+    desc: 'AI chỉ đọc hiểu để tư vấn và giải đáp khách hàng, tuyệt đối không chỉnh sửa dữ liệu CSDL.'
+  },
+  CANCEL_ORDER: {
+    label: 'Tự động hủy đơn hàng',
+    badge: '⚡ Tự động hủy đơn',
+    color: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+    desc: 'Khi khách thỏa mãn điều kiện và xác nhận hủy đơn (đang Chờ duyệt), AI tự động chuyển đơn sang Đã hủy và hoàn lại tồn kho.'
+  },
+  UPDATE_ORDER: {
+    label: 'Tự động cập nhật đơn hàng',
+    badge: '⚡ Cập nhật đơn',
+    color: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    desc: 'Khi khách muốn đổi địa chỉ, SĐT, tăng/giảm sản phẩm của đơn chờ duyệt, AI tự cập nhật đơn hàng.'
+  },
+  UPDATE_CUSTOMER: {
+    label: 'Tự động cập nhật thông tin khách hàng',
+    badge: '⚡ Cập nhật khách',
+    color: 'bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+    desc: 'Khi khách cung cấp hoặc cập nhật thông tin cá nhân, AI tự động lưu vào hồ sơ khách hàng.'
+  }
+};
+
 const KnowledgeBasePage = () => {
   const { activeBusiness } = useBusiness();
   const { showToast } = useToast();
@@ -54,7 +81,8 @@ const KnowledgeBasePage = () => {
     title: '',
     category: DEFAULT_CATEGORIES[0],
     content: '',
-    keywords: ''
+    keywords: '',
+    action_type: 'NONE'
   });
 
   const fetchKnowledge = async () => {
@@ -106,7 +134,7 @@ const KnowledgeBasePage = () => {
 
   const handleOpenCreate = () => {
     setEditingId(null);
-    setForm({ title: '', category: DEFAULT_CATEGORIES[0], content: '', keywords: '' });
+    setForm({ title: '', category: DEFAULT_CATEGORIES[0], content: '', keywords: '', action_type: 'NONE' });
     setShowModal(true);
   };
 
@@ -132,7 +160,8 @@ const KnowledgeBasePage = () => {
       title: item.title || '',
       category: mapped,
       content: item.content || '',
-      keywords: Array.isArray(item.keywords) ? item.keywords.join(', ') : (item.keywords || '')
+      keywords: Array.isArray(item.keywords) ? item.keywords.join(', ') : (item.keywords || ''),
+      action_type: item.action_type || 'NONE'
     });
     setShowModal(true);
   };
@@ -352,9 +381,19 @@ const KnowledgeBasePage = () => {
             >
               <div className="space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 text-[10px] font-extrabold border border-blue-200 dark:border-blue-800">
-                    {getCategoryLabel(item.category)}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 text-[10px] font-extrabold border border-blue-200 dark:border-blue-800">
+                      {getCategoryLabel(item.category)}
+                    </span>
+                    {(() => {
+                      const meta = ACTION_TYPE_MAP[item.action_type] || ACTION_TYPE_MAP.NONE;
+                      return (
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1 ${meta.color}`}>
+                          {meta.badge}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   <div className="flex items-center space-x-1">
                     <button
                       type="button"
@@ -458,6 +497,26 @@ const KnowledgeBasePage = () => {
                     </optgroup>
                   )}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold mb-1 flex items-center justify-between">
+                  <span>Cơ chế can thiệp hệ thống (AI Action) *</span>
+                  <span className="text-[10px] font-normal text-slate-400">Quyền tác động vào CSDL</span>
+                </label>
+                <select
+                  value={form.action_type || 'NONE'}
+                  onChange={(e) => setForm({ ...form, action_type: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-blue-600 focus:outline-none font-medium"
+                >
+                  <option value="NONE">💬 Chỉ tư vấn & giải đáp (Không can thiệp CSDL)</option>
+                  <option value="CANCEL_ORDER">⚡ Tự động hủy đơn hàng (Khi thỏa điều kiện & khách xác nhận)</option>
+                  <option value="UPDATE_ORDER">⚡ Tự động cập nhật đơn hàng (Đổi địa chỉ, SĐT, số lượng, mẫu)</option>
+                  <option value="UPDATE_CUSTOMER">⚡ Tự động cập nhật thông tin khách hàng (Tên, SĐT, Địa chỉ)</option>
+                </select>
+                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 italic">
+                  {(ACTION_TYPE_MAP[form.action_type] || ACTION_TYPE_MAP.NONE).desc}
+                </p>
               </div>
 
               <div>

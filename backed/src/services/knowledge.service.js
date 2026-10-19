@@ -93,6 +93,7 @@ export const parseKnowledgeFile = (fileBuffer) => {
     let categoryRaw = '';
     let content = '';
     let keywordsRaw = '';
+    let actionTypeRaw = '';
 
     for (const [key, val] of Object.entries(rawRow)) {
       const normKey = normalizeHeaderKey(key);
@@ -106,6 +107,8 @@ export const parseKnowledgeFile = (fileBuffer) => {
         content = strVal;
       } else if (normKey.includes('tu_khoa') || normKey.includes('keywords') || normKey === 'keyword') {
         keywordsRaw = strVal;
+      } else if (normKey.includes('hanh_dong') || normKey.includes('action') || normKey.includes('co_che')) {
+        actionTypeRaw = strVal;
       }
     }
 
@@ -134,6 +137,17 @@ export const parseKnowledgeFile = (fileBuffer) => {
       ? keywordsRaw.split(/[,;\n\r]+/).map((k) => k.trim()).filter(Boolean)
       : [];
 
+    // Chuẩn hóa action_type
+    let action_type = 'NONE';
+    const normAct = normalizeHeaderKey(actionTypeRaw);
+    if (normAct.includes('huy_don') || normAct.includes('cancel')) {
+      action_type = 'CANCEL_ORDER';
+    } else if (normAct.includes('cap_nhat_don') || normAct.includes('update_order') || normAct.includes('sua_don')) {
+      action_type = 'UPDATE_ORDER';
+    } else if (normAct.includes('khach_hang') || normAct.includes('update_customer') || normAct.includes('khach')) {
+      action_type = 'UPDATE_CUSTOMER';
+    }
+
     const errors = [];
     if (!title) {
       errors.push('Tiêu đề tài liệu không được để trống');
@@ -148,6 +162,7 @@ export const parseKnowledgeFile = (fileBuffer) => {
       category,
       content,
       keywords: cleanKeywords,
+      action_type,
       isValid: errors.length === 0,
       errors
     };
@@ -211,6 +226,7 @@ export const importKnowledgeFromBuffer = async ({
         existing.category = row.category;
         existing.content = row.content;
         existing.keywords = row.keywords;
+        if (row.action_type) existing.action_type = row.action_type;
         existing.is_active = true;
         await existing.save();
         updatedCount++;
@@ -224,6 +240,7 @@ export const importKnowledgeFromBuffer = async ({
         category: row.category,
         content: row.content,
         keywords: row.keywords,
+        action_type: row.action_type || 'NONE',
         is_active: true,
         created_by: userId
       });

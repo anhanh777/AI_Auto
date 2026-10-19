@@ -9,7 +9,7 @@ import {
   Channel,
   Order
 } from '../models/index.js';
-import { createOrderService } from './order.service.js';
+import { createOrderService, updateOrderStatusService } from './order.service.js';
 import { autoTagConversationService } from './conversation.service.js';
 import { getIO } from '../config/socket.config.js';
 import { validateAndSanitizePhone, evaluateAddressQuality } from '../helpers/orderValidation.helper.js';
@@ -182,7 +182,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
 
     // C. Kho tri thức FAQ & Chính sách
     KnowledgeBase.find({ business_id, is_active: true })
-      .select('title category content')
+      .select('title category content action_type keywords')
       .lean(),
 
     // D. Lịch sử 8 tin nhắn gần nhất
@@ -224,9 +224,25 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     return `- [SKU: ${p.sku}] ${p.product_name} | Giá: ${price.toLocaleString('vi-VN')} VND | Tồn khả dụng: ${p.stock_available} | Biến thể: ${variantsStr} | Đặc điểm: ${p.ai_selling_points || p.description || ''} | Ảnh sản phẩm: ${imgUrls}`;
   }).join('\n');
 
-  const knowledgeContextText = knowledgeList.map((k) => {
-    return `- [${k.category}] ${k.title}: ${k.content}`;
-  }).join('\n');
+  const advisoryKnowledge = [];
+  const actionableKnowledge = [];
+
+  (knowledgeList || []).forEach((k) => {
+    const actType = k.action_type || 'NONE';
+    if (actType === 'NONE') {
+      advisoryKnowledge.push(`- [${k.category}] ${k.title}: ${k.content}`);
+    } else {
+      actionableKnowledge.push(`- [QUY TRÌNH HÀNH ĐỘNG HỆ THỐNG - MÃ LỆNH: ${actType}] ${k.title}: ${k.content}`);
+    }
+  });
+
+  const knowledgeContextText = advisoryKnowledge.length > 0
+    ? advisoryKnowledge.join('\n')
+    : 'Chưa có tài liệu FAQ bổ sung.';
+
+  const actionableKnowledgeText = actionableKnowledge.length > 0
+    ? actionableKnowledge.join('\n')
+    : 'Hiện tại chưa có quy trình can thiệp hệ thống nào.';
 
   const chatHistoryText = sortedHistory.map((m) => {
     const role = m.sender_type === 'CUSTOMER' ? 'Khách hàng' : 'Nhân viên/Bot';
@@ -283,6 +299,7 @@ export const buildRAGContext = async ({ business_id, conversation_id, customer_i
     },
     productContextText: productContextText || 'Hiện tại chưa có sản phẩm nào trong kho.',
     knowledgeContextText: knowledgeContextText || 'Chưa có tài liệu FAQ bổ sung.',
+    actionableKnowledgeText: actionableKnowledgeText,
     chatHistoryText: chatHistoryText || 'Đây là tin nhắn đầu tiên của khách.',
     ordersContextText: ordersContextText,
     recentOrders: recentOrders || [],
@@ -320,6 +337,7 @@ export const consultWithGeminiAI = async ({
     aiConfig,
     productContextText,
     knowledgeContextText,
+    actionableKnowledgeText,
     chatHistoryText,
     ordersContextText,
     rawProducts,
@@ -395,8 +413,11 @@ ${customerProfileText}
 === THÔNG TIN SẢN PHẨM & TỒN KHO THỰC TẾ (RAG) ===
 ${productContextText}
 
-=== CHÍNH SÁCH BÁN HÀNG & KHO TRI THỨC (FAQ) ===
+=== CHÍNH SÁCH BÁN HÀNG & KHO TRI THỨC TƯ VẤN (FAQ - KHÔNG CAN THIỆP CSDL) ===
 ${knowledgeContextText}
+
+=== CÁC QUY TRÌNH ĐƯỢC PHÉP CAN THIỆP HỆ THỐNG (ACTIONABLE RAG - CỰC KỲ QUAN TRỌNG) ===
+${actionableKnowledgeText}
 
 === THÔNG TIN ĐƠN HÀNG GẦN NHẤT CỦA KHÁCH HÀNG TẠI CỬA HÀNG "${channelName}" (RAG) ===
 ${ordersContextText || `Khách hàng này hiện chưa có đơn hàng nào tại shop "${channelName}".`}
@@ -493,7 +514,34 @@ ${chatHistoryText}
        * Nếu mục RAG ghi "Khách hàng này hiện chưa có đơn hàng nào tại shop \"${channelName}\"" (hoặc không có đơn hàng nào):
          BẮT BUỘC trả lời rõ ràng rằng khách chưa có đơn nào tại shop "${channelName}".
          Ví dụ: "Dạ em kiểm tra trên hệ thống của shop ${channelName} thì hiện tại mình chưa có đơn hàng nào đang đặt ạ. Bạn có muốn tham khảo mẫu nào bên shop em để em hỗ trợ tư vấn và lên đơn cho mình không nha! ❤️"
-         TUYỆT ĐỐI KHÔNG nhận vơ đơn hàng của các shop/fanpage khác!
+          TUYỆT ĐỐI KHÔNG nhận vơ đơn hàng của các shop/fanpage khác!
+
+8. QUY TẮC THỰC THI HÀNH ĐỘNG HỆ THỐNG (ACTIONABLE RAG - CỰC KỲ QUAN TRỌNG):
+   Bạn ĐƯỢC PHÉP thay đổi CSDL khi khách hàng thỏa mãn các điều kiện trong mục "CÁC QUY TRÌNH ĐƯỢC PHÉP CAN THIỆP HỆ THỐNG":
+
+   A. HỦY ĐƠN HÀNG (CANCEL_ORDER):
+      - Khi khách hàng yêu cầu hủy đơn (ví dụ: "tôi muốn hủy", "hủy đơn giúp mình", "hủy hàng", "không lấy nữa"):
+        + Bước 1 (Hỏi xác nhận): Kiểm tra xem khách có đơn hàng nào tại shop ở mục RAG Đơn hàng. Nếu đơn đang ở trạng thái "Chờ xác nhận" (PENDING) hoặc "Đã xác nhận" (CONFIRMED):
+          Hỏi lại khách một cách lịch sự, nêu rõ mã đơn, tên sản phẩm và tổng tiền, và xin xác nhận của khách (Ví dụ: "Dạ bạn ơi, shop thấy bạn có đơn #DH-... gồm... Bạn có muốn xác nhận hủy đơn hàng này không để shop hỗ trợ cập nhật hủy đơn cho mình nhé? ❤️"). Lúc này đặt "order_action": null.
+        + Bước 2 (Thực thi khi khách đã xác nhận): Khi khách phản hồi ĐỒNG Ý / XÁC NHẬN HỦY (ví dụ: "đúng", "ừ", "hủy đi", "xác nhận", "ok", "chuẩn rồi", "đúng rồi"):
+          * Trả lời (reply): Lịch sự thông báo shop đã cập nhật hủy đơn hàng #DH-... trên hệ thống cho bạn rồi ạ và gửi lời cảm ơn.
+          * BẮT BUỘC trả về trong JSON:
+            "order_action": {
+              "type": "CANCEL_ORDER",
+              "order_code": "Mã đơn hàng (ví dụ: DH-1006603 hoặc mã đơn ở RAG)",
+              "reason": "Khách xác nhận hủy đơn qua chat"
+            }
+      - LƯU Ý BẢO VỆ: Nếu đơn đã ở trạng thái "Đang giao hàng" (SHIPPING) hoặc "Hoàn thành" (COMPLETED): TUYỆT ĐỐI KHÔNG HỦY ĐƠN, không xuất action CANCEL_ORDER, mà giải thích rằng hàng đã giao cho bên vận chuyển nên không thể hủy trực tiếp.
+
+   B. CẬP NHẬT ĐƠN HÀNG (UPDATE_ORDER):
+      - Khi khách muốn thay đổi thông tin của đơn hàng vừa đặt (đang ở trạng thái Chờ xác nhận):
+        + Đổi địa chỉ nhận hàng: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi địa chỉ giao hàng", "update_payload": { "shipping_address": "địa chỉ mới" } }
+        + Đổi số điện thoại: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi số điện thoại", "update_payload": { "phone": "SĐT mới" } }
+        + Đổi số lượng / phân loại: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi sản phẩm", "update_payload": { "items": [{ "product_name": "Tên SP", "quantity": 1, "size": "...", "color": "..." }] } }
+
+   C. CẬP NHẬT THÔNG TIN KHÁCH HÀNG (UPDATE_CUSTOMER):
+      - Khi khách cung cấp thông tin cá nhân mới hoặc yêu cầu lưu lại (họ tên đầy đủ, SĐT chính, địa chỉ mặc định):
+        + Trả về: "customer_action": { "type": "UPDATE_CUSTOMER", "full_name": "Tên khách", "phone": "SĐT", "shipping_address": "Địa chỉ" }
 
 === ĐỊNH DẠNG ĐẦU RA BẮT BUỘC (JSON ONLY) ===
 Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdown code block) theo schema sau:
@@ -515,6 +563,22 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       }
     ],
     "customer_note": "Ghi chú giao hàng nếu có"
+  },
+  "order_action": null hoặc {
+    "type": "NONE" | "CANCEL_ORDER" | "UPDATE_ORDER",
+    "order_code": "Mã đơn hàng",
+    "reason": "Lý do hủy hoặc thay đổi",
+    "update_payload": {
+      "shipping_address": "Địa chỉ mới nếu có",
+      "phone": "SĐT mới nếu có",
+      "items": []
+    }
+  },
+  "customer_action": null hoặc {
+    "type": "NONE" | "UPDATE_CUSTOMER",
+    "full_name": "Tên đầy đủ nếu có",
+    "phone": "SĐT nếu có",
+    "shipping_address": "Địa chỉ mặc định nếu có"
   },
   "missing_fields": ["phone", "shipping_address", "variant"],
   "handover_to_staff": false | true,
@@ -602,6 +666,8 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
       image_urls: imageUrls,
       is_order_intent: Boolean(parsed.is_order_intent),
       order_data: parsed.order_data || null,
+      order_action: parsed.order_action || null,
+      customer_action: parsed.customer_action || null,
       missing_fields: Array.isArray(parsed.missing_fields) ? parsed.missing_fields : [],
       handover_to_staff: Boolean(parsed.handover_to_staff),
       handover_reason: parsed.handover_reason || null
@@ -1359,6 +1425,158 @@ export const processGeminiAIForMessage = async ({
         }
       } catch (orderErr) {
         console.error('[Gemini AI Order Creation Error]', orderErr.message);
+      }
+    }
+
+    // 2.1 Xử lý các Hành động Hệ thống Tự động (Actionable RAG Execution)
+    // A. Tự động Hủy Đơn Hàng (CANCEL_ORDER)
+    if (aiResult.order_action?.type === 'CANCEL_ORDER') {
+      try {
+        const rawCode = (aiResult.order_action.order_code || '').trim();
+        const cleanCode = rawCode.replace(/^[#\s]*(?:DH-?)?/i, '');
+        let targetOrder = null;
+
+        if (cleanCode) {
+          targetOrder = await Order.findOne({
+            business_id,
+            $or: [
+              { order_code: cleanCode },
+              { order_code: `DH-${cleanCode}` },
+              { order_code: new RegExp(cleanCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }
+            ]
+          });
+        }
+
+        // Nếu không khớp theo mã đơn, tìm đơn hàng gần nhất của phiên chat / khách hàng đang ở trạng thái PENDING hoặc CONFIRMED
+        if (!targetOrder) {
+          targetOrder = await Order.findOne({
+            business_id,
+            $or: [
+              { conversation_id: conversation._id },
+              ...(customer_id ? [{ customer_id }] : [])
+            ],
+            order_status: { $in: ['PENDING', 'CONFIRMED'] }
+          }).sort({ created_at: -1 });
+        }
+
+        if (targetOrder && ['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
+          await updateOrderStatusService(
+            targetOrder._id,
+            'CANCELLED',
+            business_id,
+            null,
+            aiResult.order_action.reason || 'Khách yêu cầu hủy qua chat',
+            'Khách xác nhận hủy đơn qua AI Chat'
+          );
+          console.log(`[Actionable RAG] Đã hủy đơn hàng #${targetOrder.order_code} thành công`);
+
+          // Cập nhật giỏ hàng nháp thành CANCELLED
+          if (conversation.order_draft) {
+            conversation.order_draft.status = 'CANCELLED';
+            conversation.order_draft.updated_at = new Date();
+          }
+        }
+      } catch (cancelErr) {
+        console.error('[Actionable RAG Cancel Order Error]', cancelErr.message);
+      }
+    }
+
+    // B. Tự động Cập Nhật Đơn Hàng (UPDATE_ORDER)
+    if (aiResult.order_action?.type === 'UPDATE_ORDER' && aiResult.order_action.update_payload) {
+      try {
+        const rawCode = (aiResult.order_action.order_code || '').trim();
+        const cleanCode = rawCode.replace(/^[#\s]*(?:DH-?)?/i, '');
+        let targetOrder = null;
+
+        if (cleanCode) {
+          targetOrder = await Order.findOne({
+            business_id,
+            $or: [
+              { order_code: cleanCode },
+              { order_code: `DH-${cleanCode}` },
+              { order_code: new RegExp(cleanCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') }
+            ]
+          });
+        }
+
+        if (!targetOrder) {
+          targetOrder = await Order.findOne({
+            business_id,
+            $or: [
+              { conversation_id: conversation._id },
+              ...(customer_id ? [{ customer_id }] : [])
+            ],
+            order_status: { $in: ['PENDING', 'CONFIRMED'] }
+          }).sort({ created_at: -1 });
+        }
+
+        if (targetOrder && ['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
+          const payload = aiResult.order_action.update_payload;
+          let changed = false;
+
+          if (payload.shipping_address) {
+            const addrVal = evaluateAddressQuality(payload.shipping_address);
+            if (addrVal.quality === 'VALID' || addrVal.quality === 'VAGUE_AREA') {
+              targetOrder.shipping_address = addrVal.cleanAddress;
+              changed = true;
+            }
+          }
+
+          if (payload.phone) {
+            const phoneVal = validateAndSanitizePhone(payload.phone);
+            if (phoneVal.isValid) {
+              targetOrder.shipping_phone = phoneVal.phone;
+              targetOrder.customer_phone = phoneVal.phone;
+              changed = true;
+            }
+          }
+
+          if (changed) {
+            targetOrder.updated_at = new Date();
+            await targetOrder.save();
+
+            const io = getIO();
+            if (io) {
+              io.to(`business_${business_id}`).emit('ORDER_UPDATED', {
+                orderId: targetOrder._id,
+                orderCode: targetOrder.order_code,
+                order: targetOrder
+              });
+            }
+            console.log(`[Actionable RAG] Đã cập nhật đơn hàng #${targetOrder.order_code} thành công`);
+          }
+        }
+      } catch (updateErr) {
+        console.error('[Actionable RAG Update Order Error]', updateErr.message);
+      }
+    }
+
+    // C. Tự động Cập Nhật Thông Tin Khách Hàng (UPDATE_CUSTOMER)
+    if (aiResult.customer_action?.type === 'UPDATE_CUSTOMER' && customer_id) {
+      try {
+        const custPayload = aiResult.customer_action;
+        const custUpdates = {};
+        if (custPayload.full_name && custPayload.full_name !== 'Khách hàng') custUpdates.full_name = custPayload.full_name;
+        if (custPayload.phone) {
+          const pVal = validateAndSanitizePhone(custPayload.phone);
+          if (pVal.isValid) {
+            custUpdates.phone = pVal.phone;
+            custUpdates.phone_number = pVal.phone;
+          }
+        }
+        if (custPayload.shipping_address) {
+          const aVal = evaluateAddressQuality(custPayload.shipping_address);
+          if (aVal.quality === 'VALID' || aVal.quality === 'VAGUE_AREA') {
+            custUpdates.shipping_address = aVal.cleanAddress;
+          }
+        }
+        if (Object.keys(custUpdates).length > 0) {
+          custUpdates.updated_at = new Date();
+          await Customer.findByIdAndUpdate(customer_id, { $set: custUpdates });
+          console.log(`[Actionable RAG] Đã cập nhật thông tin khách hàng #${customer_id} thành công`);
+        }
+      } catch (custErr) {
+        console.error('[Actionable RAG Update Customer Error]', custErr.message);
       }
     }
 
