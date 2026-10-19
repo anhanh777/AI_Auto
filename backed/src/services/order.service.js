@@ -628,3 +628,174 @@ export const deleteOrderService = async (id, business_id) => {
 
   return { message: 'Đã xóa đơn hàng thành công' };
 };
+
+/**
+ * 7. Cập nhật chi tiết đơn hàng (Sửa sản phẩm, số lượng, địa chỉ, SĐT) cho đơn Chờ duyệt
+ */
+export const updateOrderDetailsService = async (orderId, updateData, businessId, userId = null) => {
+  const filter = { _id: orderId };
+  if (businessId) filter.business_id = businessId;
+
+  const order = await Order.findOne(filter);
+  if (!order) throw new Error('Không tìm thấy đơn hàng cần sửa');
+
+  // Chỉ cho phép sửa đơn khi đơn đang PENDING hoặc CONFIRMED
+  if (!['PENDING', 'CONFIRMED'].includes(order.order_status)) {
+    throw new Error(`Đơn hàng đang ở trạng thái ${order.order_status}, không thể chỉnh sửa trực tiếp`);
+  }
+
+  let hasChanged = false;
+
+  // A. Cập nhật địa chỉ nhận hàng
+  if (updateData.shipping_address && updateData.shipping_address !== order.shipping_address) {
+    order.shipping_address = updateData.shipping_address;
+    hasChanged = true;
+  }
+
+  // B. Cập nhật số điện thoại
+  if (updateData.phone && updateData.phone !== order.shipping_phone) {
+    order.shipping_phone = updateData.phone;
+    order.customer_phone = updateData.phone;
+    hasChanged = true;
+  }
+
+  // C. Cập nhật người nhận
+  if (updateData.customer_name && updateData.customer_name !== order.shipping_customer_name) {
+    order.shipping_customer_name = updateData.customer_name;
+    order.customer_name = updateData.customer_name;
+    hasChanged = true;
+  }
+
+  // D. Cập nhật danh sách sản phẩm & số lượng
+  if (Array.isArray(updateData.items) && updateData.items.length > 0) {
+    // 1. Hoàn lại tồn kho cho các sản phẩm cũ
+    for (const oldIt of order.order_items || []) {
+      if (oldIt.product_id) {
+        try {
+          await Product.findByIdAndUpdate(oldIt.product_id, {
+            $inc: { stock_available: Number(oldIt.quantity) || 1 }
+          });
+        } catch (e) {
+          console.warn('[Update Order] Hoàn tồn kho sản phẩm cũ lỗi:', e.message);
+        }
+      }
+    }
+
+    // 2. Tìm và chuẩn hóa các sản phẩm mới
+    const newItems = [];
+    let newSubtotal = 0;
+
+    for (const it of updateData.items) {
+      let prod = null;
+      if (it.product_id) {
+        prod = await Product.findById(it.product_id);
+      }
+      if (!prod && it.sku) {
+        prod = await Product.findOne({ business_id: order.business_id, sku: it.sku });
+      }
+      if (!prod && it.product_name) {
+        prod = await Product.findOne({
+          business_id: order.business_id,
+          product_name: new RegExp(it.product_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i')
+        });
+      }
+
+      const qty = Number(it.quantity) || 1;
+      const unitPrice = prod ? (prod.sale_price || prod.base_price || 0) : (Number(it.unit_price || it.price) || 0);
+      const prodName = prod ? prod.product_name : (it.product_name || 'Sản phẩm');
+      const prodSku = prod ? prod.sku : (it.sku || 'DEFAULT');
+      const totalPrice = qty * unitPrice;
+
+      newSubtotal += totalPrice;
+
+      newItems.push({
+        product_id: prod ? prod._id : null,
+        product_name: prodName,
+        name: prodName,
+        sku: prodSku,
+        quantity: qty,
+        unit_price: unitPrice,
+        price: unitPrice,
+        total_price: totalPrice,
+        size: it.size || '',
+        color: it.color || ''
+      });
+
+      // 3. Trừ tồn kho khả dụng mới
+      if (prod) {
+        try {
+          await Product.findByIdAndUpdate(prod._id, {
+            $inc: { stock_available: -qty }
+          });
+        } catch (e) {
+          console.warn('[Update Order] Trừ tồn kho sản phẩm mới lỗi:', e.message);
+        }
+      }
+    }
+
+    if (newItems.length > 0) {
+      order.order_items = newItems;
+      order.subtotal_amount = newSubtotal;
+      order.total_amount = Math.max(0, newSubtotal + (order.shipping_fee || 0) - (order.discount_amount || 0));
+
+      // Cập nhật lại OrderDetail
+      try {
+        await OrderDetail.deleteMany({ order_id: order._id });
+        for (const it of newItems) {
+          await OrderDetail.create({
+            order_id: order._id,
+            product_id: it.product_id,
+            variant_sku: it.sku || 'DEFAULT',
+            product_name: it.product_name,
+            quantity: it.quantity,
+            unit_price: it.unit_price,
+            total_price: it.total_price
+          });
+        }
+      } catch (dErr) {
+        console.warn('[Update OrderDetail Error]', dErr.message);
+      }
+
+      hasChanged = true;
+    }
+  }
+
+  if (hasChanged) {
+    order.updated_at = new Date();
+    order.updated_by = userId || null;
+    order.status_history = order.status_history || [];
+    order.status_history.push({
+      status: order.order_status,
+      updated_at: new Date(),
+      updated_by: userId || null,
+      note: updateData.note || 'Cập nhật nội dung đơn hàng qua AI Chat'
+    });
+
+    await order.save();
+
+    // Bắn WebSocket thông báo cập nhật
+    try {
+      const io = getIO();
+      if (io) {
+        if (order.business_id) {
+          io.to(order.business_id.toString()).emit('order_updated', order);
+          io.to(`business_${order.business_id}`).emit('ORDER_UPDATED', {
+            orderId: order._id,
+            orderCode: order.order_code,
+            order
+          });
+        }
+        io.emit('order_updated', order);
+      }
+    } catch (e) {}
+
+    // Đồng bộ lại nhãn hội thoại
+    if (order.conversation_id) {
+      try {
+        await syncConversationTagsFromData(order.conversation_id);
+      } catch (e) {}
+    }
+  }
+
+  return order;
+};

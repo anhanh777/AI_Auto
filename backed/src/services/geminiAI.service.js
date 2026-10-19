@@ -9,7 +9,7 @@ import {
   Channel,
   Order
 } from '../models/index.js';
-import { createOrderService, updateOrderStatusService } from './order.service.js';
+import { createOrderService, updateOrderStatusService, updateOrderDetailsService } from './order.service.js';
 import { autoTagConversationService } from './conversation.service.js';
 import { getIO } from '../config/socket.config.js';
 import { validateAndSanitizePhone, evaluateAddressQuality } from '../helpers/orderValidation.helper.js';
@@ -533,11 +533,28 @@ ${chatHistoryText}
             }
       - LƯU Ý BẢO VỆ: Nếu đơn đã ở trạng thái "Đang giao hàng" (SHIPPING) hoặc "Hoàn thành" (COMPLETED): TUYỆT ĐỐI KHÔNG HỦY ĐƠN, không xuất action CANCEL_ORDER, mà giải thích rằng hàng đã giao cho bên vận chuyển nên không thể hủy trực tiếp.
 
-   B. CẬP NHẬT ĐƠN HÀNG (UPDATE_ORDER):
-      - Khi khách muốn thay đổi thông tin của đơn hàng vừa đặt (đang ở trạng thái Chờ xác nhận):
-        + Đổi địa chỉ nhận hàng: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi địa chỉ giao hàng", "update_payload": { "shipping_address": "địa chỉ mới" } }
-        + Đổi số điện thoại: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi số điện thoại", "update_payload": { "phone": "SĐT mới" } }
-        + Đổi số lượng / phân loại: Trả về "order_action": { "type": "UPDATE_ORDER", "order_code": "Mã đơn", "reason": "Đổi sản phẩm", "update_payload": { "items": [{ "product_name": "Tên SP", "quantity": 1, "size": "...", "color": "..." }] } }
+   B. CẬP NHẬT ĐƠN HÀNG (UPDATE_ORDER - TUYỆT ĐỐI KHÔNG TẠO ĐƠN MỚI):
+      - Khi khách muốn sửa đơn, đổi mẫu/màu/size, tăng/giảm số lượng, hoặc mua thêm vào đơn vừa đặt (đang ở trạng thái Chờ xác nhận / Chờ duyệt):
+        + NGUYÊN TẮC CỐT LÕI: TUYỆT ĐỐI BẮT BUỘC ĐẶT "is_order_intent": false và "order_data": null! TUYỆT ĐỐI KHÔNG ĐƯỢC TẠO ĐƠN HÀNG MỚI!
+        + BẮT BUỘC trả về trong JSON:
+          "order_action": {
+            "type": "UPDATE_ORDER",
+            "order_code": "Mã đơn hàng cần sửa (ví dụ: DH-1005642 hoặc lấy mã đơn gần nhất)",
+            "reason": "Khách sửa sản phẩm / đổi thông tin đơn",
+            "update_payload": {
+              "shipping_address": "địa chỉ mới nếu đổi",
+              "phone": "SĐT mới nếu đổi",
+              "items": [
+                {
+                  "product_name": "Tên sản phẩm",
+                  "quantity": 2, // Số lượng mới đầy đủ (ví dụ khách mua thêm 1 cái vào đơn cũ có 1 cái -> điền 2)
+                  "size": "Size nếu có",
+                  "color": "Màu nếu có"
+                }
+              ]
+            }
+          }
+        + Phản hồi (reply): Xác nhận rõ ràng và chu đáo với khách: "Dạ vâng bạn ơi, shop đã cập nhật đơn hàng #DH-... của mình thành [Tên SP] x [Số lượng mới] (tổng tiền: [Tổng tiền mới] VND) rồi ạ! Shop sẽ chuẩn bị gửi đơn hàng này cho mình nha. Cảm ơn bạn rất nhiều ạ! ❤️"
 
    C. CẬP NHẬT THÔNG TIN KHÁCH HÀNG (UPDATE_CUSTOMER):
       - Khi khách cung cấp thông tin cá nhân mới hoặc yêu cầu lưu lại (họ tên đầy đủ, SĐT chính, địa chỉ mặc định):
@@ -1291,7 +1308,12 @@ export const processGeminiAIForMessage = async ({
     const phoneCheck = validateAndSanitizePhone(finalPhone || '');
     const addressCheck = evaluateAddressQuality(finalAddress || '');
 
-    if (aiResult.is_order_intent && phoneCheck.isValid && addressCheck.quality === 'VALID') {
+    // CHỐT CHẶN AN TOÀN: Nếu khách đang yêu cầu sửa đơn (UPDATE_ORDER) hoặc hủy đơn (CANCEL_ORDER) -> TUYỆT ĐỐI KHÔNG TẠO ĐƠN MỚI!
+    const isActionModifyingOrder =
+      aiResult.order_action?.type === 'UPDATE_ORDER' ||
+      aiResult.order_action?.type === 'CANCEL_ORDER';
+
+    if (!isActionModifyingOrder && aiResult.is_order_intent && phoneCheck.isValid && addressCheck.quality === 'VALID') {
       try {
         const orderInfo = aiResult.order_data || conversation.order_draft;
         const itemsToCreate = [];
@@ -1512,38 +1534,29 @@ export const processGeminiAIForMessage = async ({
 
         if (targetOrder && ['PENDING', 'CONFIRMED'].includes(targetOrder.order_status)) {
           const payload = aiResult.order_action.update_payload;
-          let changed = false;
+          const updatedOrder = await updateOrderDetailsService(
+            targetOrder._id,
+            {
+              shipping_address: payload.shipping_address,
+              phone: payload.phone,
+              customer_name: payload.customer_name,
+              items: payload.items,
+              note: aiResult.order_action.reason || 'Khách sửa nội dung đơn qua AI Chat'
+            },
+            business_id
+          );
+          console.log(`[Actionable RAG] Đã cập nhật chi tiết đơn hàng #${updatedOrder.order_code} thành công: tổng tiền ${(updatedOrder.total_amount || 0).toLocaleString('vi-VN')} VND`);
 
-          if (payload.shipping_address) {
-            const addrVal = evaluateAddressQuality(payload.shipping_address);
-            if (addrVal.quality === 'VALID' || addrVal.quality === 'VAGUE_AREA') {
-              targetOrder.shipping_address = addrVal.cleanAddress;
-              changed = true;
+          // Đồng bộ giỏ hàng nháp
+          if (conversation.order_draft) {
+            conversation.order_draft.status = 'ORDER_CREATED';
+            conversation.order_draft.last_order_id = updatedOrder._id;
+            conversation.order_draft.last_order_code = updatedOrder.order_code;
+            if (payload.items && payload.items[0]) {
+              conversation.order_draft.product_name = payload.items[0].product_name || conversation.order_draft.product_name;
+              conversation.order_draft.quantity = payload.items.reduce((s, it) => s + (Number(it.quantity) || 1), 0);
             }
-          }
-
-          if (payload.phone) {
-            const phoneVal = validateAndSanitizePhone(payload.phone);
-            if (phoneVal.isValid) {
-              targetOrder.shipping_phone = phoneVal.phone;
-              targetOrder.customer_phone = phoneVal.phone;
-              changed = true;
-            }
-          }
-
-          if (changed) {
-            targetOrder.updated_at = new Date();
-            await targetOrder.save();
-
-            const io = getIO();
-            if (io) {
-              io.to(`business_${business_id}`).emit('ORDER_UPDATED', {
-                orderId: targetOrder._id,
-                orderCode: targetOrder.order_code,
-                order: targetOrder
-              });
-            }
-            console.log(`[Actionable RAG] Đã cập nhật đơn hàng #${targetOrder.order_code} thành công`);
+            conversation.order_draft.updated_at = new Date();
           }
         }
       } catch (updateErr) {
