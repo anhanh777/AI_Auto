@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import axios from 'axios';
 import { Conversation, Message, Customer, Channel } from '../models/index.js';
 import { matchIncomingMessageToScenario } from './botScenario.service.js';
-import { processGeminiAIForMessage } from './geminiAI.service.js';
+import { processGeminiAIForMessage, normalizeImageUrl } from './geminiAI.service.js';
 import { getIO } from '../config/socket.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,13 +53,7 @@ export const sendFacebookImage = async (imgUrl, senderPsid, pageToken, conversat
   try {
     let fbMid = null;
     const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
-    let normalizedUrl = imgUrl;
-
-    if (normalizedUrl.includes('localhost:5000') || normalizedUrl.includes('127.0.0.1:5000')) {
-      normalizedUrl = normalizedUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1):5000/g, backendUrl);
-    } else if (normalizedUrl.startsWith('/uploads/')) {
-      normalizedUrl = `${backendUrl}${normalizedUrl}`;
-    }
+    const normalizedUrl = normalizeImageUrl(imgUrl, backendUrl);
 
     const isPublicHttpUrl = (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) &&
       !normalizedUrl.includes('localhost') &&

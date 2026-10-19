@@ -138,6 +138,168 @@ export const extractNameAndCleanAddress = (text = '', defaultCustomerName = '') 
 };
 
 /**
+ * Trích xuất danh sách URL ảnh đầy đủ của sản phẩm từ nhiều trường dữ liệu có thể có
+ */
+export const getProductImages = (p) => {
+  if (!p) return [];
+  const urls = [];
+  if (Array.isArray(p.image_urls) && p.image_urls.length > 0) {
+    urls.push(...p.image_urls);
+  }
+  if (p.image_url && typeof p.image_url === 'string') {
+    urls.push(p.image_url);
+  }
+  if (Array.isArray(p.images) && p.images.length > 0) {
+    p.images.forEach((img) => {
+      if (typeof img === 'string') urls.push(img);
+      else if (img && img.url) urls.push(img.url);
+    });
+  }
+  return [...new Set(urls.filter(Boolean))];
+};
+
+/**
+ * Cơ chế Tự động Bù Ảnh (Deterministic Image Auto-Hydration):
+ * Khi khách yêu cầu xem ảnh / xem mẫu HOẶC khi câu trả lời của AI hứa gửi ảnh,
+ * nếu mảng image_urls đang rỗng, hàm này sẽ tự động tìm kiếm sản phẩm hoặc danh mục
+ * tương ứng từ ngữ cảnh để bù ảnh chính xác 100%.
+ */
+export const normalizeImageUrl = (url, backendUrl = (process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com')) => {
+  if (!url || typeof url !== 'string') return '';
+  let resUrl = url.trim().replace(/\\/g, '/');
+  if (resUrl.includes('localhost:5000') || resUrl.includes('127.0.0.1:5000')) {
+    resUrl = resUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1):5000/g, backendUrl);
+  } else if (!/^https?:\/\//i.test(resUrl)) {
+    if (!resUrl.startsWith('/')) {
+      resUrl = '/' + resUrl;
+    }
+    resUrl = `${backendUrl.replace(/\/+$/, '')}${resUrl}`;
+  }
+  return resUrl;
+};
+
+/**
+ * Cơ chế Tự động Bù Ảnh (Deterministic Image Auto-Hydration):
+ * Khi khách yêu cầu xem ảnh / xem mẫu HOẶC khi câu trả lời của AI hứa gửi ảnh,
+ * nếu mảng image_urls đang rỗng, hàm này sẽ tự động tìm kiếm sản phẩm hoặc danh mục
+ * tương ứng từ ngữ cảnh để bù ảnh chính xác 100%.
+ */
+export const resolveImagesForReply = ({
+  messageText = '',
+  replyText = '',
+  orderDraft = null,
+  rawProducts = [],
+  rawCategories = [],
+  chatHistoryText = ''
+}) => {
+  const lowerMsg = (messageText || '').toLowerCase();
+  const lowerReply = (replyText || '').toLowerCase();
+  const lowerHistory = (chatHistoryText || '').toLowerCase();
+
+  const isImageRequested = /(?:cho\s+(?:mình|em|anh|chị)?\s*xem|xem\s+ảnh|cho\s+xem\s+ảnh|ảnh\s+thật|hình\s+ảnh|gửi\s+ảnh|gửi\s+hình|gửi\s+mẫu|xem\s+mẫu|mẫu\s+nào|xem\s+sản\s+phẩm|ảnh\s+đâu|cho\s+xem|xem\s+hàng|xem\s+chi\s+tiết|xin\s+ảnh|có\s+ảnh|ảnh)/i.test(lowerMsg);
+  const isReplyPromisingImage = /(?:gửi\s+(?:bạn|anh|chị|em|mình)?\s*(?:xem\s*)?(?:hình\s*ảnh|ảnh|mẫu)|hình\s*ảnh\s*(?:mẫu|thực\s*tế|sản\s*phẩm)|bên\s*dưới\s*(?:nha|nhé|ạ)|dưới\s*đây)/i.test(lowerReply);
+
+  if (!isImageRequested && !isReplyPromisingImage) return [];
+
+  const foundImages = [];
+
+  // Helper tìm theo SKU
+  const findBySku = (targetText) => {
+    if (!targetText) return null;
+    for (const p of rawProducts || []) {
+      if (p.sku) {
+        const skuLower = p.sku.toLowerCase();
+        if (targetText.includes(skuLower)) {
+          const imgs = getProductImages(p);
+          if (imgs.length > 0) return imgs;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Helper tìm theo Tên sản phẩm (ưu tiên tên dài trước)
+  const findByName = (targetText) => {
+    if (!targetText) return null;
+    const sortedProds = [...(rawProducts || [])].sort((a, b) => (b.product_name || '').length - (a.product_name || '').length);
+    for (const p of sortedProds) {
+      const pName = (p.product_name || '').toLowerCase();
+      if (pName && pName.length >= 2 && targetText.includes(pName)) {
+        const imgs = getProductImages(p);
+        if (imgs.length > 0) return imgs;
+      }
+    }
+    return null;
+  };
+
+  // 1. Tìm SKU trong câu trả lời hiện tại hoặc tin nhắn của khách
+  const skuImgs = findBySku(lowerReply) || findBySku(lowerMsg);
+  if (skuImgs && skuImgs.length > 0) {
+    foundImages.push(...skuImgs);
+  }
+
+  // 2. Tìm Tên sản phẩm trong câu trả lời hiện tại hoặc tin nhắn của khách
+  if (foundImages.length === 0) {
+    const nameImgs = findByName(lowerReply) || findByName(lowerMsg);
+    if (nameImgs && nameImgs.length > 0) {
+      foundImages.push(...nameImgs);
+    }
+  }
+
+  // 3. Tìm sản phẩm qua orderDraft hiện tại (khách đang tiếp tục hỏi về sản phẩm vừa được thảo luận)
+  if (foundImages.length === 0 && orderDraft) {
+    const draftSku = (orderDraft.sku || '').toLowerCase();
+    const draftName = (orderDraft.product_name || '').toLowerCase();
+    const draftId = orderDraft.product_id ? String(orderDraft.product_id) : '';
+
+    const matched = (rawProducts || []).find((p) =>
+      (draftSku && p.sku && p.sku.toLowerCase() === draftSku) ||
+      (draftName && p.product_name && p.product_name.toLowerCase() === draftName) ||
+      (draftId && String(p._id) === draftId)
+    );
+
+    if (matched) {
+      const imgs = getProductImages(matched);
+      if (imgs.length > 0) {
+        foundImages.push(...imgs);
+      }
+    }
+  }
+
+  // 4. Tìm sản phẩm nhắc đến trong lịch sử chat gần nhất (chatHistoryText)
+  if (foundImages.length === 0 && lowerHistory) {
+    const historySkuImgs = findBySku(lowerHistory);
+    if (historySkuImgs && historySkuImgs.length > 0) {
+      foundImages.push(...historySkuImgs);
+    } else {
+      const historyNameImgs = findByName(lowerHistory);
+      if (historyNameImgs && historyNameImgs.length > 0) {
+        foundImages.push(...historyNameImgs);
+      }
+    }
+  }
+
+  // 5. Nếu khách hỏi về Danh mục / Bộ sưu tập (ví dụ: "Titan", "Chima", "Lego Titan")
+  if (foundImages.length === 0 && Array.isArray(rawCategories) && rawCategories.length > 0) {
+    for (const cat of rawCategories) {
+      const cName = (cat.category_name || '').toLowerCase();
+      if (cName && (lowerMsg.includes(cName) || lowerReply.includes(cName) || lowerHistory.includes(cName))) {
+        const catProds = (rawProducts || []).filter((p) =>
+          (p.category_ids || []).some((cid) => String(cid) === String(cat._id))
+        );
+        const catImgs = catProds.flatMap((p) => getProductImages(p)).filter(Boolean);
+        if (catImgs.length > 0) {
+          foundImages.push(...catImgs);
+          break;
+        }
+      }
+    }
+  }
+
+  return [...new Set(foundImages.filter(Boolean))];
+};
+
+/**
  * 1. Tổng hợp dữ liệu RAG Context (Knowledge Base + Sản phẩm còn hàng + Cấu hình AI + Lịch sử chat)
  */
 export const buildRAGContext = async ({ business_id, conversation_id, customer_id = null, channel_id = null }) => {
@@ -501,9 +663,9 @@ ${chatHistoryText}
        * Liệt kê đầy đủ tên các sản phẩm thuộc danh mục (ví dụ danh mục Titan có Gavi và Levi), kèm mức giá cụ thể của từng sản phẩm.
        * BẮT BUỘC trích xuất TOÀN BỘ link ảnh (từ trường "Ảnh sản phẩm") của TẤT CẢ các sản phẩm trong danh mục đó vào mảng "image_urls" của JSON để hệ thống tự động gửi ảnh sang Messenger cho khách xem!
        * Đưa ra câu hỏi gợi ý chốt chọn mẫu thân thiện (ví dụ: "Dòng Titan bên em đang có 2 mẫu Gavi (33.333đ) và Levi (39.999đ) rất đẹp, bạn thích mẫu nào hơn để shop hỗ trợ tư vấn chi tiết cho mình nha! ❤️").
-   - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào", "xem hình ảnh của từng sản phẩm":
+   - Khi khách bảo "cho mình xem...", "gửi ảnh...", "có mẫu nào...", "sản phẩm này thế nào", "xem hình ảnh của từng sản phẩm", "cho mình xem ảnh", "xem ảnh":
      + Niềm nở giới thiệu đặc điểm nổi bật, thiết kế và mức giá ưu đãi của các sản phẩm.
-     + BẮT BUỘC: Nếu trong thông tin sản phẩm ở trên có link URL ở trường "Ảnh sản phẩm", hãy trích xuất chính xác các đường link URL đó vào mảng "image_urls" của JSON. Tuyệt đối KHÔNG NÓI "shop chưa có ảnh" hay "chưa có ảnh sẵn" nếu trong kho có đường link ảnh!
+     + BẮT BUỘC: Khi khách yêu cầu xem ảnh (kể cả câu ngắn gọn như "cho mình xem ảnh", "gửi ảnh", "xem ảnh"), BẮT BUỘC trích xuất chính xác toàn bộ link URL ảnh của sản phẩm đang trao đổi (hoặc sản phẩm vừa nhắc ở câu trước) từ trường "Ảnh sản phẩm" ở trên vào mảng "image_urls" của JSON. Tuyệt đối KHÔNG ĐỂ MẢNG "image_urls": [] RỖNG khi câu trả lời nói "shop gửi bạn xem hình ảnh bên dưới nha"!
      + CỰC KỲ QUAN TRỌNG: TUYỆT ĐỐI KHÔNG VIẾT các đường link URL ảnh (như http://..., localhost:5000..., /uploads/...) vào trong nội dung văn bản "reply"! Hãy để văn bản tự nhiên, lịch sự (Ví dụ: "Dạ shop gửi bạn xem hình ảnh mẫu bên dưới nha!"). Mọi đường link URL ảnh CHỈ ĐƯỢC PHÉP đặt vào mảng "image_urls" của JSON, hệ thống sẽ tự động chuyển thành hình ảnh thực tế gửi sang Facebook cho khách!
      + Hỏi khéo mẫu hoặc màu sắc mà khách ưng ý nhất để tư vấn sâu hơn.
      + TUYỆT ĐỐI KHÔNG tự tiện chọn size (như tự ý gán Size M), KHÔNG nói "đã giữ hàng", KHÔNG đòi số điện thoại khi khách chỉ muốn xem mẫu!
@@ -757,6 +919,22 @@ Bạn PHẢI trả về duy nhất 1 chuỗi JSON hợp lệ (không kèm Markdo
         : 'Dạ shop xin chào bạn! Shop có thể hỗ trợ gì cho bạn hôm nay ạ?';
     }
 
+    // Tự động bù ảnh bằng cơ chế tất định (Deterministic Image Auto-Hydration)
+    if (imageUrls.length === 0) {
+      const autoHydratedImages = resolveImagesForReply({
+        messageText,
+        replyText: cleanedReply,
+        orderDraft,
+        rawProducts,
+        rawCategories,
+        chatHistoryText
+      });
+      if (autoHydratedImages.length > 0) {
+        console.log(`[Gemini AI Auto-Hydration] 🖼️ Đã tự động bù ${autoHydratedImages.length} ảnh cho phản hồi khách hàng:`, autoHydratedImages);
+        imageUrls.push(...autoHydratedImages);
+      }
+    }
+
     return {
       reply: cleanedReply,
       image_urls: imageUrls,
@@ -873,6 +1051,17 @@ export const generateSmartFallbackResponse = ({
   }
   if (!matchedProduct && (phone || cleanAddress) && existingDraft?.product_name && existingDraft?.status !== 'ORDER_CREATED') {
     matchedProduct = rawProducts.find((p) => p.product_name === existingDraft.product_name) || null;
+  }
+  if (!matchedProduct && chatHistoryText) {
+    const lowerHist = chatHistoryText.toLowerCase();
+    for (const p of rawProducts) {
+      const pSku = (p.sku || '').toLowerCase();
+      const pName = (p.product_name || '').toLowerCase();
+      if ((pSku && lowerHist.includes(pSku)) || (pName && lowerHist.includes(pName))) {
+        matchedProduct = p;
+        break;
+      }
+    }
   }
   if (!matchedProduct && rawProducts.length > 0) {
     matchedProduct = rawProducts[0];
@@ -997,7 +1186,7 @@ export const generateSmartFallbackResponse = ({
 
     return {
       reply,
-      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+      image_urls: getProductImages(p),
       is_order_intent: false,
       order_data: {
         product_id: p._id,
@@ -1039,7 +1228,7 @@ export const generateSmartFallbackResponse = ({
 
     return {
       reply,
-      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+      image_urls: getProductImages(p),
       is_order_intent: false,
       order_data: {
         product_id: p._id,
@@ -1064,7 +1253,7 @@ export const generateSmartFallbackResponse = ({
     const priceStr = (p.sale_price || p.base_price || 0).toLocaleString('vi-VN');
     return {
       reply: `Dạ sản phẩm "${p.product_name}" hiện đang có giá ưu đãi là ${priceStr} VND ạ! Anh/chị cần em tư vấn thêm về màu sắc hay size số theo chiều cao cân nặng không ạ?`,
-      image_urls: Array.isArray(p.image_urls) ? p.image_urls : [],
+      image_urls: getProductImages(p),
       is_order_intent: false,
       order_data: null,
       missing_fields: [],
@@ -1144,7 +1333,7 @@ export const generateSmartFallbackResponse = ({
     if (hasVariants && !finalSize && availableSizes) {
       return {
         reply: `Dạ mẫu "${currentProduct.product_name}" bên em có các size: ${availableSizes}${availableColors ? ` và màu: ${availableColors}` : ''} ạ. Bạn muốn lấy size nào và màu gì hoặc cho shop xin chiều cao, cân nặng để em chọn size vừa vặn nhất cho mình nha!`,
-        image_urls: Array.isArray(currentProduct.image_urls) ? currentProduct.image_urls : [],
+        image_urls: getProductImages(currentProduct),
         is_order_intent: false,
         order_data: {
           product_id: currentProduct._id,
@@ -1729,18 +1918,32 @@ export const processGeminiAIForMessage = async ({
       await conversation.save();
     }
 
-    // 4. Lưu câu trả lời của AI vào Collection messages
-    const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
-    const normalizedImageUrls = (aiResult.image_urls || []).map((url) => {
-      if (!url) return '';
-      let resUrl = url;
-      if (resUrl.includes('localhost:5000') || resUrl.includes('127.0.0.1:5000')) {
-        resUrl = resUrl.replace(/https?:\/\/(?:localhost|127\.0\.0\.1):5000/g, backendUrl);
-      } else if (resUrl.startsWith('/uploads/')) {
-        resUrl = `${backendUrl}${resUrl}`;
+    // Chốt chặn an toàn kép: Nếu aiResult.image_urls vẫn rỗng, tự động tra cứu sản phẩm bù ảnh lớp 2
+    if (!Array.isArray(aiResult.image_urls) || aiResult.image_urls.length === 0) {
+      try {
+        const fallbackProds = await Product.find({ business_id, status: 'ACTIVE' })
+          .select('product_name sku image_urls category_ids')
+          .limit(40)
+          .lean();
+        const doubleCheckImages = resolveImagesForReply({
+          messageText,
+          replyText: finalReply,
+          orderDraft: conversation.order_draft,
+          rawProducts: fallbackProds
+        });
+        if (doubleCheckImages.length > 0) {
+          aiResult.image_urls = doubleCheckImages;
+          console.log(`[Process Gemini Safety Net] 🖼️ Bù ảnh lớp 2 thành công (${doubleCheckImages.length} ảnh):`, doubleCheckImages);
+        }
+      } catch (safeErr) {
+        console.warn('[Process Gemini Safety Net Warn]', safeErr.message);
       }
-      return resUrl;
-    }).filter(Boolean);
+    }
+
+    const backendUrl = process.env.BACKEND_URL || 'https://ai-auto-backend.onrender.com';
+    const normalizedImageUrls = (aiResult.image_urls || [])
+      .map((url) => normalizeImageUrl(url, backendUrl))
+      .filter(Boolean);
 
     aiResult.image_urls = normalizedImageUrls;
 
