@@ -1593,6 +1593,20 @@ export const processGeminiAIForMessage = async ({
     const savedCustomerPhone = customerRecord?.phone || customerRecord?.phone_number || '';
     const savedCustomerAddress = customerRecord?.shipping_address || customerRecord?.address || '';
 
+    // Nếu trong tin nhắn của khách có địa chỉ hoặc SĐT mới (vd: "đổi địa chỉ Hà Nam", "sđt mới 098..."), cập nhật vào order_draft
+    const directAddrCheck = evaluateAddressQuality(messageText);
+    if (directAddrCheck.quality === 'VALID' || directAddrCheck.quality === 'VAGUE_AREA') {
+      if (!conversation.order_draft) conversation.order_draft = {};
+      conversation.order_draft.shipping_address = directAddrCheck.cleanAddress;
+      conversation.order_draft.updated_at = new Date();
+    }
+    const directPhoneCheck = validateAndSanitizePhone(messageText);
+    if (directPhoneCheck.isValid) {
+      if (!conversation.order_draft) conversation.order_draft = {};
+      conversation.order_draft.phone = directPhoneCheck.phone;
+      conversation.order_draft.updated_at = new Date();
+    }
+
     // Cập nhật các slot mới thu thập được vào order_draft
     if (aiResult.order_data) {
       const od = aiResult.order_data;
@@ -1628,7 +1642,7 @@ export const processGeminiAIForMessage = async ({
           conversation.order_draft.phone = phoneVal.phone;
         }
       }
-      const candidateDraftAddress = od.shipping_address || (conversation.order_draft.shipping_address ? '' : savedCustomerAddress);
+      const candidateDraftAddress = od.shipping_address || (directAddrCheck.quality !== 'NONE' ? directAddrCheck.cleanAddress : '') || (conversation.order_draft.shipping_address ? '' : savedCustomerAddress);
       if (candidateDraftAddress) {
         const addrVal = evaluateAddressQuality(candidateDraftAddress);
         if (addrVal.quality === 'VALID' || addrVal.quality === 'VAGUE_AREA') {
@@ -1644,7 +1658,7 @@ export const processGeminiAIForMessage = async ({
 
     // 2. Kiểm tra thẩm định điều kiện chốt ĐƠN HÀNG (Validation Gate)
     let createdOrder = null;
-    const isDraftCollecting = conversation.order_draft?.status === 'COLLECTING';
+    const isDraftCollecting = conversation.order_draft?.status === 'COLLECTING' || Boolean(conversation.order_draft?.product_name);
     const finalPhone = aiResult.order_data?.phone || (isDraftCollecting ? conversation.order_draft?.phone : '') || savedCustomerPhone;
     const finalAddress = aiResult.order_data?.shipping_address || (isDraftCollecting ? conversation.order_draft?.shipping_address : '') || savedCustomerAddress;
 
@@ -1659,7 +1673,18 @@ export const processGeminiAIForMessage = async ({
     // Chấp nhận cả địa chỉ chi tiết (VALID) và khu vực tỉnh/thành phố (VAGUE_AREA) để CSKH gọi xác nhận số nhà, không làm rơi đơn
     const isAddressAcceptable = addressCheck.quality === 'VALID' || addressCheck.quality === 'VAGUE_AREA';
 
-    if (!isActionModifyingOrder && aiResult.is_order_intent && phoneCheck.isValid && isAddressAcceptable) {
+    const isCustomerConfirming = /(?:ok\s*chốt|chốt\s*(?:đơn|luôn|nhé|nha|ạ)?|xác\s*nhận|đúng\s*rồi|lên\s*đơn\s*(?:đi|nhé|nha|cho\s*mình)?|gửi\s*(?:về\s*đó|cho\s*mình|đi)\s*(?:nhé|nha)?|đồng\s*ý)/i.test(lowerMsg);
+
+    const isReplyPromisingOrderCreation = /(?:tiến\s*hành\s*lên\s*đơn|đã\s*lên\s*đơn|lên\s*đơn\s*mẫu|sớm\s*đóng\s*gói\s*và\s*gửi|đóng\s*gói\s*và\s*gửi\s*(?:hàng|đồ)|đã\s*tạo\s*đơn|lên\s*đơn\s*hàng\s*thành\s*công|đã\s*chốt\s*đơn)/i.test(finalReply);
+
+    const hasOrderDraftProduct = Boolean(conversation.order_draft?.product_name || conversation.order_draft?.sku || aiResult.order_data?.product_name || (Array.isArray(aiResult.order_data?.items) && aiResult.order_data.items.length > 0));
+
+    const shouldCreateOrder = !isActionModifyingOrder &&
+      (aiResult.is_order_intent || (isCustomerConfirming && hasOrderDraftProduct) || (isReplyPromisingOrderCreation && hasOrderDraftProduct)) &&
+      phoneCheck.isValid &&
+      isAddressAcceptable;
+
+    if (shouldCreateOrder) {
       try {
         const orderInfo = aiResult.order_data || conversation.order_draft || {};
         const itemsToCreate = [];
@@ -1824,7 +1849,7 @@ export const processGeminiAIForMessage = async ({
     // Nếu đơn hàng KHÔNG tạo được, nhưng AI lỡ viết văn bản hứa hẹn "đã tạo đơn", "đóng gói gửi hàng",
     // thì BẮT BUỘC ghi đè văn bản để hỏi nốt thông tin còn thiếu, tránh việc khách hiểu lầm là đã có đơn trên hệ thống!
     if (!createdOrder) {
-      const isClaimingOrder = /(?:đóng\s*gói\s*và\s*gửi\s*hàng|gửi\s*hàng\s*đi\s*sớm\s*nhất|lên\s*đơn\s*hàng\s*thành\s*công|đã\s*tạo\s*đơn\s*hàng|đã\s*lên\s*đơn|đã\s*chốt\s*đơn)/i.test(finalReply);
+      const isClaimingOrder = /(?:tiến\s*hành\s*lên\s*đơn|đã\s*lên\s*đơn|đã\s*tạo\s*đơn|lên\s*đơn\s*hàng\s*thành\s*công|đóng\s*gói\s*và\s*gửi\s*(?:hàng|đồ)|sớm\s*đóng\s*gói|gửi\s*hàng\s*đi\s*sớm\s*nhất|đã\s*chốt\s*đơn)/i.test(finalReply);
       if (isClaimingOrder) {
         if (!phoneCheck.isValid) {
           finalReply = `Dạ shop xin chào ${customerFbName || customerRecord?.full_name || 'bạn'} ạ! Shop đã ghi nhận thông tin đặt hàng, bạn cho shop xin Số điện thoại nhận hàng chuẩn 10 số để bên em hoàn tất lên đơn cho mình nhé! ❤️`;
@@ -1965,6 +1990,7 @@ export const processGeminiAIForMessage = async ({
           const aVal = evaluateAddressQuality(custPayload.shipping_address);
           if (aVal.quality === 'VALID' || aVal.quality === 'VAGUE_AREA') {
             custUpdates.shipping_address = aVal.cleanAddress;
+            custUpdates.address = aVal.cleanAddress;
           }
         }
         if (Object.keys(custUpdates).length > 0) {
@@ -2056,6 +2082,13 @@ export const processGeminiAIForMessage = async ({
       }
       if (aiResult.order_data?.shipping_address) {
         updateFields.shipping_address = aiResult.order_data.shipping_address;
+        updateFields.address = aiResult.order_data.shipping_address;
+      } else if (directAddrCheck.quality !== 'NONE') {
+        updateFields.shipping_address = directAddrCheck.cleanAddress;
+        updateFields.address = directAddrCheck.cleanAddress;
+      } else if (conversation.order_draft?.shipping_address) {
+        updateFields.shipping_address = conversation.order_draft.shipping_address;
+        updateFields.address = conversation.order_draft.shipping_address;
       }
       if (aiResult.order_data?.customer_name && aiResult.order_data.customer_name !== 'Khách hàng') {
         updateFields.full_name = aiResult.order_data.customer_name;

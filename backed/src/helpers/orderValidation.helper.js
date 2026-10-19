@@ -87,8 +87,9 @@ export const evaluateAddressQuality = (rawAddress = '') => {
 
   let text = rawAddress.trim();
 
-  // Guard: Nếu chuỗi là câu hỏi tra cứu đơn hàng, thắc mắc thông tin đơn hoặc chào hỏi, TUYỆT ĐỐI không phải địa chỉ
-  const isQuestionOrInquiry = /(?:thông\s*tin\s*đơn|kiểm\s*tra\s*đơn|tra\s*cứu\s*đơn|đơn\s*(?:hàng\s*)?(?:vừa|đã)\s*đặt|đơn\s*của\s*(?:tôi|mình|em)|khi\s*nào\s*giao|bao\s*giờ\s*giao|hủy\s*đơn|đổi\s*địa\s*chỉ|tôi\s*cần\s*biết|cho\s*tôi\s*biết|tôi\s*muốn\s*hỏi)/i.test(text);
+  // Guard: Nếu chuỗi là câu hỏi tra cứu đơn hàng hoặc thắc mắc đơn thuần (không có địa chỉ kèm theo)
+  const isQuestionOrInquiry = /(?:thông\s*tin\s*đơn|kiểm\s*tra\s*đơn|tra\s*cứu\s*đơn|đơn\s*(?:hàng\s*)?(?:vừa|đã)\s*đặt|đơn\s*của\s*(?:tôi|mình|em)|khi\s*nào\s*giao|bao\s*giờ\s*giao|hủy\s*đơn|tôi\s*cần\s*biết|cho\s*tôi\s*biết|tôi\s*muốn\s*hỏi)$/i.test(text) ||
+    /^(?:cho\s+hỏi\s+)?(?:tôi\s+)?(?:muốn|cần)?\s*đổi\s*địa\s*chỉ\s*(?:được\s*không|như\s*thế\s*nào|thế\s*nào|ko|ạ|\?)?$/i.test(text);
   if (isQuestionOrInquiry) {
     return {
       quality: 'NONE',
@@ -106,12 +107,13 @@ export const evaluateAddressQuality = (rawAddress = '') => {
     text = text.replace(noteMatch[0], '').trim();
   }
 
-  // B. Cắt bỏ các tiền tố hành động đơn hoặc ghép (vd: "giao về", "ship đến", "gửi về", "địa chỉ là:")
+  // B. Cắt bỏ các tiền tố hành động đơn hoặc ghép (vd: "đổi địa chỉ sang", "giao về", "ship đến", "gửi về", "địa chỉ là:")
   text = text
-    .replace(/^(?:cho\s+(?:mình|em|anh)\s+lấy\s+[^,]+?(?:về|đến|ở|tại)\s+)/i, '')
+    .replace(/^(?:đổi\s*(?:lại\s*)?(?:địa\s*chỉ|đ\/c|nơi\s*nhận|dc)(?:\s*(?:sang|thành|về|là|mới))?\s*)/i, '')
+    .replace(/^(?:cho\s+(?:mình|em|anh|tôi)\s+lấy\s+[^,]+?(?:về|đến|ở|tại)\s+)/i, '')
     .replace(/^(?:giao|ship|gửi)?\s*(?:về|đến|ở|tại)\s+/i, '')
-    .replace(/^(?:địa chỉ(?:\s*là)?:?|đ\/c:?)\s+/i, '')
-    .replace(/^(?:cho mình lấy|cho em lấy|cho anh lấy|mình muốn mua|đặt hàng|mua|ship|giao|gửi)\s+/i, '')
+    .replace(/^(?:địa\s*chỉ(?:\s*(?:mới\s*)?(?:là)?)?:?|đ\/c:?|dc:?)\s+/i, '')
+    .replace(/^(?:cho mình lấy|cho em lấy|cho anh lấy|cho tôi lấy|mình muốn mua|đặt hàng|mua|ship|giao|gửi)\s+/i, '')
     .replace(/^(?:về|đến|ở|tại)\s+/i, '')
     .trim();
 
@@ -133,8 +135,8 @@ export const evaluateAddressQuality = (rawAddress = '') => {
   const hasMicro = /(?:số\s*\d+|\d+\s*[\/-]\s*\d+|\bngõ\b|\bngách\b|\bhẻm\b|\bđường\b|\bphố\b|(?:\b|\s)(?:thôn|xóm|ấp|bản|tổ|khu)(?:\b|\s|[,\./\-])|\bchung\s*cư\b|\btòa\b|\btoà\b|\bct\d\b|\bkđt\b|\bphòng\b)/i.test(lower) ||
     /^\d+[a-zA-Z]?\s+/.test(lower); // Bắt đầu bằng số nhà (vd: "25 Cầu Giấy")
 
-  // Kiểm tra yếu tố hành chính (Phường, xã, quận, huyện, tỉnh/thành phố)
-  const hasMacro = /(?:\bphường\b|\bxã\b|\bthị\s*trấn\b|\bquận\b|\bhuyện\b|\bthị\s*xã\b|\btp\b|\bthành\s*phố\b|\btỉnh\b|\bhà\s*nội\b|\bhcm\b|\bhồ\s*chí\s*minh\b|\bđà\s*nẵng\b|\bhải\s*phòng\b|\bcần\s*thơ\b|\bbình\s*dương\b|\bđồng\s*nai\b|\bquảng\s*ninh\b|\bthái\s*bình\b|\bnam\s*định\b|\bhải\s*dương\b|\bbắc\s*ninh\b)/i.test(lower);
+  // Kiểm tra yếu tố hành chính (Phường, xã, thị trấn, quận, huyện, thị xã, TP, toàn bộ 63 tỉnh/thành phố Việt Nam)
+  const hasMacro = /(?:\bphường\b|\bxã\b|\bthị\s*trấn\b|\bquận\b|\bhuyện\b|\bthị\s*xã\b|\btp\b|\bthành\s*phố\b|\btỉnh\b|\bhà\s*nội\b|\bhcm\b|\bhồ\s*chí\s*minh\b|\bsài\s*gòn\b|\bđà\s*nẵng\b|\bhải\s*phòng\b|\bcần\s*thơ\b|\ban\s*giang\b|\bbà\s*rịa\b|\bvũng\s*tàu\b|\bbắc\s*giang\b|\bbắc\s*kạn\b|\bbạc\s*liêu\b|\bbắc\s*ninh\b|\bbến\s*tre\b|\bbình\s*định\b|\bquy\s*nhơn\b|\bbình\s*dương\b|\bbình\s*phước\b|\bbình\s*thuận\b|\bphan\s*thiết\b|\bcà\s*mau\b|\bcao\s*bằng\b|\bđắk\s*lắk\b|\bđắc\s*lắc\b|\bbuôn\s*ma\s*thuột\b|\bđắk\s*nông\b|\bđiện\s*biên\b|\bđồng\s*nai\b|\bbiên\s*hòa\b|\bđồng\s*tháp\b|\bgia\s*lai\b|\bpleiku\b|\bhà\s*giang\b|\bhà\s*nam\b|\bphủ\s*lý\b|\bhà\s*tĩnh\b|\bhải\s*dương\b|\bhậu\s*giang\b|\bhòa\s*bình\b|\bhưng\s*yên\b|\bkhánh\s*hòa\b|\bnha\s*trang\b|\bkiên\s*giang\b|\brạch\s*giá\b|\bphú\s*quốc\b|\bkon\s*tum\b|\blai\s*châu\b|\blâm\s*đồng\b|\bđà\s*lạt\b|\blạng\s*sơn\b|\blào\s*cai\b|\bsa\s*pa\b|\blong\s*an\b|\bnam\s*định\b|\bnghệ\s*an\b|\bvinh\b|\bninh\s*bình\b|\bninh\s*thuận\b|\bphan\s*rang\b|\bphú\s*thọ\b|\bviệt\s*trì\b|\bphú\s*yên\b|\btuy\s*hòa\b|\bquảng\s*bình\b|\bđồng\s*hới\b|\bquảng\s*nam\b|\bhội\s*an\b|\btam\s*kỳ\b|\bquảng\s*ngãi\b|\bquảng\s*ninh\b|\bhạ\s*long\b|\bcẩm\s*phả\b|\bmóng\s*cái\b|\bquảng\s*trị\b|\bsóc\s*trăng\b|\bsơn\s*la\b|\btây\s*ninh\b|\bthái\s*bình\b|\bthái\s*nguyên\b|\bthanh\s*hóa\b|\bthừa\s*thiên\s*huế\b|\bhuế\b|\btiền\s*giang\b|\bmỹ\s*tho\b|\btrà\s*vinh\b|\btuyên\s*quang\b|\bvĩnh\s*long\b|\bvĩnh\s*phúc\b|\byên\s*bái\b)/i.test(lower);
 
   const wordCount = text.split(/\s+/).filter(Boolean).length;
 

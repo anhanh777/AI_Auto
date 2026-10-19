@@ -899,21 +899,21 @@ const CustomerListPage = () => {
 
                       {/* Address */}
                       <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300 max-w-[220px]">
-                        {c.address || c.shipping_address ? (
+                        {c.shipping_address || c.address ? (
                           <div className="flex items-start justify-between group/addr">
                             <div className="flex items-start space-x-1 truncate">
                               <MapPin size={13} className="text-slate-400 shrink-0 mt-0.5" />
-                              <span className="truncate" title={c.address || c.shipping_address}>
-                                {c.address || c.shipping_address}
+                              <span className="truncate" title={c.shipping_address || c.address}>
+                                {c.shipping_address || c.address}
                               </span>
                             </div>
                             <button
                               type="button"
-                              onClick={(e) => handleCopy(c.address || c.shipping_address, 'địa chỉ', e)}
+                              onClick={(e) => handleCopy(c.shipping_address || c.address, 'địa chỉ', e)}
                               className="p-1 text-slate-400 hover:text-[#f05a28] rounded opacity-0 group-hover/addr:opacity-100 transition shrink-0 ml-1"
                               title="Sao chép địa chỉ"
                             >
-                              {copiedId === (c.address || c.shipping_address) ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                              {copiedId === (c.shipping_address || c.address) ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
                             </button>
                           </div>
                         ) : (
@@ -1211,10 +1211,10 @@ const CustomerListPage = () => {
                 <div className="p-3.5 bg-slate-50 dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 group/a">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[11px] font-bold text-slate-400">Địa chỉ giao hàng mặc định:</span>
-                    {(detailCustomer.address || detailCustomer.shipping_address) && (
+                    {(detailCustomer.shipping_address || detailCustomer.address) && (
                       <button
                         type="button"
-                        onClick={(e) => handleCopy(detailCustomer.address || detailCustomer.shipping_address, 'địa chỉ', e)}
+                        onClick={(e) => handleCopy(detailCustomer.shipping_address || detailCustomer.address, 'địa chỉ', e)}
                         className="text-[11px] text-[#f05a28] hover:underline flex items-center gap-1"
                       >
                         <Copy size={11} />
@@ -1224,7 +1224,7 @@ const CustomerListPage = () => {
                   </div>
                   <p className="font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
                     <MapPin size={13} className="text-[#f05a28] shrink-0" />
-                    <span>{detailCustomer.address || detailCustomer.shipping_address || 'Chưa cập nhật'}</span>
+                    <span>{detailCustomer.shipping_address || detailCustomer.address || 'Chưa cập nhật'}</span>
                   </p>
                 </div>
 
